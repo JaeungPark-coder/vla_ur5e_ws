@@ -1,0 +1,17 @@
+vla_policy_client:
+  ros__parameters:
+    robot_ip: "192.168.1.100"
+    # 'rtde' = real UR5e over RTDE. 'isaac_sim' = talk to
+    # ../../isaac/pick_place_scene_bridge.py over ROS2 topics instead --
+    # run that script separately first (with Isaac Sim's own python.sh),
+    # then launch this with robot_backend:=isaac_sim.
+    robot_backend: "isaac_sim"
+    policy_host: "localhost"
+    policy_port: 8000
+    prompt: "pick up the cube and place it in the target zone"
+    control_hz: 10.0
+    # Only used when robot_backend is 'rtde' -- REPLACE with your actual
+    # camera driver's topic names.
+    base_image_topic: "/camera/base/image_raw"
+    wrist_image_topic: "/camera/wrist/image_raw"
+    max_steps: 300

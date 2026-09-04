@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+
+# ROS2 build artifacts (vla_bridge)
+build/
+install/
+log/
+
+# openpi checkpoints / LeRobot datasets (large binaries, not committed)
+checkpoints/
+*.safetensors
+
+# Editor
+.vscode/
