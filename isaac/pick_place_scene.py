@@ -26,7 +26,7 @@ from scipy.spatial.transform import Rotation as Rot
 from isaacsim.core.api import World
 from isaacsim.core.utils.nucleus import get_assets_root_path
 from isaacsim.core.utils.stage import add_reference_to_stage, get_current_stage
-from isaacsim.core.prims import Articulation
+from isaacsim.core.prims import SingleArticulation
 
 from isaac_sim_common import (
     UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH, TOOL_LINK_PRIM_PATH,
@@ -66,13 +66,33 @@ class PickPlaceScene:
         self.stage = get_current_stage()
 
         add_reference_to_stage(assets_root + UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH)
-        self.robot = Articulation(ROBOT_PRIM_PATH)
-        self.world.reset()  # initializes physics handles for the articulation
+        # SingleArticulation (unbatched), not the vectorized multi-env
+        # `Articulation` class -- ArticulationMotionPolicy (RMPflow, below)
+        # requires get_articulation_controller(), which only the single-robot
+        # API provides.
+        #
+        # Deliberately NOT registered via world.scene.add(): that path (Scene
+        # ._finalize -> SingleArticulation.initialize() during World.reset())
+        # produced a physics view with `_physics_view is None` for this asset
+        # ("is_homogeneous" AttributeError) on this Isaac Sim version. Calling
+        # world.reset() then .initialize() directly, ourselves, works
+        # reliably instead -- but per SingleArticulation.initialize()'s own
+        # docstring this needs to be redone after every *hard* reset (Stop+
+        # Play, which a non-soft world.reset() -- the default -- triggers),
+        # so reset() below re-initializes it on every episode too. The
+        # gripper (GripperController, isaac_sim_common.py) uses the batched
+        # `Articulation` class instead and does not need this dance.
+        self.robot = SingleArticulation(ROBOT_PRIM_PATH, name="ur5e_arm")
+        self.world.reset()
+        self.robot.initialize()
 
-        gripper_path = add_gripper(self.stage, TOOL_LINK_PRIM_PATH, assets_root)
+        gripper_path = add_gripper(self.stage, assets_root)
         self.gripper = GripperController(gripper_path)
+        self.world.reset()
+        self.robot.initialize()
 
         self.rmpflow, self.articulation_policy = setup_rmpflow(self.robot)
+        self._sync_gripper_to_flange()
         self.physics_dt = 1.0 / 60.0
 
         self._setup_cameras()
@@ -116,17 +136,37 @@ class PickPlaceScene:
             add_place_target_marker(self.stage, TARGET_MARKER_PRIM_PATH, PLACE_TARGET_POSITION)
 
         self.world.reset()
+        # A non-soft world.reset() is a hard reset (Stop+Play) under the
+        # hood, which invalidates the arm's physics handles since it's not
+        # registered via world.scene (see __init__'s comment) -- redo it
+        # every episode, not just once at construction.
+        self.robot.initialize()
+        self._sync_gripper_to_flange()
         self.gripper.open()
+        # A fresh world.reset() hasn't rendered a frame yet -- the replicator
+        # annotators return an empty array until at least one render pass
+        # happens, so get_observation() right after reset would report
+        # base_rgb/wrist_rgb with shape (0,) instead of (256, 256, 4).
+        self.world.step(render=True)
         return self.get_observation()
+
+    def _sync_gripper_to_flange(self):
+        """Teleports the (top-level, not USD-parented -- see
+        isaac_sim_common.GRIPPER_PRIM_PATH) gripper prim to the tool
+        flange's current world pose, keeping it visually/functionally
+        attached to the arm."""
+        flange_pos, flange_quat = prim_world_pose(self.stage.GetPrimAtPath(TOOL_LINK_PRIM_PATH))
+        self.gripper.sync_pose_to_flange(flange_pos, flange_quat)
 
     def step_towards(self, target_pos, target_rotvec, target_gripper):
         """One control tick: sets the RMPflow Cartesian target, applies one
         articulation action, drives the gripper toward target_gripper
-        (0=open .. 1=closed), and steps physics/render once. Deliberately
-        NOT a blocking settle loop (contrast with the potato_scan RL train
-        envs' _move_and_settle) -- the caller (scripted_pick_place.py /
-        collect_demos.py) controls the logging cadence by calling this once
-        per logged frame."""
+        (0=open .. 1=closed), steps physics/render once, then re-attaches the
+        (top-level, not USD-parented) gripper to wherever the flange actually
+        ended up. Deliberately NOT a blocking settle loop (contrast with the
+        potato_scan RL train envs' _move_and_settle) -- the caller
+        (scripted_pick_place.py / collect_demos.py) controls the logging
+        cadence by calling this once per logged frame."""
         target_quat_wxyz = Rot.from_rotvec(np.asarray(target_rotvec, dtype=float)).as_quat()[[3, 0, 1, 2]]
         self.rmpflow.set_end_effector_target(np.asarray(target_pos, dtype=float), target_quat_wxyz)
         self.rmpflow.update_world()
@@ -134,14 +174,15 @@ class PickPlaceScene:
         self.robot.apply_action(action)
         self.gripper.set_target(target_gripper)
         self.world.step(render=True)
+        self._sync_gripper_to_flange()
 
     def get_observation(self):
         tool_pos, tool_quat = prim_world_pose(self.stage.GetPrimAtPath(TOOL_LINK_PRIM_PATH))
-        # ADJUST: assumes the arm's 6 DoF are the first 6 entries in the
-        # articulation's DOF list (true for the stock UR5e asset with no
-        # extra joints ahead of the arm) -- verify against
-        # self.robot.dof_names on your install if this looks wrong.
-        joint_pos = np.asarray(self.robot.get_joint_positions())[0, :6]
+        # Confirmed against the actual asset: self.robot.dof_names is exactly
+        # the 6 arm joints (shoulder_pan..wrist_3), no extra joints ahead of
+        # them -- SingleArticulation.get_joint_positions() is unbatched
+        # (shape (6,)), unlike the vectorized Articulation API.
+        joint_pos = np.asarray(self.robot.get_joint_positions())[:6]
         gripper_pos = self.gripper.get_normalized_position()
         return {
             "joints": joint_pos.astype(np.float32),

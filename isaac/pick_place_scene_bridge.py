@@ -95,9 +95,13 @@ def main():
             rclpy.spin_once(bridge, timeout_sec=0.0)
 
             if bridge.latest_joint_target is not None:
-                current = np.asarray(scene.robot.get_joint_positions())
-                current[0, :6] = bridge.latest_joint_target[:6]
-                scene.robot.set_joint_position_targets(current)
+                # scene.robot is a SingleArticulation (unbatched) -- see
+                # pick_place_scene.py -- so targets go through apply_action(),
+                # not a vectorized set_joint_position_targets().
+                from isaacsim.core.utils.types import ArticulationAction
+                scene.robot.apply_action(
+                    ArticulationAction(joint_positions=np.asarray(bridge.latest_joint_target[:6], dtype=float))
+                )
             scene.gripper.set_target(bridge.latest_gripper_target)
             scene.world.step(render=True)
 
