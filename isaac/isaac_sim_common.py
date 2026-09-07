@@ -128,18 +128,39 @@ def prim_world_pose(prim):
     return np.array([translation[0], translation[1], translation[2]]), np.array(quat_xyzw)
 
 
-def add_cube(stage, prim_path, position, size=0.04, color=(0.8, 0.1, 0.1)):
-    """A small dynamic (rigid-body) cube to pick up."""
-    cube = UsdGeom.Cube.Define(stage, prim_path)
-    cube.CreateSizeAttr(size)
-    cube.AddTranslateOp().Set(Gf.Vec3d(*position))
-    cube.CreateDisplayColorAttr([Gf.Vec3f(*color)])
-    prim = cube.GetPrim()
+def add_shape(stage, shape, prim_path, position, size=0.04, color=(0.8, 0.1, 0.1)):
+    """A small dynamic (rigid-body) pickable object -- cube/sphere/cylinder,
+    used by pick_place_scene.spawn_random_objects for the multi-object
+    hybrid-pipeline scene (isaac/object_configs.py's vocabulary). `size` is
+    the cube edge length / sphere-and-cylinder radius, in meters."""
+    if shape == "cube":
+        geom = UsdGeom.Cube.Define(stage, prim_path)
+        geom.CreateSizeAttr(size)
+    elif shape == "sphere":
+        geom = UsdGeom.Sphere.Define(stage, prim_path)
+        geom.CreateRadiusAttr(size / 2.0)
+    elif shape == "cylinder":
+        geom = UsdGeom.Cylinder.Define(stage, prim_path)
+        geom.CreateRadiusAttr(size / 2.0)
+        geom.CreateHeightAttr(size)
+    else:
+        raise ValueError(f"unknown shape {shape!r} -- expected cube/sphere/cylinder")
+
+    geom.AddTranslateOp().Set(Gf.Vec3d(*position))
+    geom.CreateDisplayColorAttr([Gf.Vec3f(*color)])
+    prim = geom.GetPrim()
     UsdPhysics.CollisionAPI.Apply(prim)
     UsdPhysics.RigidBodyAPI.Apply(prim)
     mass_api = UsdPhysics.MassAPI.Apply(prim)
     mass_api.CreateMassAttr(0.05)  # 50g -- light enough for a small parallel gripper
-    return cube
+    return geom
+
+
+def add_cube(stage, prim_path, position, size=0.04, color=(0.8, 0.1, 0.1)):
+    """Phase 1-5's single-object case -- thin wrapper so existing callers
+    (scripted_pick_place.py, collect_demos.py, residual_rl_train_env.py via
+    pick_place_scene.reset()) don't need to change."""
+    return add_shape(stage, "cube", prim_path, position, size=size, color=color)
 
 
 def add_place_target_marker(stage, prim_path, position, size=0.10):

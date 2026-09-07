@@ -15,3 +15,19 @@ vla_policy_client:
     base_image_topic: "/camera/base/image_raw"
     wrist_image_topic: "/camera/wrist/image_raw"
     max_steps: 300
+    # Phase 4 (optional) -- see ../../isaac/train_residual_policy.py and
+    # README.md. 'false' (default) = pi0's action applied as-is.
+    use_residual_policy: false
+    residual_model_path: ""
+    residual_scale: 0.05
+    # Offline evaluation -- isaac_sim backend only. Runs n_trials episodes
+    # back-to-back and logs (trial, success, steps, xy_error_mm) rows to
+    # results_csv_path, in the same shape hybrid_pick_place_demo.py and
+    # openvla_pick_place_demo.py use, for a direct 3-way comparison.
+    eval_mode: false
+    n_trials: 20
+    success_xy_tolerance_m: 0.03
+    holding_gripper_threshold: 0.5
+    lifted_z_threshold: 0.03
+    eval_target_position: [0.45, 0.30, 0.0]  # must match isaac/pick_place_scene.py's PLACE_TARGET_POSITION
+    results_csv_path: "vla_eval_results.csv"

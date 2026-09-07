@@ -31,8 +31,9 @@ from isaacsim.core.prims import Articulation
 from isaac_sim_common import (
     UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH, TOOL_LINK_PRIM_PATH,
     add_gripper, GripperController, setup_rmpflow, prim_world_pose,
-    add_cube, add_place_target_marker,
+    add_cube, add_shape, add_place_target_marker,
 )
+import object_configs
 
 CUBE_PRIM_PATH = "/World/cube"
 TARGET_MARKER_PRIM_PATH = "/World/place_target"
@@ -53,6 +54,19 @@ BASE_CAMERA_POSITION = (0.9, 0.0, 0.5)
 # 256x256 matches openpi's LIBERO example image shape -- keep the
 # training-side transform (UR5eInputs) consistent with whatever's set here.
 CAMERA_RESOLUTION = (256, 256)
+
+# Base camera's horizontal FOV, realized via focal length / aperture below
+# so camera_projection.py's pinhole math (which takes this same value) is
+# actually accurate -- ADJUST alongside BASE_CAMERA_FOCAL_LENGTH_MM if you
+# change the camera's framing; the two must stay consistent.
+BASE_CAMERA_HORIZONTAL_FOV_DEG = 60.0
+BASE_CAMERA_FOCAL_LENGTH_MM = 24.0
+
+# Multi-object scene (isaac/object_configs.py's vocabulary) used by the LLM
+# + open-vocabulary hybrid pipeline (hybrid_pick_place_demo.py) -- kept
+# separate from the single-cube CUBE_PRIM_PATH/reset() Phase 1-5 already use.
+OBJECTS_PARENT_PRIM_PATH = "/World/objects"
+MIN_OBJECT_SEPARATION_M = 0.12  # reject a random layout where two objects would overlap/collide
 
 
 class PickPlaceScene:
@@ -88,6 +102,15 @@ class PickPlaceScene:
         # potato_scan's scan_controller does for its camera poses) if the
         # render looks off.
         base_cam.AddRotateXYZOp().Set(Gf.Vec3d(0.0, 55.0, 180.0))
+        # Realize BASE_CAMERA_HORIZONTAL_FOV_DEG via focal length/aperture so
+        # camera_projection.py's pinhole math (fed that same constant) is
+        # actually accurate -- ADJUST if this doesn't match the rendered FOV
+        # on your Isaac Sim version's camera attribute conventions.
+        import math
+        horizontal_aperture_mm = 2.0 * BASE_CAMERA_FOCAL_LENGTH_MM * math.tan(
+            math.radians(BASE_CAMERA_HORIZONTAL_FOV_DEG) / 2.0)
+        base_cam.CreateFocalLengthAttr(BASE_CAMERA_FOCAL_LENGTH_MM)
+        base_cam.CreateHorizontalApertureAttr(horizontal_aperture_mm)
 
         wrist_cam = UsdGeom.Camera.Define(self.stage, WRIST_CAMERA_PRIM_PATH)
         wrist_cam.AddTranslateOp().Set(Gf.Vec3d(*WRIST_CAMERA_OFFSET))
@@ -135,6 +158,23 @@ class PickPlaceScene:
         self.gripper.set_target(target_gripper)
         self.world.step(render=True)
 
+    def apply_joint_targets(self, joint_positions, gripper_target):
+        """Low-level control primitive for policies that already output
+        joint-space actions (openpi's UR5e contract, and anything built on
+        top of it like the residual RL policy in residual_rl_train_env.py)
+        -- sets the articulation's joint position targets DIRECTLY, no
+        RMPflow/Cartesian IK involved. Contrast with step_towards, which is
+        Cartesian-space and RMPflow-driven, used only by the scripted
+        demonstrator. Same direct-joint-target approach
+        pick_place_scene_bridge.py already uses inline for real-time policy
+        inference; factored out here so residual_rl_train_env.py doesn't
+        have to duplicate it."""
+        current = np.asarray(self.robot.get_joint_positions())
+        current[0, :6] = np.asarray(joint_positions, dtype=float)[:6]
+        self.robot.set_joint_position_targets(current)
+        self.gripper.set_target(gripper_target)
+        self.world.step(render=True)
+
     def get_observation(self):
         tool_pos, tool_quat = prim_world_pose(self.stage.GetPrimAtPath(TOOL_LINK_PRIM_PATH))
         # ADJUST: assumes the arm's 6 DoF are the first 6 entries in the
@@ -155,3 +195,59 @@ class PickPlaceScene:
     def get_cube_position(self):
         pos, _ = prim_world_pose(self.stage.GetPrimAtPath(CUBE_PRIM_PATH))
         return pos
+
+    def get_object_position(self, prim_path):
+        """Ground-truth world position of any prim spawned by
+        spawn_random_objects -- used by hybrid_pick_place_demo.py to check
+        whether the object actually named/moved matches the one the LLM +
+        detector picked, and whether it ended up in the target zone."""
+        pos, _ = prim_world_pose(self.stage.GetPrimAtPath(prim_path))
+        return pos
+
+    def get_base_camera_pose(self):
+        """(position, rotation_matrix) of the base camera, read from its
+        actual USD transform -- used by hybrid_pick_place_demo.py with
+        camera_projection.py rather than re-deriving the rotation from the
+        Euler constants in _setup_cameras, so any convention mismatch
+        between USD's RotateXYZ and camera_projection's expected matrix is
+        sidestepped entirely (the ground-truth transform is read back
+        directly, the same prim_world_pose helper used everywhere else in
+        this file)."""
+        from scipy.spatial.transform import Rotation as Rot
+        pos, quat_xyzw = prim_world_pose(self.stage.GetPrimAtPath(BASE_CAMERA_PRIM_PATH))
+        return pos, Rot.from_quat(quat_xyzw).as_matrix()
+
+    def spawn_random_objects(self, n=3):
+        """Multi-object scene for the LLM + open-vocabulary hybrid pipeline
+        (hybrid_pick_place_demo.py) -- separate from the single-cube
+        CUBE_PRIM_PATH/reset() Phase 1-5 already use, so this is purely
+        additive. Clears any previously-spawned objects, then spawns `n`
+        distinct (color, shape) pairs from object_configs.OBJECT_VOCABULARY
+        at random non-overlapping positions. Returns
+        {description: {"prim_path", "position"}}."""
+        if self.stage.GetPrimAtPath(OBJECTS_PARENT_PRIM_PATH).IsValid():
+            self.stage.RemovePrim(OBJECTS_PARENT_PRIM_PATH)
+
+        chosen = object_configs.sample_objects(n, self._rng)
+        positions = []
+        objects = {}
+        for i, (color, shape) in enumerate(chosen):
+            for _ in range(20):  # a handful of rejection-sampling attempts per object
+                candidate = np.array([
+                    self._rng.uniform(*CUBE_X_RANGE),
+                    self._rng.uniform(*CUBE_Y_RANGE),
+                    CUBE_Z,
+                ])
+                if all(np.linalg.norm(candidate[:2] - p[:2]) >= MIN_OBJECT_SEPARATION_M for p in positions):
+                    break
+            positions.append(candidate)
+
+            prim_path = f"{OBJECTS_PARENT_PRIM_PATH}/obj_{i}"
+            add_shape(self.stage, shape, prim_path, candidate, color=object_configs.COLOR_RGB[color])
+            objects[object_configs.description(color, shape)] = {
+                "prim_path": prim_path, "position": candidate,
+            }
+
+        self.world.reset()
+        self.gripper.open()
+        return objects

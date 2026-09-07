@@ -36,7 +36,8 @@ enable_extension("isaacsim.ros2.bridge")  # makes rclpy importable/usable in thi
 import rclpy  # noqa: E402
 from rclpy.node import Node  # noqa: E402
 from sensor_msgs.msg import JointState, Image  # noqa: E402
-from std_msgs.msg import Float32  # noqa: E402
+from std_msgs.msg import Float32, Empty  # noqa: E402
+from geometry_msgs.msg import Point  # noqa: E402
 from cv_bridge import CvBridge  # noqa: E402
 
 from pick_place_scene import PickPlaceScene  # noqa: E402
@@ -46,6 +47,13 @@ GRIPPER_TARGET_TOPIC = "/vla/gripper_target"
 JOINT_STATE_TOPIC = "/vla/joint_state"
 BASE_IMAGE_TOPIC = "/vla/base_image"
 WRIST_IMAGE_TOPIC = "/vla/wrist_image"
+# Evaluation-only signals: ground-truth cube position (for offline
+# success/failure judging) and a trial-reset trigger. Consumed only by
+# vla_policy_client.py's eval_mode -- NOT part of the policy's own
+# observation (see residual_rl_train_env.py's docstring on why privileged
+# sim state stays out of anything the policy itself sees).
+EVAL_CUBE_POSITION_TOPIC = "/vla/eval/cube_position"
+EVAL_RESET_TOPIC = "/vla/eval/reset"
 
 
 class PickPlaceSceneBridge(Node):
@@ -56,17 +64,27 @@ class PickPlaceSceneBridge(Node):
         self.joint_state_pub = self.create_publisher(JointState, JOINT_STATE_TOPIC, 10)
         self.base_image_pub = self.create_publisher(Image, BASE_IMAGE_TOPIC, 10)
         self.wrist_image_pub = self.create_publisher(Image, WRIST_IMAGE_TOPIC, 10)
+        self.eval_cube_position_pub = self.create_publisher(Point, EVAL_CUBE_POSITION_TOPIC, 10)
 
         self.latest_joint_target = None
         self.latest_gripper_target = 0.0
+        self.reset_requested = False
         self.create_subscription(JointState, JOINT_TARGET_TOPIC, self._on_joint_target, 10)
         self.create_subscription(Float32, GRIPPER_TARGET_TOPIC, self._on_gripper_target, 10)
+        self.create_subscription(Empty, EVAL_RESET_TOPIC, self._on_reset_request, 10)
 
     def _on_joint_target(self, msg: JointState):
         self.latest_joint_target = np.array(msg.position, dtype=float)
 
     def _on_gripper_target(self, msg: Float32):
         self.latest_gripper_target = float(msg.data)
+
+    def _on_reset_request(self, msg: Empty):
+        self.reset_requested = True
+
+    def publish_cube_position(self, scene):
+        pos = scene.get_cube_position()
+        self.eval_cube_position_pub.publish(Point(x=float(pos[0]), y=float(pos[1]), z=float(pos[2])))
 
     def publish_observation(self, obs):
         js = JointState()
@@ -94,6 +112,12 @@ def main():
         while simulation_app.is_running():
             rclpy.spin_once(bridge, timeout_sec=0.0)
 
+            if bridge.reset_requested:
+                scene.reset()
+                bridge.reset_requested = False
+                bridge.latest_joint_target = None
+                bridge.latest_gripper_target = 0.0
+
             if bridge.latest_joint_target is not None:
                 current = np.asarray(scene.robot.get_joint_positions())
                 current[0, :6] = bridge.latest_joint_target[:6]
@@ -102,6 +126,7 @@ def main():
             scene.world.step(render=True)
 
             bridge.publish_observation(scene.get_observation())
+            bridge.publish_cube_position(scene)
     except KeyboardInterrupt:
         pass
     finally:

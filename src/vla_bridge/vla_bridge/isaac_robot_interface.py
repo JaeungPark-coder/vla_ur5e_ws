@@ -29,7 +29,18 @@ class IsaacSimRobotInterface:
     def __init__(self, node, joint_target_topic='/vla/joint_target',
                  gripper_target_topic='/vla/gripper_target',
                  joint_state_topic='/vla/joint_state',
-                 settle_timeout_s=3.0, joint_tolerance_rad=0.02):
+                 settle_timeout_s=3.0, joint_tolerance_rad=0.02,
+                 callback_group=None):
+        """callback_group: pass a ReentrantCallbackGroup shared with the
+        calling node's timer, spun via a MultiThreadedExecutor -- move_joints
+        below blocks polling get_joint_positions() from inside that timer
+        callback, and the joint_state subscription that actually refreshes
+        it needs to run concurrently with that poll, not queued behind it.
+        A single-threaded executor (or leaving this on the node's default
+        MutuallyExclusiveCallbackGroup) would never service this
+        subscription while the timer callback is still running, so the
+        polled value would never change and every move would just time out
+        -- see vla_policy_client.py's main()."""
         self.node = node
         self.settle_timeout_s = settle_timeout_s
         self.joint_tolerance_rad = joint_tolerance_rad
@@ -38,7 +49,8 @@ class IsaacSimRobotInterface:
         self.gripper_target_pub = node.create_publisher(Float32, gripper_target_topic, 10)
 
         self._latest_joint_state = None
-        node.create_subscription(JointState, joint_state_topic, self._on_joint_state, 10)
+        node.create_subscription(
+            JointState, joint_state_topic, self._on_joint_state, 10, callback_group=callback_group)
 
     def _on_joint_state(self, msg: JointState):
         self._latest_joint_state = msg
