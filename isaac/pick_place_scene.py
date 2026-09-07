@@ -206,15 +206,21 @@ class PickPlaceScene:
         -- sets the articulation's joint position targets DIRECTLY, no
         RMPflow/Cartesian IK involved. Contrast with step_towards, which is
         Cartesian-space and RMPflow-driven, used only by the scripted
-        demonstrator. Same direct-joint-target approach
-        pick_place_scene_bridge.py already uses inline for real-time policy
-        inference; factored out here so residual_rl_train_env.py doesn't
-        have to duplicate it."""
-        current = np.asarray(self.robot.get_joint_positions())
-        current[0, :6] = np.asarray(joint_positions, dtype=float)[:6]
-        self.robot.set_joint_position_targets(current)
+        demonstrator. Same apply_action(ArticulationAction(...)) approach
+        pick_place_scene_bridge.py uses inline for real-time policy
+        inference (self.robot is a SingleArticulation, unbatched -- see
+        __init__'s comment -- not the vectorized Articulation class, so
+        set_joint_position_targets isn't available/correct here); factored
+        out here so residual_rl_train_env.py doesn't have to duplicate it.
+        Also re-syncs the gripper to the flange afterward, same as
+        step_towards -- it's a top-level, not USD-parented prim that only
+        stays attached via this per-tick teleport."""
+        from isaacsim.core.utils.types import ArticulationAction
+        self.robot.apply_action(
+            ArticulationAction(joint_positions=np.asarray(joint_positions, dtype=float)[:6]))
         self.gripper.set_target(gripper_target)
         self.world.step(render=True)
+        self._sync_gripper_to_flange()
 
     def get_observation(self):
         tool_pos, tool_quat = prim_world_pose(self.stage.GetPrimAtPath(TOOL_LINK_PRIM_PATH))
