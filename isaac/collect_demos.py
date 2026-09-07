@@ -46,7 +46,8 @@ def _to_rgb_uint8(rgba_or_rgb):
 
 
 def collect(num_episodes: int, repo_id: str, push_to_hub: bool):
-    from lerobot.common.datasets.lerobot_dataset import HF_LEROBOT_HOME, LeRobotDataset
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    from lerobot.utils.constants import HF_LEROBOT_HOME
 
     output_path = HF_LEROBOT_HOME / repo_id
     if output_path.exists():
