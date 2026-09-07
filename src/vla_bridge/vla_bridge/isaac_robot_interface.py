@@ -58,7 +58,12 @@ class IsaacSimRobotInterface:
     def get_joint_positions(self):
         if self._latest_joint_state is None:
             return None
-        return np.array(self._latest_joint_state.position)
+        # pick_place_scene_bridge.py's publish_observation() appends the
+        # gripper position as a 7th element after the 6 arm joints -- slice
+        # it off here so this matches UR5eInterface.get_joint_positions()'s
+        # 6-dim contract (both the settle-check below and vla_policy_client's
+        # move_joints() calls compare this against a 6-dim target).
+        return np.array(self._latest_joint_state.position[:6])
 
     def get_tcp_pose(self):
         # Not used by the VLA client (which works in joint space throughout)

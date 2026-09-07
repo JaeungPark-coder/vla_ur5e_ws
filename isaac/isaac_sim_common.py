@@ -153,9 +153,25 @@ class GripperController:
         pose. Since GRIPPER_PRIM_PATH is a top-level prim (not USD-parented
         under the arm, see that constant's comment), this is what keeps it
         visually/functionally attached to the flange -- call once per tick,
-        after the arm has moved (see PickPlaceScene.step_towards)."""
+        after the arm has moved (see PickPlaceScene.step_towards).
+
+        CONFIRMED (2026-09-07, actual Isaac Sim run) root cause of a crash
+        that killed collect_demos.py's smoke test ~2 episodes in ("Invalid
+        PhysX transform detected" spam on every gripper/arm link followed by
+        "PhysX error: Illegal BroadPhaseUpdateData", then a silent native
+        exit): set_world_poses() only calls physics_view.set_root_transforms
+        -- it does NOT touch velocities (checked its actual source). Every
+        tick this snaps the body to a new position without zeroing the
+        linear/angular velocity left over from the PREVIOUS tick's collision
+        response (e.g. while interpenetrating wrist_3_link, see add_gripper's
+        KNOWN GAP comment), so PhysX's broadphase does velocity-swept AABB
+        prediction off an increasingly bogus velocity that never gets reset
+        -- eventually producing an invalid/NaN-ish bound it rejects outright.
+        Zeroing the root velocity right after every teleport keeps each
+        step's kinematic snap self-contained instead of compounding."""
         quat_wxyz = np.array([[flange_quat_xyzw[3], flange_quat_xyzw[0], flange_quat_xyzw[1], flange_quat_xyzw[2]]])
         self.articulation.set_world_poses(positions=np.asarray([flange_pos]), orientations=quat_wxyz)
+        self.articulation.set_velocities(np.zeros((1, 6)))
 
     def open(self):
         self.set_target(0.0)

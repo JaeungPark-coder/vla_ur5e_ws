@@ -112,6 +112,7 @@ class PickPlaceScene:
         self._setup_cameras()
         self._rng = np.random.default_rng()
         self.cube_position = None
+        self._object_spawn_generation = 0
 
     def _setup_cameras(self):
         base_cam = UsdGeom.Camera.Define(self.stage, BASE_CAMERA_PRIM_PATH)
@@ -131,9 +132,22 @@ class PickPlaceScene:
             math.radians(BASE_CAMERA_HORIZONTAL_FOV_DEG) / 2.0)
         base_cam.CreateFocalLengthAttr(BASE_CAMERA_FOCAL_LENGTH_MM)
         base_cam.CreateHorizontalApertureAttr(horizontal_aperture_mm)
+        # CONFIRMED (2026-09-07, by inspecting an actual collected dataset): a
+        # USD camera's default clippingRange is (1.0, 1000000) -- a 1 METRE
+        # near plane. The base camera sits ~0.66m from the cube and the wrist
+        # camera a few centimetres from it, so BOTH were clipping the entire
+        # task away: the first 100-episode collection came out with
+        # all-black wrist_image frames (mean=0.0, std=0.0) and base frames
+        # containing zero red pixels, i.e. the cube was never once visible in
+        # the training data. Verified separately in the sibling potato_scan
+        # project by a camera-distance sweep: with the default range, zero
+        # points land on a target 0.15m away; with near=0.01 the same pose
+        # returns tens of thousands.
+        base_cam.CreateClippingRangeAttr().Set(Gf.Vec2f(0.01, 10000.0))
 
         wrist_cam = UsdGeom.Camera.Define(self.stage, WRIST_CAMERA_PRIM_PATH)
         wrist_cam.AddTranslateOp().Set(Gf.Vec3d(*WRIST_CAMERA_OFFSET))
+        wrist_cam.CreateClippingRangeAttr().Set(Gf.Vec2f(0.01, 10000.0))
 
         self.base_rp = rep.create.render_product(BASE_CAMERA_PRIM_PATH, CAMERA_RESOLUTION)
         self.wrist_rp = rep.create.render_product(WRIST_CAMERA_PRIM_PATH, CAMERA_RESOLUTION)
@@ -271,9 +285,25 @@ class PickPlaceScene:
         additive. Clears any previously-spawned objects, then spawns `n`
         distinct (color, shape) pairs from object_configs.OBJECT_VOCABULARY
         at random non-overlapping positions. Returns
-        {description: {"prim_path", "position"}}."""
+        {description: {"prim_path", "position"}}.
+
+        CONFIRMED (2026-09-07, actual Isaac Sim run) root cause of a native
+        RTX/Hydra crash ("invalid points buffer, expected 8, got N" on
+        objN, then a hard crash inside librtx.scenedb/librtx.hydra a couple
+        episodes later, in BOTH headless and GUI runs): reusing the same
+        prim path (f"{...}/obj_{i}") across spawns while its USD TYPE
+        changes (obj_1 is a Cube one episode, a Sphere the next -- shapes
+        are assigned by index, not fixed per slot) leaves Hydra's
+        per-path render-index entry holding the PREVIOUS type's cached
+        topology (a Cube's implicit 8-point proxy) against the NEW prim's
+        real geometry (a tessellated sphere/cylinder mesh has far more
+        points) -- exactly matching the "expected 8, got N" pattern.
+        Giving every spawn generation its own fresh prim paths (instead of
+        RemovePrim + redefine at the SAME path) means Hydra only ever sees
+        brand-new paths, never a type change at an existing one."""
         if self.stage.GetPrimAtPath(OBJECTS_PARENT_PRIM_PATH).IsValid():
             self.stage.RemovePrim(OBJECTS_PARENT_PRIM_PATH)
+        self._object_spawn_generation += 1
 
         chosen = object_configs.sample_objects(n, self._rng)
         positions = []
@@ -289,12 +319,20 @@ class PickPlaceScene:
                     break
             positions.append(candidate)
 
-            prim_path = f"{OBJECTS_PARENT_PRIM_PATH}/obj_{i}"
+            prim_path = f"{OBJECTS_PARENT_PRIM_PATH}/gen{self._object_spawn_generation}_obj_{i}"
             add_shape(self.stage, shape, prim_path, candidate, color=object_configs.COLOR_RGB[color])
             objects[object_configs.description(color, shape)] = {
                 "prim_path": prim_path, "position": candidate,
             }
 
+        # Same hard-reset dance reset() does above: a non-soft world.reset()
+        # invalidates self.robot's physics handles (see __init__'s comment),
+        # and a fresh reset hasn't rendered a frame yet so the camera
+        # annotators would return empty arrays to whatever calls
+        # get_observation() right after this (e.g. hybrid_pick_place_demo.py).
         self.world.reset()
+        self.robot.initialize()
+        self._sync_gripper_to_flange()
         self.gripper.open()
+        self.world.step(render=True)
         return objects

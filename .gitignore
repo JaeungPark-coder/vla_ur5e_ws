@@ -10,5 +10,12 @@ log/
 checkpoints/
 *.safetensors
 
+# Collected demonstration data (collect_rlds_episodes.py writes GBs of .npy
+# here; the LeRobot side lives outside the repo under HF_LEROBOT_HOME)
+openvla_integration/raw_episodes/
+models/
+rl_logs/
+*_eval_results.csv
+
 # Editor
 .vscode/
