@@ -41,12 +41,52 @@ from scripted_pick_place import ScriptedPickPlace  # noqa: E402
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "openvla_integration", "raw_episodes")
 
 
-def _pose_vec(position, quat_xyzw):
-    """(3,) position + (3,) rotation-vector -- a compact 6-dof pose
-    representation, consistent between state and the action-delta
-    computation below."""
-    rotvec = Rot.from_quat(quat_xyzw).as_rotvec()
-    return np.concatenate([position, rotvec])
+# ADJUST: standard ROS/URDF extrinsic-XYZ RPY, matching scipy's as_euler("xyz")
+# / from_euler("xyz") -- the best-supported guess for OXE's actual axis
+# convention (OpenVLA's public transforms.py defers this dataset-specific
+# rotation handling to an undefined `relabel_bridge_actions` helper, so it
+# could not be pinned down from source). Verify against a real OpenVLA
+# checkout's dataloader before trusting this verbatim, same posture as every
+# other ADJUST marker in this project.
+EULER_SEQ = "xyz"
+
+
+def _state_vec(position, quat_xyzw, gripper):
+    """(8,) state matching OpenVLA's StateEncoding.POS_EULER exactly: EEF
+    XYZ(3) + Roll-Pitch-Yaw(3) + PAD(1) + Gripper(1) -- verified against
+    OpenVLA's own prismatic/vla/datasets/rlds/oxe/configs.py source
+    (2026-09-11), not guessed. A previous version of this file logged a
+    7-dim (xyz + rotvec, no PAD slot) vector -- one dimension short of what
+    POS_EULER's fixed-index unpacking expects, so every field from the
+    rotation onward would land one slot to the left of where OpenVLA reads
+    it. See verify_action_encoding.py, which round-trips this against the
+    scripted expert's own trajectory."""
+    rpy = Rot.from_quat(quat_xyzw).as_euler(EULER_SEQ)
+    return np.concatenate([position, rpy, [0.0], [gripper]]).astype(np.float32)
+
+
+def _delta_action(prev_pos, prev_quat_xyzw, next_pos, next_quat_xyzw, next_gripper):
+    """(7,) action matching OpenVLA's ActionEncoding.EEF_POS: EEF Delta
+    XYZ(3) + Delta Roll-Pitch-Yaw(3) + Gripper(1).
+
+    Delta ORIENTATION is NOT `next_rpy - prev_rpy`, and a previous version of
+    this file computed the (then-rotvec) rotational delta by exactly that
+    kind of plain vector subtraction -- which is only valid in the
+    infinitesimal limit, and produces wildly wrong deltas whenever the
+    logged rotation sits near a representation singularity. This project's
+    entire scripted trajectory holds the gripper at
+    scripted_pick_place.DOWNWARD_ROTVEC = [0, pi, 0], exactly the rotvec
+    representation's worst point (|rotvec| = pi, the antipodal wraparound) --
+    verify_action_encoding.py's stress test showed plain-subtraction deltas
+    inflated >10x their true physical size on 243/499 ticks under realistic
+    (1-4 deg) RMPflow tracking noise. Composing the actual relative rotation
+    (prev.inv() * next) before converting to Euler avoids that regardless of
+    representation or noise level."""
+    delta_pos = np.asarray(next_pos, dtype=float) - np.asarray(prev_pos, dtype=float)
+    r_prev = Rot.from_quat(prev_quat_xyzw)
+    r_next = Rot.from_quat(next_quat_xyzw)
+    delta_rpy = (r_prev.inv() * r_next).as_euler(EULER_SEQ)
+    return np.concatenate([delta_pos, delta_rpy, [next_gripper]]).astype(np.float32)
 
 
 def collect_episode(scene, target_description, target_position):
@@ -54,22 +94,22 @@ def collect_episode(scene, target_description, target_position):
     policy = ScriptedPickPlace(obs["tool_pos"], target_position, PLACE_TARGET_POSITION)
 
     steps = []
-    prev_pose = _pose_vec(obs["tool_pos"], obs["tool_quat"])
+    prev_pos, prev_quat = obs["tool_pos"], obs["tool_quat"]
     prev_gripper = float(obs["gripper"][0])
 
     for target_pos, target_rotvec, target_gripper in policy.generate_frames():
         image = np.ascontiguousarray(np.asarray(scene.get_observation()["base_rgb"])[..., :3])
-        state = np.concatenate([prev_pose, [prev_gripper]]).astype(np.float32)  # (7,): xyz+rotvec+gripper
+        state = _state_vec(prev_pos, prev_quat, prev_gripper)  # (8,): xyz+rpy+pad+gripper
 
         scene.step_towards(target_pos, target_rotvec, target_gripper)
 
         next_obs = scene.get_observation()
-        next_pose = _pose_vec(next_obs["tool_pos"], next_obs["tool_quat"])
+        next_pos, next_quat = next_obs["tool_pos"], next_obs["tool_quat"]
         next_gripper = float(next_obs["gripper"][0])
 
         # Cartesian EE pose DELTA + absolute gripper -- the OpenVLA/Open-X
         # action convention, distinct from the π0 side's joint-space logging.
-        action = np.concatenate([next_pose - prev_pose, [next_gripper]]).astype(np.float32)
+        action = _delta_action(prev_pos, prev_quat, next_pos, next_quat, next_gripper)  # (7,)
 
         steps.append({
             "image": image,
@@ -78,7 +118,7 @@ def collect_episode(scene, target_description, target_position):
             "language_instruction": f"pick up the {target_description} and place it in the target zone",
         })
 
-        prev_pose, prev_gripper = next_pose, next_gripper
+        prev_pos, prev_quat, prev_gripper = next_pos, next_quat, next_gripper
 
     return steps
 

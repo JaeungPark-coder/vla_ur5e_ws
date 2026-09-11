@@ -24,11 +24,26 @@ Requires the RLDS dataset to already be built first:
 TRANSFORMS_PY_SNIPPET = '''
 def ur5e_pick_place_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     """collect_rlds_episodes.py's action is already (delta_xyz(3),
-    delta_rotvec(3), absolute_gripper(1)) -- matching most OXE conventions
-    directly, so this transform mostly just documents that rather than
-    reshaping anything. ADJUST if your OpenVLA version's EEF_POS action
-    encoding expects a different rotation representation (e.g. delta
-    axis-angle vs. delta euler) than the rotation-vector this project logs.
+    delta_roll_pitch_yaw(3), absolute_gripper(1)) and state is
+    (xyz(3), roll_pitch_yaw(3), pad(1)=0, gripper(1)) -- verified
+    (2026-09-11) against OpenVLA's own prismatic/vla/datasets/rlds/oxe/
+    configs.py source: StateEncoding.POS_EULER is exactly
+    "EEF XYZ(3) + Roll-Pitch-Yaw(3) + <PAD>(1) + Gripper(1)" and
+    ActionEncoding.EEF_POS is exactly "EEF Delta XYZ(3) + Roll-Pitch-Yaw(3) +
+    Gripper(1)" -- so this transform mostly just documents that rather than
+    reshaping anything. An earlier version of this file logged delta
+    ROTATION VECTORS instead (both a dimension short on the state side, and
+    wrong about the rotation representation on both sides); see
+    isaac/verify_action_encoding.py for the round-trip test that would have
+    caught it.
+
+    ADJUST still open: the exact Euler AXIS ORDER/convention OXE uses
+    (isaac/collect_rlds_episodes.py's EULER_SEQ = "xyz", i.e. scipy's
+    standard ROS/URDF extrinsic-XYZ RPY) could not be confirmed from
+    OpenVLA's public source -- transforms.py's bridge_orig transform defers
+    dataset-specific rotation handling to an undefined relabel_bridge_actions
+    helper. Check an actual OpenVLA checkout's dataloader before trusting
+    this axis order verbatim.
     """
     trajectory["action"] = tf.cast(trajectory["action"], tf.float32)
     return trajectory
@@ -42,8 +57,14 @@ CONFIGS_PY_SNIPPET = '''
     "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
     "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
     "state_obs_keys": ["state"],
-    "state_encoding": StateEncoding.POS_EULER,   # ADJUST: verify this enum name/value against your checkout
-    "action_encoding": ActionEncoding.EEF_POS,   # ADJUST: same
+    # Enum names/values confirmed (2026-09-11) against OpenVLA's own
+    # configs.py source -- POS_EULER=8-dim, EEF_POS=7-dim, both RPY-euler
+    # rotation, both matched exactly by collect_rlds_episodes.py's
+    # _state_vec/_delta_action. Still worth a final check against YOUR
+    # checkout in case these enums have drifted since (see this file's
+    # module docstring).
+    "state_encoding": StateEncoding.POS_EULER,
+    "action_encoding": ActionEncoding.EEF_POS,
 },
 '''
 

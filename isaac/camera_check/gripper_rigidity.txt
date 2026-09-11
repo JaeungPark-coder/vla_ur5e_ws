@@ -1,0 +1,42 @@
+writing this report to camera_check/gripper_rigidity.txt as well as stdout
+robot articulation joints: ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint', 'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint', 'finger_joint', 'right_outer_knuckle_joint', 'left_inner_finger_joint', 'right_inner_finger_joint', 'left_inner_finger_knuckle_joint', 'right_inner_finger_knuckle_joint']
+
+tracking ['base_link', 'left_inner_finger', 'right_inner_finger'] under /World/ur5e/Gripper/Robotiq_2F_85
+(pose in the tool0 frame -- a rigidly attached gripper reads the same at every pose)
+
+  physics vs USD readings of the same links (they should agree; where they do not, USD is stale):
+    base_link            physics [ 0.  0. -0.] mm   usd [ 0.  0. -0.] mm
+    left_inner_finger    physics [ 0.  0. -0.] mm   usd [ 0.  0. -0.] mm
+    right_inner_finger   physics [-0.1  0.  -0. ] mm   usd [-0.1  0.  -0. ] mm
+
+  [pose 0] commanded tool0 [0.45 0.   0.35], arm q=[-0.29  -1.28   1.5    1.187  1.556 -0.362]
+    base_link            pos [ 0.  0. -0.] mm   rot [  9.1 -90.  -99.1] deg
+    left_inner_finger    pos [ 0.  0. -0.] mm   rot [-90. -90.   0.] deg
+    right_inner_finger   pos [-0.1  0.  -0. ] mm   rot [  0.  -90.  -90.1] deg
+
+  [pose 1] commanded tool0 [0.35 0.25 0.45], arm q=[ 0.298 -1.254  1.347  1.58   1.571  0.328]
+    base_link            pos [ 0. -0. -0.] mm   rot [  89.  -90. -179.] deg
+    left_inner_finger    pos [-0. -0. -0.] mm   rot [  69.8  -90.  -159.8] deg
+    right_inner_finger   pos [ 0.2 -0.1 -0. ] mm   rot [102.5 -90.  167.6] deg
+
+  [pose 2] commanded tool0 [ 0.55 -0.2   0.3 ], arm q=[-0.6   -0.815  1.025  1.405  1.593 -0.447]
+    base_link            pos [-0.  0. -0.] mm   rot [-90. -90.   0.] deg
+    left_inner_finger    pos [-0.1 -0.1 -0. ] mm   rot [-113.6  -90.    23.5] deg
+    right_inner_finger   pos [ 0. -0. -0.] mm   rot [-10.2 -90.  -79.8] deg
+
+  [pose 3] commanded tool0 [0.4 0.  0.5], arm q=[-0.345 -1.334  1.32   1.685  1.574 -0.314]
+    base_link            pos [ 0.  0. -0.] mm   rot [  34.9  -90.  -124.9] deg
+    left_inner_finger    pos [-0.1 -0.1 -0. ] mm   rot [  14.8  -90.  -104.9] deg
+    right_inner_finger   pos [ 0.2 -0.1 -0. ] mm   rot [  31.2  -90.  -121.1] deg
+
+--- verdict ---
+  base_link            position varies    0.00 mm, orientation   0.00 deg
+  left_inner_finger    position varies    0.15 mm, orientation   0.13 deg
+  right_inner_finger   position varies    0.27 mm, orientation   0.16 deg
+
+  RIGID. The grasp point sits at [ 0. -0. -0.] mm in the tool0 frame (0.0 mm out).
+  approach direction in tool0: [ 0.3737 -0.9276 -0.0023]
+  opening axis in tool0:       [ 9.799e-01 -1.996e-01 -1.000e-04]
+
+  set GRIPPER_TCP_IN_TOOL0 = [0.0, -0.0, -0.0]
+      GRIPPER_OPENING_AXIS_IN_TOOL0 = [0.9799, -0.1996, -0.0001]
