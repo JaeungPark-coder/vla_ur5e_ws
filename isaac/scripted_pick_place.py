@@ -59,5 +59,16 @@ class ScriptedPickPlace:
                 yield interpolated_pos, DOWNWARD_ROTVEC, target_gripper
             current_pos = target_pos
 
+    def frames_until_grasp(self):
+        """Frame index at which the gripper has just finished closing on the
+        cube -- the approach/descend/close segments, before the lift.
+
+        Exposed because callers that want to look at "the grasp" were
+        guessing a fraction of total_frames() and getting it wrong:
+        check_cameras.py used 45%, which is frame 94 of 210, i.e. 19 frames
+        INTO the lift, with the tool already 14.5 cm away from the cube. The
+        boundary is a property of the waypoint list, so read it from there."""
+        return sum(num_ticks for _, _, num_ticks in self.waypoints[:3])
+
     def total_frames(self):
         return sum(num_ticks for _, _, num_ticks in self.waypoints)

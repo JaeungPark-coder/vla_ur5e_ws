@@ -21,11 +21,17 @@ import rtde_io
 
 
 class UR5eInterface:
-    def __init__(self, robot_ip, speed=0.25, acceleration=0.5, gripper_output_pin=0):
+    def __init__(self, robot_ip, speed=0.25, acceleration=0.5, gripper_output_pin=0,
+                 servo_time=0.1, servo_lookahead_time=0.1, servo_gain=300):
         self.robot_ip = robot_ip
         self.speed = speed
         self.acceleration = acceleration
         self.gripper_output_pin = gripper_output_pin
+        # servoJ parameters -- see move_joints. servo_time should match the
+        # control period of whatever is streaming targets.
+        self.servo_time = servo_time
+        self.servo_lookahead_time = servo_lookahead_time
+        self.servo_gain = servo_gain
         self.control = rtde_control.RTDEControlInterface(robot_ip)
         self.receive = rtde_receive.RTDEReceiveInterface(robot_ip)
         self.io = rtde_io.RTDEIOInterface(robot_ip)
@@ -41,13 +47,52 @@ class UR5eInterface:
         return result is not False
 
     def move_joints(self, joint_positions, speed=None, acceleration=None):
-        """Direct joint-space move -- used when applying a VLA policy's
-        joint-space action chunk (openpi's UR5e contract logs/predicts
-        joint positions, not Cartesian poses -- see
-        ../../../openpi_integration/ur5e_pick_place_policy.py)."""
+        """Stream a joint-space target for a policy running at a fixed rate.
+
+        Uses servoJ, NOT moveJ. moveJ is a blocking point-to-point move: it
+        plans a full trapezoidal accel/cruise/decel profile to the target and
+        only returns once the arm is there. For the small per-tick deltas a
+        VLA policy emits that is wrong twice over -- the arm re-accelerates
+        from rest every tick, so motion comes out stuttering rather than
+        continuous; and each call takes longer than the control period (at
+        speed=0.25 rad/s, acceleration=0.5 rad/s^2 even a 0.02 rad step needs
+        ~0.4 s against a 100 ms budget at control_hz=10), which pushes the
+        whole control loop behind.
+
+        servoJ is the real-time streaming counterpart: it returns immediately
+        and the controller keeps tracking the most recent target, so each new
+        command refines the motion instead of restarting it. `stop()` calls
+        servoStop() to end the servo mode cleanly.
+
+        `speed`/`acceleration` are accepted for interface compatibility and
+        ignored -- servoJ's own signature takes them but ur_rtde documents
+        them as unused; tracking is shaped by lookahead_time and gain.
+
+        ADJUST: servo_time should match the caller's control period
+        (vla_policy_client's control_hz). lookahead_time (0.03-0.2 s) smooths
+        the trajectory, gain (100-2000) sets how hard the controller pulls
+        toward the target -- raise gain for tighter tracking, lower it if the
+        arm feels harsh. Tune these on the real robot at low speed.
+        """
+        try:
+            result = self.control.servoJ(
+                list(np.asarray(joint_positions, dtype=float)),
+                0.0, 0.0,  # speed/acceleration: unused by servoJ
+                self.servo_time, self.servo_lookahead_time, self.servo_gain)
+        except RuntimeError:
+            return False
+        return result is not False
+
+    def move_joints_blocking(self, joint_positions, speed=None, acceleration=None):
+        """Point-to-point joint move that returns only once the arm arrives.
+
+        Kept for one-off repositioning (homing, moving to a start pose) --
+        anything that is a discrete move rather than a streamed one. Do not
+        use it inside a policy control loop; see move_joints."""
         try:
             result = self.control.moveJ(
-                list(np.asarray(joint_positions, dtype=float)), speed or self.speed, acceleration or self.acceleration)
+                list(np.asarray(joint_positions, dtype=float)),
+                speed or self.speed, acceleration or self.acceleration)
         except RuntimeError:
             return False
         return result is not False
@@ -72,6 +117,12 @@ class UR5eInterface:
         self.set_gripper(1.0)
 
     def stop(self):
+        """End servo mode and halt. servoStop() is the counterpart to
+        move_joints' servoJ; stopL alone leaves the servo loop running."""
+        try:
+            self.control.servoStop()
+        except RuntimeError:
+            pass
         self.control.stopL()
 
     def close(self):

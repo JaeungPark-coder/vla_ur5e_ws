@@ -25,7 +25,7 @@ import csv
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from sensor_msgs.msg import Image
 from std_msgs.msg import Empty
 from geometry_msgs.msg import Point
@@ -45,6 +45,27 @@ class VLAPolicyClient(Node):
         # inside _run_step's own timer callback, so that subscription needs
         # to run concurrently with _run_step, not queued behind it.
         self._cb_group = ReentrantCallbackGroup()
+        # The control loop gets its OWN mutually-exclusive group so it cannot
+        # overlap itself. ReentrantCallbackGroup does not merely let
+        # *different* callbacks run concurrently -- rclpy's
+        # ReentrantCallbackGroup.can_execute() returns True unconditionally,
+        # and Executor._make_handler clears the entity's _executor_event as
+        # soon as the timer is *taken* (which resets it), before awaiting the
+        # callback. So with a MultiThreadedExecutor the same timer is
+        # re-dispatched while the previous _run_step is still running.
+        #
+        # That matters here because _run_step blocks for far longer than its
+        # period: control_hz defaults to 10 (100 ms) while a single step does
+        # a policy.infer() round-trip plus a move_joints() that waits for the
+        # arm. Overlapping runs would publish conflicting joint targets, race
+        # on _step_count/_last_commanded_gripper, and -- worst -- call
+        # policy.infer() concurrently on one WebsocketClientPolicy, which is a
+        # single connection and not safe to share.
+        #
+        # Subscriptions stay in the reentrant group, so they still refresh
+        # while _run_step blocks; the two groups run concurrently under the
+        # MultiThreadedExecutor. Only self-overlap is forbidden.
+        self._control_cb_group = MutuallyExclusiveCallbackGroup()
 
         self.declare_parameter('robot_ip', '192.168.1.100')
         self.declare_parameter('robot_backend', 'rtde')  # 'rtde' (real UR5e) or 'isaac_sim'
@@ -106,7 +127,11 @@ class VLAPolicyClient(Node):
             self.robot = IsaacSimRobotInterface(self, callback_group=self._cb_group)
             image_topics = ('/vla/base_image', '/vla/wrist_image')
         else:
-            self.robot = UR5eInterface(self.get_parameter('robot_ip').value)
+            # servo_time must match this node's control period: servoJ is
+            # told how long each streamed target is meant to govern, so a
+            # mismatch either starves the controller or overruns the next tick.
+            self.robot = UR5eInterface(
+                self.get_parameter('robot_ip').value, servo_time=self.control_period_s)
             image_topics = (
                 self.get_parameter('base_image_topic').value,
                 self.get_parameter('wrist_image_topic').value,
@@ -157,7 +182,7 @@ class VLAPolicyClient(Node):
 
         self._step_count = 0
         self._timer = self.create_timer(
-            self.control_period_s, self._run_step, callback_group=self._cb_group)
+            self.control_period_s, self._run_step, callback_group=self._control_cb_group)
 
     def _on_base_image(self, msg: Image):
         self._base_image = self.cv_bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')

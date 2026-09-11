@@ -18,6 +18,8 @@ expected pattern but wasn't testable here) -- check Isaac Sim's own
 multi-camera replicator example if the two camera feeds come back
 cross-wired.
 """
+import math
+
 import numpy as np
 import omni.replicator.core as rep
 from pxr import UsdGeom, Gf
@@ -30,8 +32,9 @@ from isaacsim.core.prims import SingleArticulation
 
 from isaac_sim_common import (
     UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH, TOOL_LINK_PRIM_PATH,
-    add_gripper, GripperController, setup_rmpflow, prim_world_pose,
-    add_cube, add_shape, add_place_target_marker,
+    select_gripper_variant, add_gripper_colliders, GripperController, setup_rmpflow, prim_world_pose,
+    GRIPPER_VARIANT_SET_NAME,
+    add_cube, add_shape, add_place_target_marker, NullGripper,
 )
 import object_configs
 
@@ -47,10 +50,62 @@ CUBE_Y_RANGE = (-0.20, 0.20)
 CUBE_Z = 0.02  # resting height for a 4cm cube on the table surface
 PLACE_TARGET_POSITION = np.array([0.45, 0.30, 0.0])
 
-# Same eye-in-hand offset convention potato_scan's camera uses (translation
-# only, no extra rotation -- camera +Z follows tool0's own orientation).
-WRIST_CAMERA_OFFSET = (0.0, -0.05, 0.05)
+# Episode-outcome thresholds (see grasp_succeeded / place_error_m below).
+# The cube rests with its centre at CUBE_Z=0.02 and the scripted expert
+# lifts it ~0.15 m, so 0.08 cleanly separates "picked up" from "still on the
+# table" without demanding the full lift height.
+LIFT_Z_THRESHOLD = 0.08
+# Minimum peak red-cube pixel count the base camera must reach at some point
+# during an episode (see cube_pixels_visible). Measured on a real
+# collected episode with the cameras working: the peak is ~130 px. The first
+# broken run peaked at 0. 30 sits well clear of both.
+MIN_CUBE_PIXELS_IN_BASE_VIEW = 30
+# Fraction of a frame allowed to be near-black before the camera counts as
+# aimed past the scene rather than at it. Measured across real episodes: a
+# working base camera runs 0.03-0.10, while the mis-aimed wrist camera and
+# the clipped first run run 0.34-1.00.
+MAX_DARK_FRACTION = 0.30
+
+# Eye-in-hand mount geometry, in the flange frame.
+#
+# The camera sits BESIDE the tool axis, not on it, and is aimed at a point a
+# little way along that axis -- roughly where the tool tip and the object it
+# is reaching for both are. That is how a real wrist camera is bracketed, and
+# it avoids the two ways the earlier mounts failed: a fixed 5 cm offset put
+# the camera inside the UR5e's own wrist_3_link (solid black at every
+# orientation), and displacing it ALONG its viewing direction drove it
+# through the workpiece and out the far side (at 0.18 m it ended up below the
+# table, z = -0.008).
+#
+# WRIST_CAMERA_LATERAL_M must clear the wrist link's radius. Aiming at
+# WRIST_CAMERA_FOCUS_M along the tool axis, rather than pointing straight
+# down that axis, keeps the target centred despite the lateral offset.
+WRIST_CAMERA_LATERAL_M = 0.06
+WRIST_CAMERA_FOCUS_M = 0.12
+# How far BACK along the approach axis the camera sits, i.e. behind the
+# gripper looking forward over it, the way a real eye-in-hand bracket is
+# built. Without this the camera sat in the flange's own plane, and at the
+# grasp -- where the flange has descended to the cube -- it ended up level
+# with the table (camera_check/report.txt records it at z=0.024 with the cube
+# at z=0.02), aiming its view straight past the cube into the floor. Every
+# direction/lateral combination swept there saw exactly zero cube pixels.
+WRIST_CAMERA_BACK_M = 0.12
+# Wrist cameras are wide-angle; the USD default (~23 deg with a 50 mm lens on
+# the standard aperture) is far too narrow to hold an object that sits off to
+# one side of a laterally-offset camera.
+WRIST_CAMERA_HORIZONTAL_FOV_DEG = 70.0
+WRIST_CAMERA_FOCAL_LENGTH_MM = 24.0
+
+# Which way the camera looks, as XYZ Euler degrees taking the FLANGE frame to
+# the tool's approach direction. None means "derive it" from the measured
+# flange->tool0 offset -- a derivation whose upstream input
+# (rmpflow.get_end_effector_pose) has never been verified, which is why
+# check_cameras.py --sweep_wrist measures the answer instead.
+WRIST_CAMERA_FLANGE_ROT_EULER = None
 BASE_CAMERA_POSITION = (0.9, 0.0, 0.5)
+# What the base camera looks at: between the cube spawn area (CUBE_X_RANGE x
+# CUBE_Y_RANGE at CUBE_Z) and the place target, so both are in frame.
+BASE_CAMERA_AIM_POINT = (0.45, 0.10, 0.02)
 # 256x256 matches openpi's LIBERO example image shape -- keep the
 # training-side transform (UR5eInputs) consistent with whatever's set here.
 CAMERA_RESOLUTION = (256, 256)
@@ -68,9 +123,62 @@ BASE_CAMERA_FOCAL_LENGTH_MM = 24.0
 OBJECTS_PARENT_PRIM_PATH = "/World/objects"
 MIN_OBJECT_SEPARATION_M = 0.12  # reject a random layout where two objects would overlap/collide
 
+# MEASURED (2026-09-10) on this asset, from the gripper's own finger geometry:
+# the fingertips sit 120mm out from the flange along the FLANGE'S +Z, while
+# the frame RMPflow drives ("tool0") has its +Z along the flange's +X -- the
+# two are exactly 90 degrees apart. Nothing accounted for either fact, which
+# is why the scripted expert never grasped anything: its waypoints, meant as
+# "put the grasp point here", went to RMPflow unchanged, so the arm placed
+# the FLANGE there, rotated 90 degrees off, with the fingers 120mm past it
+# ploughing into the table. That contact is what pushed the arm upward the
+# longer it held the pose (the residual grew 24mm -> 43mm between a 60- and
+# a 120-tick hold, while the same run without a gripper stayed at 5mm).
+GRIPPER_TCP_OFFSET_M = 0.12
+
+
+def _look_at_rotation(eye, target, up=(0.0, 0.0, 1.0)):
+    """Rotation placing a camera at `eye` so it images `target`. USD cameras
+    look along their own local -Z, so that axis -- not +Z -- is what gets
+    aimed. Works in whatever frame `eye`/`target` are expressed in."""
+    eye = np.asarray(eye, dtype=float)
+    forward = np.asarray(target, dtype=float) - eye
+    forward /= np.linalg.norm(forward)
+
+    z_axis = -forward
+    up = np.asarray(up, dtype=float)
+    if abs(float(np.dot(up, z_axis))) > 0.999:
+        up = np.array([1.0, 0.0, 0.0])
+    x_axis = np.cross(up, z_axis)
+    x_axis /= np.linalg.norm(x_axis)
+    y_axis = np.cross(z_axis, x_axis)
+    return Rot.from_matrix(np.column_stack((x_axis, y_axis, z_axis)))
+
+
+def _look_at_quat(eye, target, up=(0.0, 0.0, 1.0)):
+    """Orientation (Gf.Quatf, for a USD OrientOp) placing a camera at `eye`
+    so that it images `target`. USD cameras look along their own local -Z,
+    so that axis -- not +Z -- is what gets aimed."""
+    eye = np.asarray(eye, dtype=float)
+    forward = np.asarray(target, dtype=float) - eye
+    forward /= np.linalg.norm(forward)
+
+    z_axis = -forward  # camera local +Z points away from what it looks at
+    up = np.asarray(up, dtype=float)
+    if abs(float(np.dot(up, z_axis))) > 0.999:  # degenerate: looking straight up/down
+        up = np.array([1.0, 0.0, 0.0])
+    x_axis = np.cross(up, z_axis)
+    x_axis /= np.linalg.norm(x_axis)
+    y_axis = np.cross(z_axis, x_axis)
+
+    q = Rot.from_matrix(np.column_stack((x_axis, y_axis, z_axis))).as_quat()  # xyzw
+    return Gf.Quatf(float(q[3]), float(q[0]), float(q[1]), float(q[2]))
+
 
 class PickPlaceScene:
-    def __init__(self):
+    def __init__(self, with_gripper=True):
+        """with_gripper=False builds the scene with no gripper (NullGripper).
+        Only for measurements that do not involve grasping -- see
+        check_cameras.py."""
         assets_root = get_assets_root_path()
         if assets_root is None:
             raise RuntimeError("Could not resolve Isaac Sim assets root -- check Nucleus connection.")
@@ -79,7 +187,22 @@ class PickPlaceScene:
         self.world.scene.add_default_ground_plane()
         self.stage = get_current_stage()
 
-        add_reference_to_stage(assets_root + UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH)
+        robot_prim = add_reference_to_stage(assets_root + UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH)
+        # Turn the asset's own gripper on BEFORE any articulation view is
+        # created: selecting the variant changes the prim tree, so it has to
+        # happen while the stage is still being composed.
+        if with_gripper:
+            variant = select_gripper_variant(robot_prim)
+            print(f"gripper: selected {GRIPPER_VARIANT_SET_NAME} variant {variant!r}", flush=True)
+            # CONFIRMED (2026-09-11, check_gripper_collision.py): this variant
+            # ships zero collision geometry on any of its 9 links -- the
+            # fingers pass through anything they close on. Without this, no
+            # amount of correct frame math will ever grasp anything.
+            n_colliders = add_gripper_colliders(robot_prim)
+            if n_colliders == 0:
+                raise RuntimeError(
+                    "add_gripper_colliders found no meshes to add colliders to -- the gripper "
+                    "prim tree has probably changed shape; inspect it before trusting any grasp.")
         # SingleArticulation (unbatched), not the vectorized multi-env
         # `Articulation` class -- ArticulationMotionPolicy (RMPflow, below)
         # requires get_articulation_controller(), which only the single-robot
@@ -100,10 +223,16 @@ class PickPlaceScene:
         self.world.reset()
         self.robot.initialize()
 
-        gripper_path = add_gripper(self.stage, assets_root)
-        self.gripper = GripperController(gripper_path)
-        self.world.reset()
-        self.robot.initialize()
+        # The gripper's joints are part of self.robot's articulation now (the
+        # variant selected above), so the controller just drives one of its
+        # joints -- nothing to attach, nothing to keep in sync.
+        if with_gripper:
+            self.gripper = GripperController(self.robot)
+            print(f"robot articulation joints: {list(self.robot.dof_names)}", flush=True)
+        else:
+            # No gripper at all -- see NullGripper. Only for measurements that
+            # involve no grasping (check_cameras.py).
+            self.gripper = NullGripper()
 
         self.rmpflow, self.articulation_policy = setup_rmpflow(self.robot)
         self._sync_gripper_to_flange()
@@ -117,12 +246,13 @@ class PickPlaceScene:
     def _setup_cameras(self):
         base_cam = UsdGeom.Camera.Define(self.stage, BASE_CAMERA_PRIM_PATH)
         base_cam.AddTranslateOp().Set(Gf.Vec3d(*BASE_CAMERA_POSITION))
-        # ADJUST: placeholder look-down/inward tilt so the workspace is in
-        # frame -- replace with the exact orientation for your table
-        # geometry (or compute via pose_utils.look_at_rotation, as
-        # potato_scan's scan_controller does for its camera poses) if the
-        # render looks off.
-        base_cam.AddRotateXYZOp().Set(Gf.Vec3d(0.0, 55.0, 180.0))
+        # CONFIRMED (2026-09-08) that the previous placeholder tilt
+        # (RotateXYZ 0/55/180) pointed this camera at the sky: a collected
+        # frame showed nothing but the background grid, no table, robot or
+        # cube. Aim it at the workspace instead of guessing Euler angles.
+        # A USD camera images along its local -Z, so -Z is what has to land
+        # on the target point.
+        base_cam.AddOrientOp().Set(_look_at_quat(BASE_CAMERA_POSITION, BASE_CAMERA_AIM_POINT))
         # Realize BASE_CAMERA_HORIZONTAL_FOV_DEG via focal length/aperture so
         # camera_projection.py's pinhole math (fed that same constant) is
         # actually accurate -- ADJUST if this doesn't match the rendered FOV
@@ -145,16 +275,115 @@ class PickPlaceScene:
         # returns tens of thousands.
         base_cam.CreateClippingRangeAttr().Set(Gf.Vec2f(0.01, 10000.0))
 
-        wrist_cam = UsdGeom.Camera.Define(self.stage, WRIST_CAMERA_PRIM_PATH)
-        wrist_cam.AddTranslateOp().Set(Gf.Vec3d(*WRIST_CAMERA_OFFSET))
-        wrist_cam.CreateClippingRangeAttr().Set(Gf.Vec2f(0.01, 10000.0))
+        # CONFIRMED (2026-09-08, by inspecting collected frames): mounting the
+        # wrist camera on the flange with translation only left it imaging the
+        # sky. Two reasons, the same pair the sibling potato_scan project hit.
+        # A USD camera images along its local -Z, not the +Z this project's
+        # eye-in-hand convention assumes; and poses are commanded to RMPflow,
+        # which drives the frame its config calls "tool0" -- a frame that
+        # shares the flange's position but sits ~(-90, -90, 0) degrees away in
+        # orientation on this asset. Measure that offset from RMPflow's own
+        # forward kinematics rather than hard-coding it, then mount the camera
+        # so it images along the commanded tool's +Z (the approach direction).
+        q0 = np.asarray(self.robot.get_joint_positions())[:6]
+        _, tool0_rot = self.rmpflow.get_end_effector_pose(q0)
+        tool0_rot = np.asarray(tool0_rot)
+        r_tool0 = (Rot.from_matrix(tool0_rot) if tool0_rot.shape == (3, 3)
+                   else Rot.from_quat(tool0_rot[[1, 2, 3, 0]]))
+        _, flange_quat = prim_world_pose(self.stage.GetPrimAtPath(TOOL_LINK_PRIM_PATH))
+        self.r_flange_to_tool0 = Rot.from_quat(flange_quat).inv() * r_tool0
 
+        wrist_cam = UsdGeom.Camera.Define(self.stage, WRIST_CAMERA_PRIM_PATH)
+        # Both ops are set by set_wrist_camera_flange_rotation, which places
+        # the camera beside the tool axis -- see WRIST_CAMERA_LATERAL_M.
+        self._wrist_cam_translate_op = wrist_cam.AddTranslateOp()
+        self._wrist_cam_orient_op = wrist_cam.AddOrientOp()
+        wrist_cam.CreateClippingRangeAttr().Set(Gf.Vec2f(0.01, 10000.0))
+        wrist_aperture_mm = 2.0 * WRIST_CAMERA_FOCAL_LENGTH_MM * math.tan(
+            math.radians(WRIST_CAMERA_HORIZONTAL_FOV_DEG) / 2.0)
+        wrist_cam.CreateFocalLengthAttr(WRIST_CAMERA_FOCAL_LENGTH_MM)
+        wrist_cam.CreateHorizontalApertureAttr(wrist_aperture_mm)
+        self.set_wrist_camera_flange_rotation(WRIST_CAMERA_FLANGE_ROT_EULER)
+
+        # Render products + annotators last, once both cameras exist. These
+        # belong to _setup_cameras, not to any of the setters below: without
+        # them get_observation() raises AttributeError on base_rgb_annotator.
         self.base_rp = rep.create.render_product(BASE_CAMERA_PRIM_PATH, CAMERA_RESOLUTION)
         self.wrist_rp = rep.create.render_product(WRIST_CAMERA_PRIM_PATH, CAMERA_RESOLUTION)
         self.base_rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb")
         self.wrist_rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb")
         self.base_rgb_annotator.attach([self.base_rp])
         self.wrist_rgb_annotator.attach([self.wrist_rp])
+
+    def derived_wrist_rotation(self):
+        """The flange->camera rotation implied by the measured flange->tool0
+        offset -- what WRIST_CAMERA_FLANGE_ROT_EULER = None resolves to.
+        Returned as a scipy Rotation so check_cameras.py can report the
+        Euler triple it corresponds to alongside the swept candidates."""
+        # The approach direction is the GRIPPER's axis -- the flange's own +Z,
+        # measured from the finger geometry -- not tool0's +Z, which sits 90
+        # degrees away (see GRIPPER_TCP_OFFSET_M). Aiming the camera down
+        # tool0's axis is why it kept framing the arm and the target marker
+        # instead of the cube, and why sweeping 18 mount candidates found
+        # nothing: every one of them was measured off the wrong axis.
+        # In the flange frame the grip frame is the identity, so all that is
+        # left is USD's own -Z imaging convention.
+        return Rot.from_euler("x", 180.0, degrees=True)
+
+    def set_wrist_camera_flange_rotation(self, euler_xyz_deg, lateral_m=None, focus_m=None,
+                                          back_m=None):
+        """Mount the wrist camera for a given tool-approach direction.
+
+        `euler_xyz_deg` (XYZ degrees, flange -> approach frame; None uses
+        derived_wrist_rotation()) fixes which way the tool reaches. The camera
+        is then placed `lateral_m` to the side of that axis and aimed at a
+        point `focus_m` along it -- see WRIST_CAMERA_LATERAL_M for why beside
+        rather than on, and why aimed rather than parallel.
+
+        Settable at runtime so check_cameras.py can sweep mounts within one
+        session instead of needing a restart per guess."""
+        if euler_xyz_deg is None:
+            r_approach = self.derived_wrist_rotation()
+            self.wrist_camera_flange_rot_euler = None
+        else:
+            r_approach = Rot.from_euler(
+                "xyz", np.asarray(euler_xyz_deg, dtype=float), degrees=True)
+            self.wrist_camera_flange_rot_euler = tuple(float(v) for v in euler_xyz_deg)
+
+        lateral = WRIST_CAMERA_LATERAL_M if lateral_m is None else float(lateral_m)
+        focus = WRIST_CAMERA_FOCUS_M if focus_m is None else float(focus_m)
+        back = WRIST_CAMERA_BACK_M if back_m is None else float(back_m)
+        self.wrist_camera_lateral_m = lateral
+        self.wrist_camera_focus_m = focus
+        self.wrist_camera_back_m = back
+
+        # A USD camera images along its own local -Z, so that is the tool's
+        # approach direction expressed in the flange frame.
+        view_dir = r_approach.apply(np.array([0.0, 0.0, -1.0]))
+        # Any direction perpendicular to the tool axis will do for the
+        # bracket; pick one deterministically.
+        reference = np.array([1.0, 0.0, 0.0])
+        if abs(float(np.dot(reference, view_dir))) > 0.9:
+            reference = np.array([0.0, 1.0, 0.0])
+        side = np.cross(view_dir, reference)
+        side /= np.linalg.norm(side)
+
+        # Behind the gripper and off to one side, aimed at a point out along
+        # the approach axis -- so at the grasp the camera looks down over the
+        # gripper at the cube instead of sitting level with it.
+        eye = side * lateral - view_dir * back
+        target = view_dir * focus
+        r_cam = _look_at_rotation(eye, target)
+
+        self._wrist_cam_translate_op.Set(Gf.Vec3d(*eye))
+        q = r_cam.as_quat()  # xyzw
+        self._wrist_cam_orient_op.Set(Gf.Quatf(float(q[3]), float(q[0]), float(q[1]), float(q[2])))
+
+    def wrist_camera_world_position(self):
+        """Where the wrist camera actually ended up, for diagnosing a mount
+        that renders black because it is buried inside the arm."""
+        pos, _ = prim_world_pose(self.stage.GetPrimAtPath(WRIST_CAMERA_PRIM_PATH))
+        return pos
 
     def reset(self):
         """Randomizes the cube's spawn position (domain randomization so
@@ -195,6 +424,30 @@ class PickPlaceScene:
         flange_pos, flange_quat = prim_world_pose(self.stage.GetPrimAtPath(TOOL_LINK_PRIM_PATH))
         self.gripper.sync_pose_to_flange(flange_pos, flange_quat)
 
+    def _grip_pose_to_tool0(self, target_pos, target_rotvec):
+        """Convert a GRIP pose -- where the fingertips should be, and which
+        way the gripper should point (+Z of the given rotation) -- into the
+        tool0 pose RMPflow is driven with.
+
+        Two corrections, both measured rather than assumed (see
+        GRIPPER_TCP_OFFSET_M): step back GRIPPER_TCP_OFFSET_M along the
+        approach so the FINGERS land on the target rather than the flange,
+        and compose the fixed flange->tool0 rotation so "point the gripper
+        this way" is not off by the 90 degrees between those frames."""
+        r_grip = Rot.from_rotvec(np.asarray(target_rotvec, dtype=float))
+        approach = r_grip.apply(np.array([0.0, 0.0, 1.0]))
+        flange_pos = np.asarray(target_pos, dtype=float) - GRIPPER_TCP_OFFSET_M * approach
+        # tool0 and the flange share a position, so only the rotation composes
+        quat_xyzw = (r_grip * self.r_flange_to_tool0).as_quat()
+        return flange_pos, quat_xyzw[[3, 0, 1, 2]]
+
+    def grip_point_world(self):
+        """Where the fingertips currently are -- the point the scripted
+        waypoints and any reach measurement are about. The flange prim alone
+        is GRIPPER_TCP_OFFSET_M short of it."""
+        pos, quat = prim_world_pose(self.stage.GetPrimAtPath(TOOL_LINK_PRIM_PATH))
+        return pos + GRIPPER_TCP_OFFSET_M * Rot.from_quat(quat).apply(np.array([0.0, 0.0, 1.0]))
+
     def step_towards(self, target_pos, target_rotvec, target_gripper):
         """One control tick: sets the RMPflow Cartesian target, applies one
         articulation action, drives the gripper toward target_gripper
@@ -204,8 +457,8 @@ class PickPlaceScene:
         potato_scan RL train envs' _move_and_settle) -- the caller
         (scripted_pick_place.py / collect_demos.py) controls the logging
         cadence by calling this once per logged frame."""
-        target_quat_wxyz = Rot.from_rotvec(np.asarray(target_rotvec, dtype=float)).as_quat()[[3, 0, 1, 2]]
-        self.rmpflow.set_end_effector_target(np.asarray(target_pos, dtype=float), target_quat_wxyz)
+        flange_pos, tool0_quat_wxyz = self._grip_pose_to_tool0(target_pos, target_rotvec)
+        self.rmpflow.set_end_effector_target(flange_pos, tool0_quat_wxyz)
         self.rmpflow.update_world()
         action = self.articulation_policy.get_next_articulation_action(self.physics_dt)
         self.robot.apply_action(action)
@@ -237,7 +490,12 @@ class PickPlaceScene:
         self._sync_gripper_to_flange()
 
     def get_observation(self):
-        tool_pos, tool_quat = prim_world_pose(self.stage.GetPrimAtPath(TOOL_LINK_PRIM_PATH))
+        # The fingertips, not the bare flange: waypoints are expressed as grip
+        # points (see _grip_pose_to_tool0), so the pose reported back has to
+        # be the same quantity or the scripted expert interpolates from a
+        # start GRIPPER_TCP_OFFSET_M away from where it thinks it is.
+        _, tool_quat = prim_world_pose(self.stage.GetPrimAtPath(TOOL_LINK_PRIM_PATH))
+        tool_pos = self.grip_point_world()
         # Confirmed against the actual asset: self.robot.dof_names is exactly
         # the 6 arm joints (shoulder_pan..wrist_3), no extra joints ahead of
         # them -- SingleArticulation.get_joint_positions() is unbatched
@@ -256,6 +514,101 @@ class PickPlaceScene:
     def get_cube_position(self):
         pos, _ = prim_world_pose(self.stage.GetPrimAtPath(CUBE_PRIM_PATH))
         return pos
+
+    # --- episode outcome checks -------------------------------------------
+    # collect_demos.py logs a demonstration only if the scripted expert
+    # actually did the task. Without this every episode was logged
+    # unconditionally, so a failed grasp still went into the training set as
+    # if it were a demonstration, teaching the policy to mime the motion
+    # whether or not it picked anything up. Ground truth is free here.
+
+    def grasp_succeeded(self, max_cube_z, lift_z_threshold=LIFT_Z_THRESHOLD):
+        """Was the cube ever actually lifted clear of the table? The cube
+        rests with its centre at CUBE_Z (0.02 m); the scripted expert lifts
+        it to roughly STANDOFF_HEIGHT above that, so anything that never got
+        past `lift_z_threshold` was never really grasped."""
+        return bool(max_cube_z >= lift_z_threshold)
+
+    def place_error_m(self):
+        """Planar distance from the cube's final resting position to the
+        place target -- the same xy-error measure hybrid_pick_place_demo.py
+        and vla_policy_client.py's eval_mode report, so demonstration
+        acceptance and policy evaluation are scored the same way."""
+        return float(np.linalg.norm(self.get_cube_position()[:2] - PLACE_TARGET_POSITION[:2]))
+
+    @staticmethod
+    def cube_pixels_visible(base_rgb):
+        """How many pixels of the (red) cube the base camera can see in this
+        frame. add_shape colours the cube (0.8, 0.1, 0.1), so count pixels
+        whose red channel clearly dominates both others -- robust to the
+        scene's blue-ish ambient light in a way a fixed per-channel
+        threshold is not.
+
+        collect_demos.py accumulates the per-episode maximum of this and
+        refuses to collect a whole dataset in which the cube is never
+        properly visible. That is the check the first 100-episode run
+        needed: it produced 21,000 perfectly well-formed frames in which
+        the cube appeared exactly zero times."""
+        img = np.asarray(base_rgb)
+        if img.size == 0 or img.ndim != 3:
+            return 0
+        i = img[..., :3].astype(np.int16)
+        return int(((i[..., 0] - np.maximum(i[..., 1], i[..., 2])) > 40).sum())
+
+    def preflight_check(self, verbose=True):
+        """Cheap sanity check that the scene is actually renderable and the
+        task is visible BEFORE committing to a long collection run.
+
+        This exists because two full collection runs were already lost to
+        silent camera faults that a single glance at a frame would have
+        caught: a default 1.0 m near-clip plane that removed the entire
+        task from both cameras (all-black wrist frames, mean 0.0), and a
+        base camera whose guessed Euler tilt aimed it at the sky. Both are
+        fixed in _setup_cameras now, and both are exactly what this checks
+        for -- non-degenerate images, and the (red) cube visible to the base
+        camera.
+
+        Returns (ok, list_of_problem_strings)."""
+        obs = self.get_observation()
+        problems = []
+
+        for name in ("base_rgb", "wrist_rgb"):
+            img = np.asarray(obs[name])
+            if img.size == 0:
+                problems.append(f"{name}: annotator returned an empty array (no render pass has run yet)")
+                continue
+            if img.ndim != 3 or img.shape[:2] != tuple(CAMERA_RESOLUTION):
+                problems.append(f"{name}: expected {CAMERA_RESOLUTION} HxW, got shape {img.shape}")
+                continue
+            rgb = img[..., :3].astype(np.float32)
+            if float(rgb.std()) < 1.0:
+                problems.append(
+                    f"{name}: image is flat (std={rgb.std():.3f}, mean={rgb.mean():.1f}) -- "
+                    "camera is clipping the scene away or pointing at nothing")
+            elif float((rgb.max(axis=2) < 12).mean()) > MAX_DARK_FRACTION:
+                # Not flat, but mostly void: this is what the wrist camera
+                # looked like while aimed past the workspace -- a sliver of
+                # background grid against black sky, which passes a plain
+                # std check.
+                problems.append(
+                    f"{name}: {100 * float((rgb.max(axis=2) < 12).mean()):.0f}% of the frame is "
+                    f"near-black -- the camera is aimed past the scene, not at it")
+
+        # Deliberately NOT checking cube visibility here. Measured on an
+        # actual collected episode: at reset the base camera sees the cube
+        # in ~1 pixel (the arm's default pose sits between camera and cube),
+        # and it only becomes clearly visible around frame 90 once it has
+        # been lifted. A reset-time cube check would therefore reject a
+        # perfectly good setup. Visibility is tracked across the whole first
+        # episode instead -- see cube_pixels_visible, called from
+        # collect_demos.py.
+
+        if verbose:
+            for p in problems:
+                print(f"preflight PROBLEM -- {p}")
+            if not problems:
+                print("preflight: cameras OK, cube visible")
+        return (len(problems) == 0), problems
 
     def get_object_position(self, prim_path):
         """Ground-truth world position of any prim spawned by

@@ -1,0 +1,15 @@
+writing this report to camera_check/report.txt as well as stdout (Kit's shutdown discards a block-buffered stdout when piped)
+running WITHOUT a gripper -- the cameras are mounted on the arm, so leaving the gripper out changes nothing this script measures and avoids its instability (pass --with_gripper to include it).
+scene built; resetting...
+reset OK -- cube at [ 0.43  -0.144  0.02 ], wrist camera at [ 0.757  0.233 -0.057]
+driving the scripted expert to the grasp...
+at grasp after 75/210 frames: tool is 294mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+
+camera readings (at_grasp, cube at [ 0.43  -0.144  0.02 ]):
+  base_rgb           cube_px=     0  near_black=  6.0%  mean= 116.4  std= 57.65
+  wrist_rgb          cube_px=     0  near_black= 68.9%  mean=  27.7  std= 53.29
+
+preflight: PROBLEMS
+  - wrist_rgb: 69% of the frame is near-black -- the camera is aimed past the scene, not at it
+wrote camera_check/cameras_at_grasp.png
