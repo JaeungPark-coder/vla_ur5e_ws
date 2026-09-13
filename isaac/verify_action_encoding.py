@@ -36,6 +36,13 @@ ADJUST-flagged guess in openvla_transform_snippet.py:
      failure numerically (see check_delta_rotvec_bug) rather than asserting
      it from theory.
 
+A third check was added later, because the two above cannot see the failure
+it looks for: every round trip here encodes and decodes with the SAME euler
+sequence, so it closes to machine epsilon whatever that sequence is. A
+collector and a checker sharing one wrong axis order would pass everything.
+check_rotation_convention closes that by reading the angles back with an
+independent hand-written extrinsic X-Y-Z and requiring agreement.
+
 The exact Euler AXIS ORDER OXE uses (intrinsic vs extrinsic, xyz vs zyx)
 could not be pinned down from OpenVLA's public source -- transforms.py's
 bridge_orig transform defers to an undefined relabel_bridge_actions helper,
@@ -47,12 +54,23 @@ before trusting it verbatim.
 
     python3 verify_action_encoding.py
 """
+import os
+import sys
+
 import numpy as np
 from scipy.spatial.transform import Rotation as Rot
 
 from scripted_pick_place import DOWNWARD_ROTVEC, ScriptedPickPlace
 
-EULER_SEQ = "xyz"  # ADJUST: see module docstring -- unverified against real OXE source
+# Same import the collector uses, for the same reason: the axis order this
+# script blesses and the one the data is written in must not be able to
+# drift apart. euler_xyz_to_matrix is the INDEPENDENT implementation the
+# convention check below needs -- see check_rotation_convention.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "..", "openvla_integration"))
+from validate_dataset import (  # noqa: E402
+    CONVENTION_TOL_RAD, EULER_SEQ, _matrix_angle_between, euler_xyz_to_matrix)
+
 RNG = np.random.default_rng(0)
 
 
@@ -229,6 +247,66 @@ def check_delta_rotvec_bug():
               "'hold steady' sometimes means 'spin explosively' for no visible reason.", flush=True)
 
 
+def check_rotation_convention():
+    """The blind spot every check above this one shares.
+
+    encode->decode is self-consistent under ANY euler sequence: whatever
+    convention writes the angles, the same convention reads them back, so
+    the round trip closes to machine epsilon either way. A collector and a
+    checker that share the SAME wrong axis order therefore pass everything
+    above -- which is precisely the failure mode that would be invisible
+    until an OpenVLA fine-tune produced a policy that rotates wrongly.
+
+    The metamorphic relation that does see it: read the recorded angles with
+    an INDEPENDENT implementation of extrinsic X-Y-Z -- Rz @ Ry @ Rx written
+    out by hand, imported from validate_dataset so there is exactly one of
+    it -- and require it to reproduce the rotation the angles came from. The
+    right sequence agrees to ~1e-15 rad; a wrong one is tens of degrees out.
+
+    What this does NOT prove: that extrinsic xyz is what OpenVLA itself
+    reads. Only its dataloader settles that, and it is still an open step.
+    """
+    print("\n=== rotation convention (metamorphic, not a round trip) ===", flush=True)
+
+    rotations = [Rot.from_rotvec(DOWNWARD_ROTVEC + RNG.normal(scale=np.radians(3.0), size=3))
+                 for _ in range(200)]
+
+    print("  first, why the round trip cannot answer this:", flush=True)
+    for seq in (EULER_SEQ, "zyx"):
+        worst = 0.0
+        for previous, following in zip(rotations, rotations[1:]):
+            delta = (previous.inv() * following).as_euler(seq)
+            recovered = previous * Rot.from_euler(seq, delta)
+            worst = max(worst, (recovered.inv() * following).magnitude())
+        print(f"    encode and decode both in {seq!r}: worst round-trip error "
+              f"{np.degrees(worst) * 1e9:.3f} ndeg", flush=True)
+
+    print("  the relation, against the independent Rz @ Ry @ Rx:", flush=True)
+    verdicts = {}
+    for seq in (EULER_SEQ, "zyx"):
+        worst = max(_matrix_angle_between(rotation.as_matrix(),
+                                          euler_xyz_to_matrix(rotation.as_euler(seq)))
+                    for rotation in rotations)
+        verdicts[seq] = worst
+        agrees = worst <= CONVENTION_TOL_RAD
+        print(f"    angles written as {seq!r}: worst disagreement "
+              f"{np.degrees(worst):.3f} deg -> {'agrees' if agrees else 'CAUGHT'}",
+              flush=True)
+
+    if verdicts[EULER_SEQ] > CONVENTION_TOL_RAD:
+        print(f"  FAILED: EULER_SEQ={EULER_SEQ!r} does not mean extrinsic X-Y-Z. "
+              "Every recorded orientation is being written in a convention this "
+              "pipeline does not read back the same way.", flush=True)
+        return False
+
+    print(f"  EULER_SEQ={EULER_SEQ!r} really is extrinsic (fixed-axis) X-Y-Z, and a "
+          "wrong order would have been caught rather than passing silently.", flush=True)
+    print("  Shared with validate_dataset.py, so the data and this check cannot "
+          "drift apart -- but agreement with OPENVLA's own dataloader is still "
+          "unverified. That is the remaining ADJUST.", flush=True)
+    return True
+
+
 def main():
     positions, rotvecs, grippers = scripted_trajectory()
     print(f"scripted trajectory: {len(positions)} steps, orientation constant at "
@@ -238,8 +316,13 @@ def main():
     cur_pos_err, cur_rot_err = check_current_encoding(positions, rotvecs, grippers)
     fix_pos_err, fix_rot_err = check_fixed_encoding(positions, rotvecs, grippers)
     check_delta_rotvec_bug()
+    convention_ok = check_rotation_convention()
 
     print("\n--- verdict ---", flush=True)
+    if not convention_ok:
+        print("  STOP: the euler convention check failed. Nothing below this line "
+              "is meaningful until the axis order is fixed.", flush=True)
+        return 1
     print("  Against the IDEALIZED scripted waypoints (no tracking noise, orientation exactly "
           "constant), both encodings round-trip to numerical precision -- the position and "
           "rotation errors above are near machine epsilon for both, which makes sense: the "
@@ -262,4 +345,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)

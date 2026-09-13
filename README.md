@@ -88,6 +88,46 @@ not what these scripts run against. Commands below are written as
 `python3 ...`, meaning that interpreter; on a machine with a bundled install
 instead, run them through its `python.sh` wrapper.
 
+## Check it before you start Isaac Sim
+
+The encoding and framing halves of this repo are plain numpy and scipy, and
+run with no Isaac Sim, no GPU, no ROS 2 and no robot. Doing this first
+separates "my install is wrong" from "my simulator is wrong", and takes a
+few seconds:
+
+```bash
+pip install pytest            # the only thing the suite needs beyond numpy/scipy
+python -m pytest test/ -q     # 98 checks, ~3 s
+```
+
+What it covers, and why each part exists:
+
+| file | holds |
+|---|---|
+| `test_validate_dataset.py` | every failure this project actually hit is still caught, and named |
+| `test_metamorphic.py` | the shared-wrong-convention case the three identities cannot see |
+| `test_gripper_state.py` | a measured reading is measured, and a fallback says so |
+| `test_framing_guard.py` | the derived pixel guard separates the two runs on record |
+| `test_camera_framing.py` | the framing model agrees with the one real measurement |
+| `test_pivot_logic.py` | the dwell/pivot diagnostic tells dynamics from a wrong TCP |
+
+These are the laptop-runnable checks. The two tests that need the simulator
+live next to it instead (`isaac/test_feasibility_gate.py`,
+`isaac/test_offset_grasp.py`) and are deliberately not collected here.
+
+One more worth running by hand, because its output is the argument rather
+than a pass/fail:
+
+```bash
+cd isaac && python verify_action_encoding.py
+```
+
+It reproduces the rotvec-subtraction bug numerically, then checks the euler
+convention against an independently written extrinsic X-Y-Z. Note what that
+check prints: the round trip closes to machine epsilon under a *wrong* axis
+order too, which is why the independent reading is there at all. It still
+does not prove agreement with OpenVLA — that is step 6 below.
+
 ## Bring-up order
 
 **1. Check the cameras (30 seconds -- do this before every collection run)**
@@ -319,6 +359,79 @@ backend only) does the same via `results_csv_path` -- see that node's own
 new parameters (`n_trials`, `success_xy_tolerance_m`, etc.) in
 `config/params.yaml`.
 
+## What is still unverified, and what verifies it
+
+Nothing in this repository has been run end to end. The perception and
+encoding halves have been checked offline — against analytic geometry,
+stubbed backends and synthetic episodes — but every claim that involves the
+simulator, a camera or a robot is untested. Ordered so each failure is cheap
+and interpretable.
+
+| # | what | needs | how you know it worked |
+|---|---|---|---|
+| 1 | Wrist camera mount | Isaac Sim | `check_cameras.py --sweep_wrist` picks a winner; pin it in `WRIST_CAMERA_FLANGE_ROT_EULER`, which currently reads `None` |
+| 2 | Base camera framing | a decision | `preflight framing` prints the ceiling; 30 px across is **not reachable** at the current workspace and resolution |
+| 3 | Is the residual frame, contact, or dynamics? | Isaac Sim | `pivot_dwell_check.py` — free-space drift means dynamics, grasp-only drift means contact |
+| 4 | Does the scripted expert grasp? | Isaac Sim | `collect_demos.py --num_episodes 5` completes without the attempt cap |
+| 5 | Demonstration collection | Isaac Sim | 50–200 episodes with the reject rate low and the gate quiet |
+| 6 | Euler axis order vs OpenVLA | an OpenVLA checkout | compare its dataloader against `EULER_SEQ`; the metamorphic check proves self-consistency, **not** agreement with OpenVLA |
+| 7 | Fine-tune | 2× RTX 3090 | training converges; `compute_norm_stats` runs without shape errors |
+| 8 | Serving + bridge | GPU host + ROS 2 | the policy client steps without timing out |
+| 9 | Real gripper driver | UR5e + Robotiq | gripper state logs `measured`, not `NOT MEASURED` |
+
+Step 1 gates 4 and 5: openpi's UR5 contract feeds the policy both views, and
+the wrist view carries the fine manipulation signal, so collecting with it
+mis-aimed wastes the run. Step 3 decides whether there is a dynamics problem
+at all — the code's own note says the residual came from the fingers
+contacting the table, which the frame fix addressed, while a later review
+suggested gravity and drive gains. Only a free-space hold separates them, and
+the answer changes whether there is work to do.
+
+## When something goes wrong
+
+Messages quoted as the scripts actually print them.
+
+### Collection
+
+| you see | it means | do |
+|---|---|---|
+| `preflight check failed -- refusing to collect` | a camera is flat or mostly black | run `check_cameras.py`; a near-clip plane or a camera inside a link |
+| `the cube peaked at N pixels ... The task is not visible` | the framing cannot show the task | this is step 2 — reframe or accept the base view as context only |
+| `gave up after N attempts with only M/K successful episodes` | the scripted expert is not completing the task | a grasp problem, not a data one. Do step 3 and 4 before collecting more |
+| `attempt N: REJECTED` with encoding complaints | the recording is malformed | the listed identity says which: position, rotation or gripper |
+| `the target was never lifted ... the gripper closed on nothing` | a flawless recording of a failed grasp | same as the attempt-cap row: fix the grasp |
+| three rejections in a row then an abort | the setup is wrong, not unlucky | the abort is deliberate — fix what the problems say before re-running |
+
+### Dataset validation
+
+| you see | it means | do |
+|---|---|---|
+| `N/M transitions do not satisfy state[t+1] == state[t] (+) action[t]` | the recorded action does not carry the recorded state | an encoding or logging bug; `verify_action_encoding.py` isolates it |
+| `the recorded angles do not mean extrinsic (fixed-axis) XYZ` | `EULER_SEQ` is not what the data was written in | do not change one without the other; they share the constant deliberately |
+| `frames are black ... Check the camera near-clip plane` | the default 1.0 m clipped the scene | set it to 0.01 m and confirm it took effect in **headless** mode |
+| `the red target peaked at N pixels` | the target is not in the observations | no amount of data will help; fix framing first |
+| `state has shape (N, 7), expected (N, 8)` | the POS_EULER pad slot is missing | every field from the rotation on would be read one slot left |
+
+### Serving and execution
+
+| you see | it means | do |
+|---|---|---|
+| `gripper state is not measured (...)` | the policy is being fed the value it commanded | sim: check `joint_state` has 7 values. Real: pass a `gripper_driver` |
+| `joint_state has 6 values, expected 7 with the gripper last` | the sim bridge is not appending the gripper | `pick_place_scene_bridge.publish_observation` |
+| `gripper driver read failed: ...` | the socket dropped | the loop continues on the last command — fix it before trusting a grasp |
+| `gripper commanded 1.00, measured 0.05` | it closed on nothing | this is the signal that used to be invisible. Believe it |
+| policy client waits forever on images | topics do not match the driver | `image_topics` in the launch parameters |
+
+### The one that hides
+
+A collection run that finishes and a dataset that loads are not evidence of
+anything. Both expensive failures here looked exactly like success: 21,000
+well-formed frames in which the cube never appeared, and 243 of 499 rotation
+deltas inflated tenfold with correct shapes and finite values throughout. The
+gate now catches both, but it shares the collector's conventions by design —
+step 6 is what confirms those conventions are the ones OpenVLA reads.
+
+
 ## Known gaps / ADJUST markers to resolve on real hardware
 
 - **The wrist camera is aimed wrong and this is the top blocker.** Confirmed
@@ -366,12 +479,22 @@ new parameters (`n_trials`, `success_xy_tolerance_m`, etc.) in
   `DataConfig`/`DataConfigFactory`/`AssetsConfig`/`ModelTransformFactory`
   are inferred from openpi's docs, not fetched verbatim from
   `config.py`'s own imports -- check against your checkout if they don't resolve.
-- `vla_bridge/robot_interface.py`: real-gripper control is a placeholder;
-  neither backend currently reports true gripper state back to
-  `vla_policy_client.py` (tracked as last-commanded value instead -- see
-  that file's docstring). **This is the last blocker before real hardware**:
-  the policy is fed a gripper state it is only assuming, so it cannot notice
-  a grasp that failed to close.
+- `vla_bridge/robot_interface.py`: real-gripper POSITION CONTROL is still a
+  placeholder relay unless a `gripper_driver` is passed (duck-typed, see that
+  file's docstring -- a Robotiq over its socket interface supplies both
+  position and the gOBJ object-detection byte; the discrete I/O coupling
+  keeps object detection but loses position feedback).
+  **Gripper SENSING is no longer the blocker it was.** Both backends now
+  return a `GripperState` that says whether the value was actually measured
+  (`vla_bridge/gripper_state.py`), the sim reads the position it was already
+  publishing and the client was discarding, and a fallback to the command
+  echo is announced rather than silent. Three things followed from that echo
+  and are now fixed: the policy could not observe a grasp that failed to
+  close, the eval metric scored `is_holding` off the COMMAND so a run could
+  report success having picked nothing up, and inference fed the command
+  while the demonstrations were recorded with the measured position -- a
+  train/serve mismatch. What remains is wiring a real driver on real
+  hardware.
 - Fixed 2026-09-09, worth knowing about when reading older notes: the ROS 2
   control loop used to share one `ReentrantCallbackGroup` with its
   subscriptions, which let the timer re-enter itself (rclpy's

@@ -25,6 +25,7 @@ reuses already-exercised pick_place_scene/scripted_pick_place machinery.
 """
 import argparse
 import os
+import sys
 
 import numpy as np
 from scipy.spatial.transform import Rotation as Rot
@@ -35,20 +36,35 @@ HEADLESS = os.environ.get("ISAAC_RLDS_COLLECT_HEADLESS", "1") != "0"
 simulation_app = SimulationApp({"headless": HEADLESS})
 
 # --- everything below must be imported AFTER SimulationApp() starts Kit ---
-from pick_place_scene import PickPlaceScene, PLACE_TARGET_POSITION  # noqa: E402
+from pick_place_scene import PickPlaceScene, LIFT_Z_THRESHOLD, PLACE_TARGET_POSITION  # noqa: E402
 from scripted_pick_place import ScriptedPickPlace  # noqa: E402
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "openvla_integration", "raw_episodes")
 
+# The quality gate every episode has to clear before it is written. Imported
+# rather than reimplemented so the collector and the standalone pre-training
+# check (openvla_integration/validate_dataset.py) can never drift apart --
+# and so this file's encoding is checked by the same three identities that
+# tool checks. validate_dataset imports only numpy/scipy, no Isaac Sim.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "..", "openvla_integration"))
+from validate_dataset import validate_episode, EULER_SEQ  # noqa: E402
 
-# ADJUST: standard ROS/URDF extrinsic-XYZ RPY, matching scipy's as_euler("xyz")
-# / from_euler("xyz") -- the best-supported guess for OXE's actual axis
-# convention (OpenVLA's public transforms.py defers this dataset-specific
-# rotation handling to an undefined `relabel_bridge_actions` helper, so it
-# could not be pinned down from source). Verify against a real OpenVLA
-# checkout's dataloader before trusting this verbatim, same posture as every
-# other ADJUST marker in this project.
-EULER_SEQ = "xyz"
+
+# Euler axis order for the RPY fields. CONFIRMED extrinsic (fixed-axis)
+# lowercase "xyz": scipy reads a lowercase axis string as extrinsic and an
+# uppercase one as INTRINSIC, which is a different rotation for the same
+# three numbers, and the OpenVLA / Bridge / DROID stack this dataset targets
+# is extrinsic throughout (transforms3d's `sxyz` default across the Berkeley
+# tooling, DROID's own scipy `from_euler("xyz")`, and the shared Octo/DROID
+# `tensorflow_graphics.from_euler` Rz@Ry@Rx composition all agree).
+#
+# Imported from the validator rather than redeclared so the two cannot
+# drift: validate_dataset refuses an uppercase value at import, and its
+# metamorphic check re-derives extrinsic-XYZ from first principles and
+# requires scipy's reading of THIS constant to match -- which is what
+# catches an axis order that collector and validator would otherwise be
+# consistently wrong about together.
 
 
 def _state_vec(position, quat_xyzw, gripper):
@@ -89,11 +105,24 @@ def _delta_action(prev_pos, prev_quat_xyzw, next_pos, next_quat_xyzw, next_gripp
     return np.concatenate([delta_pos, delta_rpy, [next_gripper]]).astype(np.float32)
 
 
-def collect_episode(scene, target_description, target_position):
+def collect_episode(scene, target_description, target_position, target_prim_path=None):
+    """Records one episode and returns (steps, max_target_z).
+
+    max_target_z is how high the TARGET object ever got, read from ground
+    truth. main() uses it to throw away attempts where the scripted expert
+    never actually picked anything up -- see PickPlaceScene.grasp_succeeded,
+    whose own comment describes what happens without it: "a failed grasp
+    still went into the training set as if it were a demonstration,
+    teaching the policy to mime the motion whether or not it picked
+    anything up". collect_demos.py has done this from the start on the
+    pi0/LeRobot side; this path had no equivalent, which matters all the
+    more while the grasp itself is still being debugged.
+    """
     obs = scene.get_observation()
     policy = ScriptedPickPlace(obs["tool_pos"], target_position, PLACE_TARGET_POSITION)
 
     steps = []
+    max_target_z = -np.inf
     prev_pos, prev_quat = obs["tool_pos"], obs["tool_quat"]
     prev_gripper = float(obs["gripper"][0])
 
@@ -119,32 +148,98 @@ def collect_episode(scene, target_description, target_position):
         })
 
         prev_pos, prev_quat, prev_gripper = next_pos, next_quat, next_gripper
+        if target_prim_path is not None:
+            max_target_z = max(max_target_z, float(
+                scene.get_object_position(target_prim_path)[2]))
 
-    return steps
+    return steps, max_target_z
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_episodes", type=int, default=50)
     parser.add_argument("--n_objects", type=int, default=3)
+    parser.add_argument("--max_attempts", type=int, default=0,
+                        help="cap on collection attempts including rejected ones "
+                             "(default 0: 3x --num_episodes)")
     args = parser.parse_args()
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     scene = PickPlaceScene()
     rng = np.random.default_rng()
 
+    n_saved = 0
+    n_rejected = 0
     try:
-        for ep in range(args.num_episodes):
+        for attempt in range(args.max_attempts or args.num_episodes * 3):
+            if n_saved >= args.num_episodes:
+                break
+
             objects = scene.spawn_random_objects(args.n_objects)
             target_description = rng.choice(list(objects.keys()))
             target_position = objects[target_description]["position"]
 
-            steps = collect_episode(scene, target_description, target_position)
+            steps, max_target_z = collect_episode(
+                scene, target_description, target_position,
+                target_prim_path=objects[target_description]["prim_path"])
 
-            out_path = os.path.join(OUTPUT_DIR, f"episode_{ep:05d}.npy")
+            # Check BEFORE writing. Every expensive failure on this project so
+            # far has been a dataset that was perfectly well-formed and
+            # completely useless -- black wrist frames, a target that never
+            # appeared in a single frame, rotation deltas inflated 10x by
+            # subtracting representations instead of composing them. All of
+            # those are invisible unless something looks at the numbers, and
+            # all of them are cheap to catch here and expensive to discover
+            # after a fine-tune.
+            ok, problems = validate_episode(steps)
+
+            # Two independent questions, and both have to be yes. The gate
+            # above asks whether the RECORDING is sound (frames, encoding,
+            # the state/action identities); this asks whether the episode
+            # demonstrates the TASK. An episode can be flawlessly recorded
+            # and still show the gripper closing on nothing.
+            # NOTE: only the lift is checked, not the placement --
+            # place_error_m() measures the single-cube scene that reset()
+            # builds, not the multi-object one spawn_random_objects does.
+            if not scene.grasp_succeeded(max_target_z):
+                ok = False
+                problems = problems + [
+                    f"the target was never lifted (peaked at z={max_target_z:.3f}m, "
+                    f"needs >= {LIFT_Z_THRESHOLD:.3f}m) -- the gripper closed on nothing, "
+                    f"so this shows the motion without the grasp"]
+
+            if not ok:
+                n_rejected += 1
+                print(f"attempt {attempt + 1}: REJECTED ({len(steps)} steps, "
+                      f"target={target_description!r})")
+                for problem in problems:
+                    print(f"    - {problem}")
+
+                # A first episode that fails on framing or encoding is not bad
+                # luck, it is a broken setup: every later episode will fail the
+                # same way. Stop now rather than after another 99.
+                if n_saved == 0 and n_rejected >= 3:
+                    raise RuntimeError(
+                        "the first 3 attempts all failed validation, which means the scene or "
+                        "the encoding is wrong rather than the run being unlucky. Fix what the "
+                        "problems above report before collecting -- run isaac/check_cameras.py "
+                        "if they are about visibility, and isaac/verify_action_encoding.py if "
+                        "they are about the state/action identities.")
+                continue
+
+            out_path = os.path.join(OUTPUT_DIR, f"episode_{n_saved:05d}.npy")
             np.save(out_path, steps, allow_pickle=True)
-            print(f"episode {ep + 1}/{args.num_episodes}: {len(steps)} steps, "
+            n_saved += 1
+            print(f"episode {n_saved}/{args.num_episodes}: {len(steps)} steps, "
                   f"target={target_description!r} -> {out_path}")
+
+        if n_saved < args.num_episodes:
+            print(f"\nWARNING: only {n_saved}/{args.num_episodes} episodes passed validation "
+                  f"in {n_saved + n_rejected} attempts. Collecting more will not help until "
+                  f"the reported problems are fixed.")
+        else:
+            print(f"\ncollected {n_saved} episodes, rejected {n_rejected} "
+                  f"({n_rejected / max(n_saved + n_rejected, 1):.0%} of attempts)")
     finally:
         simulation_app.close()
 
