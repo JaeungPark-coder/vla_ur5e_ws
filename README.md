@@ -88,6 +88,46 @@ not what these scripts run against. Commands below are written as
 `python3 ...`, meaning that interpreter; on a machine with a bundled install
 instead, run them through its `python.sh` wrapper.
 
+## Check it before you start Isaac Sim
+
+The encoding and framing halves of this repo are plain numpy and scipy, and
+run with no Isaac Sim, no GPU, no ROS 2 and no robot. Doing this first
+separates "my install is wrong" from "my simulator is wrong", and takes a
+few seconds:
+
+```bash
+pip install pytest            # the only thing the suite needs beyond numpy/scipy
+python -m pytest test/ -q     # 98 checks, ~3 s
+```
+
+What it covers, and why each part exists:
+
+| file | holds |
+|---|---|
+| `test_validate_dataset.py` | every failure this project actually hit is still caught, and named |
+| `test_metamorphic.py` | the shared-wrong-convention case the three identities cannot see |
+| `test_gripper_state.py` | a measured reading is measured, and a fallback says so |
+| `test_framing_guard.py` | the derived pixel guard separates the two runs on record |
+| `test_camera_framing.py` | the framing model agrees with the one real measurement |
+| `test_pivot_logic.py` | the dwell/pivot diagnostic tells dynamics from a wrong TCP |
+
+These are the laptop-runnable checks. The two tests that need the simulator
+live next to it instead (`isaac/test_feasibility_gate.py`,
+`isaac/test_offset_grasp.py`) and are deliberately not collected here.
+
+One more worth running by hand, because its output is the argument rather
+than a pass/fail:
+
+```bash
+cd isaac && python verify_action_encoding.py
+```
+
+It reproduces the rotvec-subtraction bug numerically, then checks the euler
+convention against an independently written extrinsic X-Y-Z. Note what that
+check prints: the round trip closes to machine epsilon under a *wrong* axis
+order too, which is why the independent reading is there at all. It still
+does not prove agreement with OpenVLA — that is step 6 below.
+
 ## Bring-up order
 
 **1. Check the cameras (30 seconds -- do this before every collection run)**
