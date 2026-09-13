@@ -36,6 +36,7 @@ camera placement can beat.
 """
 import argparse
 import ast
+import dataclasses
 import os
 
 import numpy as np
@@ -128,6 +129,108 @@ def max_span_px(object_size_m, resolution_px, must_cover_width_m):
     return resolution_px * object_size_m / must_cover_width_m
 
 
+# --- the analysis, as a function both the CLI and the scene can call -------
+
+# What fraction of the geometrically achievable peak the cube must actually
+# reach during an episode before the framing counts as working. Set from the
+# ceiling rather than as a bare pixel count so it means "the cube was about
+# as visible as this camera can make it" instead of "the cube was visible at
+# all" -- MIN_CUBE_PIXELS_IN_BASE_VIEW's old flat 30 px sat at 15% of the
+# best case, low enough to pass a camera that was framing the task badly.
+USABLE_FRACTION_OF_PEAK = 0.5
+
+
+def workspace_span_m(y_range, place_y):
+    """How wide a strip has to stay in frame: the cube's spawn spread plus
+    wherever it gets placed."""
+    lo, hi = float(min(y_range)), float(max(y_range))
+    return max(hi, float(place_y)) - min(lo, float(place_y))
+
+
+@dataclasses.dataclass
+class FramingAnalysis:
+    """What this camera can and cannot show, given where it is and what has
+    to stay in frame."""
+    best_span_px: float
+    expected_peak_area_px: float
+    must_cover_m: float
+    ceiling_span_px: float
+    target_span_px: float
+    required_hfov_deg: float
+    required_distance_m: float
+    required_resolution_px: int
+    required_workspace_m: float
+
+    @property
+    def target_reachable(self):
+        """False when no camera placement or lens reaches target_span_px,
+        because the swath that must stay in frame already caps it."""
+        return self.ceiling_span_px >= self.target_span_px
+
+    @property
+    def usable_peak_area_px(self):
+        """The episode-level floor worth enforcing (see
+        USABLE_FRACTION_OF_PEAK)."""
+        return USABLE_FRACTION_OF_PEAK * self.expected_peak_area_px
+
+
+def framing_analysis(object_size_m, camera_position, sample_points, hfov_deg,
+                     resolution_px, must_cover_m, target_span_px=30.0,
+                     reference_point=None):
+    """Geometry only -- no rendering, no simulator.
+
+    sample_points: world points the object can occupy (e.g. the corners of
+    its spawn range); the closest one to the camera sets the best case.
+    must_cover_m: width of workspace that has to stay in frame, which is
+    what turns a preference into a ceiling.
+    """
+    camera_position = np.asarray(camera_position, dtype=float)
+    distances = [float(np.linalg.norm(np.asarray(p, dtype=float) - camera_position))
+                 for p in sample_points]
+    spans = [span_px(object_size_m, d, resolution_px, hfov_deg) for d in distances]
+    best = max(spans)
+
+    reference_distance = (min(distances) if reference_point is None
+                          else float(np.linalg.norm(
+                              np.asarray(reference_point, dtype=float) - camera_position)))
+
+    return FramingAnalysis(
+        best_span_px=best,
+        expected_peak_area_px=best * best,
+        must_cover_m=must_cover_m,
+        ceiling_span_px=max_span_px(object_size_m, resolution_px, must_cover_m),
+        target_span_px=target_span_px,
+        required_hfov_deg=required_hfov_deg(
+            object_size_m, reference_distance, resolution_px, target_span_px),
+        required_distance_m=required_distance_m(
+            object_size_m, hfov_deg, resolution_px, target_span_px),
+        required_resolution_px=int(np.ceil(target_span_px * must_cover_m / object_size_m)),
+        required_workspace_m=resolution_px * object_size_m / target_span_px,
+    )
+
+
+def describe(analysis):
+    """The analysis as lines of text, for a preflight log or the CLI."""
+    a = analysis
+    lines = [
+        f"the cube can reach at most {a.best_span_px:.1f} px across "
+        f"({a.expected_peak_area_px:.0f} px2) from this camera",
+        f"{a.must_cover_m:.2f} m of workspace has to stay in frame, which caps it at "
+        f"{a.ceiling_span_px:.1f} px across no matter where the camera goes",
+    ]
+    if a.target_reachable:
+        lines.append(
+            f"{a.target_span_px:.0f} px is reachable: hfov {a.required_hfov_deg:.1f} deg "
+            f"or distance {a.required_distance_m:.3f} m")
+    else:
+        lines.append(
+            f"{a.target_span_px:.0f} px is NOT reachable by reframing -- it needs the "
+            f"workspace tightened to ~{a.required_workspace_m:.2f} m, or the render "
+            f"widened to ~{a.required_resolution_px} px, or the wrist camera to carry "
+            f"the approach")
+    return lines
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--target-span-px", type=float, default=30.0,
@@ -138,7 +241,9 @@ def main():
     args = parser.parse_args()
 
     scene = read_constants(SCENE_PATH)
-    cube_size = read_default_arg(COMMON_PATH, "add_shape", "size")
+    cube_size = scene.get("CUBE_SIZE_M")
+    if cube_size is None:  # older scenes left the size on add_shape's default
+        cube_size = read_default_arg(COMMON_PATH, "add_shape", "size")
     res_w, res_h = scene["CAMERA_RESOLUTION"]
 
     cam = np.asarray(scene["BASE_CAMERA_POSITION"], dtype=float)
@@ -194,8 +299,11 @@ def main():
               f"or distance {required_distance_m(cube_size, hfov, res_w, target):>5.3f} m")
 
     # --- the ceiling nobody can beat --------------------------------------
-    must_cover = float(max(y_hi, place[1]) - min(y_lo, place[1]))
-    ceiling = max_span_px(cube_size, res_w, must_cover)
+    must_cover = workspace_span_m((y_lo, y_hi), place[1])
+    analysis = framing_analysis(
+        cube_size, cam, list(corners.values()), hfov, res_w, must_cover,
+        target_span_px=args.target_span_px, reference_point=aim)
+    ceiling = analysis.ceiling_span_px
     print()
     print("  THE CONSTRAINT:")
     print(f"    the cube spawns over y in [{y_lo}, {y_hi}] and is placed at "
@@ -218,13 +326,19 @@ def main():
     else:
         print(f"    {args.target_span_px:.0f} px is reachable within that constraint.")
 
-    guard = scene.get("MIN_CUBE_PIXELS_IN_BASE_VIEW")
-    if guard is not None:
+    floor = scene.get("MIN_CUBE_PIXELS_FLOOR", scene.get("MIN_CUBE_PIXELS_IN_BASE_VIEW"))
+    if floor is not None:
+        derived = max(floor, int(round(analysis.usable_peak_area_px)))
         print()
-        print(f"  collect_demos aborts below MIN_CUBE_PIXELS_IN_BASE_VIEW={guard} px2.")
-        print(f"  Best achievable here is about {best * best:.0f} px2, so that guard "
-              f"sits at {100.0 * guard / (best * best):.0f}% of the best case:")
-        print(f"  it catches a camera pointed at nothing, not a camera framed badly.")
+        print(f"  collect_demos aborts when an episode never peaks above "
+              f"{derived} px2,")
+        print(f"  which is {100.0 * derived / analysis.expected_peak_area_px:.0f}% of the "
+              f"{analysis.expected_peak_area_px:.0f} px2 this geometry can achieve "
+              f"(floor {floor} px2).")
+        print(f"  Deriving it from the ceiling is the point: a flat {floor} px2 sits at "
+              f"{100.0 * floor / analysis.expected_peak_area_px:.0f}% of the best case,")
+        print(f"  which catches a camera pointed at nothing but not one framing the "
+              f"task badly.")
 
     # --- wrist camera ------------------------------------------------------
     lateral = scene["WRIST_CAMERA_LATERAL_M"]

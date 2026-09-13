@@ -30,6 +30,7 @@ from isaacsim.core.utils.nucleus import get_assets_root_path
 from isaacsim.core.utils.stage import add_reference_to_stage, get_current_stage
 from isaacsim.core.prims import SingleArticulation
 
+import camera_framing
 from isaac_sim_common import (
     UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH, TOOL_LINK_PRIM_PATH,
     select_gripper_variant, add_gripper_colliders, GripperController, setup_rmpflow, prim_world_pose,
@@ -47,6 +48,7 @@ WRIST_CAMERA_PRIM_PATH = f"{TOOL_LINK_PRIM_PATH}/wrist_camera"
 # ADJUST to whatever's actually reachable/visible on your table setup.
 CUBE_X_RANGE = (0.35, 0.55)
 CUBE_Y_RANGE = (-0.20, 0.20)
+CUBE_SIZE_M = 0.04  # edge length of the spawned cube
 CUBE_Z = 0.02  # resting height for a 4cm cube on the table surface
 PLACE_TARGET_POSITION = np.array([0.45, 0.30, 0.0])
 
@@ -55,11 +57,17 @@ PLACE_TARGET_POSITION = np.array([0.45, 0.30, 0.0])
 # lifts it ~0.15 m, so 0.08 cleanly separates "picked up" from "still on the
 # table" without demanding the full lift height.
 LIFT_Z_THRESHOLD = 0.08
-# Minimum peak red-cube pixel count the base camera must reach at some point
-# during an episode (see cube_pixels_visible). Measured on a real
-# collected episode with the cameras working: the peak is ~130 px. The first
-# broken run peaked at 0. 30 sits well clear of both.
-MIN_CUBE_PIXELS_IN_BASE_VIEW = 30
+# Absolute floor for the peak red-cube pixel count the base camera must reach
+# at some point during an episode (see cube_pixels_visible). Measured on a
+# real collected episode with the cameras working: the peak is ~130 px. The
+# first broken run peaked at 0. 30 sits well clear of both.
+#
+# It is only a floor now. The threshold actually used,
+# MIN_CUBE_PIXELS_IN_BASE_VIEW, is derived from what this camera geometry can
+# achieve (see BASE_FRAMING below), because a flat 30 turned out to sit at
+# 15% of the best case here -- it catches a camera aimed at nothing, not a
+# camera framing the task badly, and the latter is what the lost runs were.
+MIN_CUBE_PIXELS_FLOOR = 30
 # Fraction of a frame allowed to be near-black before the camera counts as
 # aimed past the scene rather than at it. Measured across real episodes: a
 # working base camera runs 0.03-0.10, while the mis-aimed wrist camera and
@@ -109,6 +117,13 @@ BASE_CAMERA_AIM_POINT = (0.45, 0.10, 0.02)
 # 256x256 matches openpi's LIBERO example image shape -- keep the
 # training-side transform (UR5eInputs) consistent with whatever's set here.
 CAMERA_RESOLUTION = (256, 256)
+# How many pixels across the cube ought to be for the policy to have real
+# evidence of where it is during the approach. Viewpoint quality is one of
+# the larger levers on behaviour-cloning success, and a target that is a
+# couple of pixels wide at reset gives essentially no signal in exactly the
+# phase that needs it. Used as the yardstick in BASE_FRAMING below; whether
+# it is reachable at all is part of what that reports.
+TARGET_CUBE_SPAN_PX = 30.0
 
 # Base camera's horizontal FOV, realized via focal length / aperture below
 # so camera_projection.py's pinhole math (which takes this same value) is
@@ -116,6 +131,30 @@ CAMERA_RESOLUTION = (256, 256)
 # change the camera's framing; the two must stay consistent.
 BASE_CAMERA_HORIZONTAL_FOV_DEG = 60.0
 BASE_CAMERA_FOCAL_LENGTH_MM = 24.0
+
+# What this camera can actually show, computed rather than assumed. Distance
+# and field of view only ever act together, as the width of the swath the
+# image covers, so span_px = resolution * cube_size / visible_width -- and
+# everything that must stay in frame (the cube's spawn spread plus the place
+# target) puts a floor under that width and therefore a ceiling on the cube's
+# pixel size that no camera placement beats. See camera_framing.py, which
+# also runs standalone to print the full report and the ways out.
+BASE_FRAMING = camera_framing.framing_analysis(
+    object_size_m=CUBE_SIZE_M,
+    camera_position=BASE_CAMERA_POSITION,
+    sample_points=[(x, y, CUBE_Z) for x in CUBE_X_RANGE for y in CUBE_Y_RANGE],
+    hfov_deg=BASE_CAMERA_HORIZONTAL_FOV_DEG,
+    resolution_px=CAMERA_RESOLUTION[0],
+    must_cover_m=camera_framing.workspace_span_m(
+        CUBE_Y_RANGE, PLACE_TARGET_POSITION[1]),
+    target_span_px=TARGET_CUBE_SPAN_PX,
+    reference_point=BASE_CAMERA_AIM_POINT,
+)
+
+# The episode-level guard collect_demos.py enforces: the cube has to get about
+# as visible as this camera is capable of making it, not merely visible.
+MIN_CUBE_PIXELS_IN_BASE_VIEW = max(
+    MIN_CUBE_PIXELS_FLOOR, int(round(BASE_FRAMING.usable_peak_area_px)))
 
 # Multi-object scene (isaac/object_configs.py's vocabulary) used by the LLM
 # + open-vocabulary hybrid pipeline (hybrid_pick_place_demo.py) -- kept
@@ -396,7 +435,7 @@ class PickPlaceScene:
 
         if self.stage.GetPrimAtPath(CUBE_PRIM_PATH).IsValid():
             self.stage.RemovePrim(CUBE_PRIM_PATH)
-        add_cube(self.stage, CUBE_PRIM_PATH, self.cube_position)
+        add_cube(self.stage, CUBE_PRIM_PATH, self.cube_position, size=CUBE_SIZE_M)
 
         if not self.stage.GetPrimAtPath(TARGET_MARKER_PRIM_PATH).IsValid():
             add_place_target_marker(self.stage, TARGET_MARKER_PRIM_PATH, PLACE_TARGET_POSITION)
@@ -603,7 +642,23 @@ class PickPlaceScene:
         # episode instead -- see cube_pixels_visible, called from
         # collect_demos.py.
 
+        # Framing is reported, not failed on: a camera that cannot make the
+        # cube big enough is a design limit to decide about, not a fault to
+        # abort on, and the numbers are the same every run. The episode-level
+        # guard (MIN_CUBE_PIXELS_IN_BASE_VIEW, derived from these numbers) is
+        # what actually stops a bad collection.
         if verbose:
+            print("preflight framing (base camera):")
+            for line in camera_framing.describe(BASE_FRAMING):
+                print(f"  {line}")
+            print(f"  episodes must peak at >= {MIN_CUBE_PIXELS_IN_BASE_VIEW} px "
+                  f"({100 * MIN_CUBE_PIXELS_IN_BASE_VIEW / BASE_FRAMING.expected_peak_area_px:.0f}%"
+                  f" of the achievable {BASE_FRAMING.expected_peak_area_px:.0f} px)")
+            if not BASE_FRAMING.target_reachable:
+                print(f"  NOTE: {BASE_FRAMING.target_span_px:.0f} px across is out of reach "
+                      f"here, so the wrist camera carries the approach -- run "
+                      f"camera_framing.py for the alternatives")
+
             for p in problems:
                 print(f"preflight PROBLEM -- {p}")
             if not problems:
