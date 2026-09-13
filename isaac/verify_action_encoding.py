@@ -332,16 +332,21 @@ def main():
     print("  The isolated stress test above reproduces that failure directly: real RMPflow "
           "tracking noise (measured 1-4 deg while converging) near DOWNWARD_ROTVEC periodically "
           "produces a >10x-inflated logged rotation delta under the CURRENT scheme.", flush=True)
-    print("\n  Required changes before collecting real OpenVLA training data:", flush=True)
-    print("  1. collect_rlds_episodes.py: log fixed_state (8-dim, RPY + explicit 0 PAD slot) and "
-          "fixed_action (7-dim, delta RPY via proper rotation composition) instead of "
-          "current_state/current_action.", flush=True)
-    print("  2. ur5e_pick_place_dataset_builder.py: STATE_ACTION_DIM must split into "
-          "STATE_DIM=8 / ACTION_DIM=7 (they are no longer equal).", flush=True)
-    print("  3. openvla_transform_snippet.py: state_encoding/action_encoding comments can drop "
-          "their ADJUST-uncertainty about rotation representation (rotvec vs euler is now "
-          "correct) but EULER_SEQ's exact axis order/convention is still unverified against a "
-          "real OpenVLA checkout -- check that before trusting this verbatim.", flush=True)
+    print("\n  The changes this script originally called for have landed:", flush=True)
+    print("    collect_rlds_episodes.py logs the 8-dim state (RPY + explicit 0 PAD slot) and "
+          "the 7-dim action (delta RPY by rotation composition); "
+          "ur5e_pick_place_dataset_builder.py splits STATE_DIM=8 / ACTION_DIM=7; and "
+          "openvla_transform_snippet.py no longer hedges on the rotation representation.",
+          flush=True)
+    print("\n  One thing is still open, and it is the only one:", flush=True)
+    print("    EULER_SEQ's axis order is unverified against OpenVLA ITSELF. The check above "
+          "proves this pipeline means extrinsic X-Y-Z consistently end to end -- it cannot "
+          "prove that is what OpenVLA's dataloader reads. Compare against an actual checkout "
+          "(prismatic/vla/datasets/rlds/oxe/transforms.py) before collecting data you intend "
+          "to fine-tune on.", flush=True)
+    print("    EULER_SEQ is defined once, in openvla_integration/validate_dataset.py, and "
+          "imported by the collector and by this script. Change it there and nowhere else.",
+          flush=True)
 
 
 if __name__ == "__main__":

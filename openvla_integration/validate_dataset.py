@@ -98,9 +98,12 @@ from scipy.spatial.transform import Rotation as Rot
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "isaac"))
 from object_configs import COLOR_RGB  # noqa: E402  (isaac/object_configs.py imports only numpy)
 
-# Must match collect_rlds_episodes.EULER_SEQ. If that file's ADJUST marker is
-# ever resolved to a different axis order, this has to move with it or the
-# consistency check below will start failing on correct data.
+# THIS is where the axis order is defined, for the whole repository.
+# isaac/collect_rlds_episodes.py (which writes the data) and
+# isaac/verify_action_encoding.py (which checks the encoding) both import it
+# from here, deliberately: a second copy is a second thing that can disagree,
+# and a disagreement about the axis order would not show up in any round trip.
+# Resolve it against a real OpenVLA checkout and change it here only.
 EULER_SEQ = "xyz"
 
 # scipy reads a LOWERCASE axis string as extrinsic (fixed-axis) and an

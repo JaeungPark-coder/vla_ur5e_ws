@@ -38,8 +38,9 @@ def ur5e_pick_place_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, A
     caught it.
 
     ADJUST still open: the exact Euler AXIS ORDER/convention OXE uses
-    (isaac/collect_rlds_episodes.py's EULER_SEQ = "xyz", i.e. scipy's
-    standard ROS/URDF extrinsic-XYZ RPY) could not be confirmed from
+    (openvla_integration/validate_dataset.py's EULER_SEQ = "xyz", i.e.
+    scipy's standard ROS/URDF extrinsic-XYZ RPY -- defined there once and
+    imported by the collector and the verifier) could not be confirmed from
     OpenVLA's public source -- transforms.py's bridge_orig transform defers
     dataset-specific rotation handling to an undefined relabel_bridge_actions
     helper. Check an actual OpenVLA checkout's dataloader before trusting
