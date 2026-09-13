@@ -366,12 +366,22 @@ new parameters (`n_trials`, `success_xy_tolerance_m`, etc.) in
   `DataConfig`/`DataConfigFactory`/`AssetsConfig`/`ModelTransformFactory`
   are inferred from openpi's docs, not fetched verbatim from
   `config.py`'s own imports -- check against your checkout if they don't resolve.
-- `vla_bridge/robot_interface.py`: real-gripper control is a placeholder;
-  neither backend currently reports true gripper state back to
-  `vla_policy_client.py` (tracked as last-commanded value instead -- see
-  that file's docstring). **This is the last blocker before real hardware**:
-  the policy is fed a gripper state it is only assuming, so it cannot notice
-  a grasp that failed to close.
+- `vla_bridge/robot_interface.py`: real-gripper POSITION CONTROL is still a
+  placeholder relay unless a `gripper_driver` is passed (duck-typed, see that
+  file's docstring -- a Robotiq over its socket interface supplies both
+  position and the gOBJ object-detection byte; the discrete I/O coupling
+  keeps object detection but loses position feedback).
+  **Gripper SENSING is no longer the blocker it was.** Both backends now
+  return a `GripperState` that says whether the value was actually measured
+  (`vla_bridge/gripper_state.py`), the sim reads the position it was already
+  publishing and the client was discarding, and a fallback to the command
+  echo is announced rather than silent. Three things followed from that echo
+  and are now fixed: the policy could not observe a grasp that failed to
+  close, the eval metric scored `is_holding` off the COMMAND so a run could
+  report success having picked nothing up, and inference fed the command
+  while the demonstrations were recorded with the measured position -- a
+  train/serve mismatch. What remains is wiring a real driver on real
+  hardware.
 - Fixed 2026-09-09, worth knowing about when reading older notes: the ROS 2
   control loop used to share one `ReentrantCallbackGroup` with its
   subscriptions, which let the timer re-enter itself (rclpy's

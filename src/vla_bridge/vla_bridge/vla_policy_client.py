@@ -31,6 +31,7 @@ from std_msgs.msg import Empty
 from geometry_msgs.msg import Point
 from cv_bridge import CvBridge
 
+from vla_bridge.gripper_state import grasp_disagreement
 from vla_bridge.robot_interface import UR5eInterface
 from vla_bridge.isaac_robot_interface import IsaacSimRobotInterface
 
@@ -171,13 +172,12 @@ class VLAPolicyClient(Node):
         self.create_subscription(
             Image, image_topics[1], self._on_wrist_image, 10, callback_group=self._cb_group)
 
-        # ADJUST: neither backend currently reports the gripper's true
-        # current position back to this node (UR5eInterface's real gripper
-        # driver isn't wired up -- see robot_interface.py's module
-        # docstring -- and pick_place_scene_bridge.py doesn't publish it
-        # separately from joint state yet). Tracked here as the last
-        # commanded value instead of a true sensor reading; close this gap
-        # before trusting gripper-state-dependent policy behavior.
+        # Gripper proprioception comes from robot.get_gripper_state() now,
+        # which says whether anyone actually measured it. Falling back to the
+        # last command is still possible (no driver on the real arm, no
+        # joint_state yet in sim) but it is announced once rather than
+        # passing silently -- see vla_bridge/gripper_state.py.
+        self._warned_unmeasured_gripper = False
         self._last_commanded_gripper = 0.0
 
         self._step_count = 0
@@ -210,9 +210,20 @@ class VLAPolicyClient(Node):
             self.get_logger().warn('waiting for joint state...', throttle_duration_sec=2.0)
             return
 
+        gripper_state = self.robot.get_gripper_state()
+        if not gripper_state.measured and not self._warned_unmeasured_gripper:
+            self._warned_unmeasured_gripper = True
+            self.get_logger().warn(
+                f'gripper state is not measured ({gripper_state.source}). The policy is '
+                f'being fed the value it commanded, which cannot disagree with itself -- '
+                f'so a grasp that failed to close looks exactly like one that worked, '
+                f'both to the policy and to the eval metric. Note the demonstrations were '
+                f'recorded with the MEASURED position, so this is also a train/serve '
+                f'mismatch.')
+
         obs = {
             "joints": np.asarray(joints[:6], dtype=np.float32),
-            "gripper": np.array([self._last_commanded_gripper], dtype=np.float32),
+            "gripper": np.array([gripper_state.position], dtype=np.float32),
             "base_rgb": self._base_image,
             "wrist_rgb": self._wrist_image,
             "prompt": self.prompt,
@@ -241,10 +252,30 @@ class VLAPolicyClient(Node):
         self.robot.set_gripper(target_gripper)
         self._last_commanded_gripper = target_gripper
 
+        # The observation that the command echo made impossible: the gripper
+        # is somewhere other than where it was sent. On a closing command
+        # that means it stopped on something -- the object, or nothing while
+        # stalling -- and either way it is worth seeing.
+        settled = self.robot.get_gripper_state()
+        disagreement = grasp_disagreement(target_gripper, settled)
+        if disagreement:
+            self.get_logger().info(
+                f'gripper commanded {target_gripper:.2f}, measured '
+                f'{settled.position:.2f} (off by {disagreement:.2f})'
+                + ('' if settled.object_detected is None else
+                   f', object {"detected" if settled.object_detected else "NOT detected"}'),
+                throttle_duration_sec=1.0)
+
         self._step_count += 1
 
         if self.eval_mode and self._latest_cube_position is not None:
-            is_holding = (target_gripper >= self.holding_gripper_threshold
+            # Scored on where the gripper IS, not where it was told to go.
+            # Using the command here counted a grasp that closed on nothing
+            # as a hold, so a run could report success having never picked
+            # anything up. Falls back to the command when nothing measured
+            # it, which is the old behaviour and is warned about above.
+            holding_position = settled.position if settled.measured else target_gripper
+            is_holding = (holding_position >= self.holding_gripper_threshold
                           and self._latest_cube_position[2] > self.lifted_z_threshold)
             xy_error_mm = 1000.0 * float(np.linalg.norm(
                 self._latest_cube_position[:2] - self.eval_target_position[:2]))
@@ -255,7 +286,8 @@ class VLAPolicyClient(Node):
                 return
 
         self.get_logger().info(
-            f'step {self._step_count}/{self.max_steps}: gripper={target_gripper:.2f}',
+            f'step {self._step_count}/{self.max_steps}: '
+            f'gripper commanded {target_gripper:.2f}, {settled.describe()}',
             throttle_duration_sec=1.0)
 
     def _finish_trial(self, success, xy_error_mm=-1.0):

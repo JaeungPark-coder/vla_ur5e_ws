@@ -21,6 +21,8 @@ Written and reasoned about WITHOUT the ability to run this pipeline in the
 environment this was authored in -- treat as a solid first draft.
 """
 import numpy as np
+
+from vla_bridge.gripper_state import GripperState
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float32
 
@@ -47,6 +49,7 @@ class IsaacSimRobotInterface:
 
         self.joint_target_pub = node.create_publisher(JointState, joint_target_topic, 10)
         self.gripper_target_pub = node.create_publisher(Float32, gripper_target_topic, 10)
+        self._last_commanded_gripper = 0.0
 
         self._latest_joint_state = None
         node.create_subscription(
@@ -92,7 +95,33 @@ class IsaacSimRobotInterface:
         return False
 
     def set_gripper(self, position: float):
+        self._last_commanded_gripper = float(position)
         self.gripper_target_pub.publish(Float32(data=float(position)))
+
+    def get_gripper_state(self):
+        """Where the gripper actually is, read back from the simulator.
+
+        pick_place_scene_bridge appends it to joint_state as a 7th element,
+        and the value is GripperController.get_normalized_position() -- a
+        reading of the drive joint, already on the 0..1 scale set_gripper
+        uses. get_joint_positions() slices it off to keep its 6-dim arm
+        contract; this is where it gets used instead of thrown away.
+
+        object_detected stays None: the simulator has no equivalent of the
+        Robotiq gOBJ status byte unless a fingertip contact sensor is added
+        to the scene, and inferring contact from position alone would be a
+        guess dressed as a measurement.
+        """
+        if self._latest_joint_state is None:
+            return GripperState.from_command(
+                self._last_commanded_gripper, 'no joint_state received yet')
+        position = self._latest_joint_state.position
+        if len(position) < 7:
+            return GripperState.from_command(
+                self._last_commanded_gripper,
+                f'joint_state has {len(position)} values, expected 7 with the gripper last')
+        return GripperState(position=float(position[6]), measured=True,
+                            object_detected=None, source='sim joint_state[6]')
 
     def gripper_open(self):
         self.set_gripper(0.0)
