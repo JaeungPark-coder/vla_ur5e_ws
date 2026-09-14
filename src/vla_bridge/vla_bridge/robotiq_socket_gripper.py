@@ -47,8 +47,40 @@ class RobotiqSocketGripper:
         return line.decode("ascii", errors="replace").strip()
 
     def _command(self, cmd):
-        self._sock.sendall((cmd.strip() + "\n").encode("ascii"))
-        return self._readline()
+        """One line out, one line back.
+
+        Anything that goes wrong mid-exchange discards the buffer before it
+        propagates. The socket is long-lived and the buffer spans calls, so a
+        reply that arrived only half-way (a timeout between two packets, say)
+        would otherwise still be sitting there when the NEXT command reads --
+        and that command would be answered by the tail of the previous reply.
+        UR5eInterface.get_gripper_state catches the first failure and falls
+        back honestly; every call after it would be quietly one reply behind,
+        reported as measured. Dropping the stream state costs one reading and
+        keeps that from being possible.
+        """
+        try:
+            self._sock.sendall((cmd.strip() + "\n").encode("ascii"))
+            return self._readline()
+        except Exception:
+            self._buf = b""
+            raise
+
+    def _query(self, cmd, expect):
+        """A GET whose reply must actually be an answer to THIS command.
+
+        Robotiq answers `GET POS` with `POS <n>` and `GET OBJ` with `OBJ <n>`,
+        so the leading token says which question was answered. Checking it is
+        what turns a desynchronised stream into an error instead of a plausible
+        number: `int(reply.split()[-1])` alone reads `POS 1OBJ 2` as 2 and
+        `OBJ 3` as a position of 3 counts, with nothing anywhere saying so.
+        """
+        reply = self._command(cmd)
+        fields = reply.split()
+        if len(fields) != 2 or fields[0] != expect:
+            raise ValueError(
+                f"{cmd!r} was answered with {reply!r}, expected {expect!r} and a value")
+        return int(fields[1])
 
     def activate(self, wait=True, timeout_s=5.0):
         """SET ACT 1 (activation request) then SET GTO 1 (go-to mode, so a
@@ -61,7 +93,7 @@ class RobotiqSocketGripper:
         if wait:
             deadline = time.monotonic() + timeout_s
             while time.monotonic() < deadline:
-                if self._command("GET STA") == "STA 3":
+                if self._query("GET STA", "STA") == 3:
                     break
                 time.sleep(0.1)
             else:
@@ -80,8 +112,7 @@ class RobotiqSocketGripper:
     def get_current_position(self):
         """-> int, 0..255. This is the call robot_interface.py's
         get_gripper_state() depends on for a measured (not echoed) reading."""
-        reply = self._command("GET POS")
-        return int(reply.split()[-1])
+        return self._query("GET POS", "POS")
 
     def is_object_detected(self):
         """gOBJ status via GET OBJ: 0=moving, 1=stopped opening on contact,
@@ -89,9 +120,7 @@ class RobotiqSocketGripper:
         1 or 2 means the fingers stopped early -- i.e. touched something
         before reaching the commanded position, which is the hardware
         grasp-success signal robot_interface.py surfaces to the policy."""
-        reply = self._command("GET OBJ")
-        status = int(reply.split()[-1])
-        return status in (1, 2)
+        return self._query("GET OBJ", "OBJ") in (1, 2)
 
     def set_speed(self, speed):
         """speed: 0 (slowest) .. 255 (fastest). Optional tuning, not part

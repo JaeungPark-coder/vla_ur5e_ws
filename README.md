@@ -97,7 +97,7 @@ few seconds:
 
 ```bash
 pip install pytest            # the only thing the suite needs beyond numpy/scipy
-python -m pytest test/ -q     # 98 checks, ~3 s
+python -m pytest test/ -q     # 121 checks, ~3 s
 ```
 
 What it covers, and why each part exists:
@@ -110,6 +110,7 @@ What it covers, and why each part exists:
 | `test_framing_guard.py` | the derived pixel guard separates the two runs on record |
 | `test_camera_framing.py` | the framing model agrees with the one real measurement |
 | `test_pivot_logic.py` | the dwell/pivot diagnostic tells dynamics from a wrong TCP |
+| `test_robotiq_gripper.py` | the socket driver survives split, merged and abandoned replies |
 
 These are the laptop-runnable checks. The two tests that need the simulator
 live next to it instead (`isaac/test_feasibility_gate.py`,
