@@ -232,6 +232,15 @@ def main():
               f"{' ' if args.no_gripper else ' --no-gripper'}")
         print("  A residual present with the gripper and absent without it is about")
         print("  the gripper -- its mass, or its fingers touching something.")
+    except BaseException:
+        # Print BEFORE the finally closes Kit. isaac_scene.py's shutdown bug
+        # was exactly this shape: simulation_app.close() can take the process
+        # down with a native SIGSEGV during Py_FinalizeEx while annotators are
+        # still attached, and a traceback that has not been flushed by then is
+        # simply lost. Same idiom test_feasibility_gate.py already uses.
+        import traceback
+        print("\n=== FAILED ===\n" + traceback.format_exc(), flush=True)
+        raise
     finally:
         simulation_app.close()
 
