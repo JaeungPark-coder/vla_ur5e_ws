@@ -1,5 +1,11 @@
 vla_policy_client:
   ros__parameters:
+    # Also declared as a launch argument (vla_bridge.launch.py) with the
+    # same default, for `ros2 launch ... robot_ip:=<ip>`. Editing this value
+    # only takes effect if you never pass robot_ip:= on the launch command
+    # line -- the launch argument's default always overrides this file once
+    # substituted in, same trade-off as robot_backend below. Pick one way to
+    # set it and stay with it.
     robot_ip: "192.168.1.100"
     # 'rtde' = real UR5e over RTDE. 'isaac_sim' = talk to
     # ../../isaac/pick_place_scene_bridge.py over ROS2 topics instead --
@@ -14,6 +20,14 @@ vla_policy_client:
     # camera driver's topic names.
     base_image_topic: "/camera/base/image_raw"
     wrist_image_topic: "/camera/wrist/image_raw"
+    # Only used when robot_backend is 'rtde'. 'none' (default) = the
+    # placeholder relay in robot_interface.py, gripper state reported as
+    # NOT MEASURED. 'robotiq_socket' = a real Robotiq over the UR
+    # controller's Socket ADI interface -- see robotiq_socket_gripper.py.
+    # This is the only change needed to go from the relay placeholder to a
+    # real gripper reading once one is wired up.
+    gripper_driver: "none"
+    gripper_socket_port: 63352
     max_steps: 300
     # Phase 4 (optional) -- see ../../isaac/train_residual_policy.py and
     # README.md. 'false' (default) = pi0's action applied as-is.

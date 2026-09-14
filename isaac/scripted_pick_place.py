@@ -22,7 +22,14 @@ GRASP_HEIGHT = 0.02     # tool height when grasping/placing -- matches the cube'
 
 
 class ScriptedPickPlace:
-    def __init__(self, start_tool_pos, cube_position, target_position, steps_per_segment=30):
+    def __init__(self, start_tool_pos, cube_position, target_position, steps_per_segment=90):
+        """steps_per_segment=90 (was 30): measured with reach_probe against
+        this exact scene, 30 ticks (0.5s) per segment moves the Cartesian
+        target faster than RMPflow's default UR5e gains track it -- the tool
+        was still 259mm from the cube at the moment the gripper closed. 90
+        ticks (1.5s/segment) converges to ~40mm before the close segment
+        starts. This changes demonstration *timing*, not the task -- widen
+        further if a future asset/gain change makes tracking lag again."""
         self.start_tool_pos = np.asarray(start_tool_pos, dtype=float)
         self.waypoints = self._build_waypoints(
             np.asarray(cube_position, dtype=float), np.asarray(target_position, dtype=float), steps_per_segment)
@@ -49,15 +56,27 @@ class ScriptedPickPlace:
     def generate_frames(self):
         """Yields (target_pos, target_rotvec, target_gripper) once per
         control tick across the whole episode, linearly interpolating
-        Cartesian position within each segment (orientation held fixed
-        downward throughout -- this task never needs to reorient)."""
+        Cartesian position AND the gripper command within each segment
+        (orientation held fixed downward throughout -- this task never needs
+        to reorient).
+
+        The gripper is interpolated for the same reason try_compliant_close.py
+        found empirically: commanding it fully closed from the first tick of
+        the "close" segment snaps the fingers shut in one control step, and
+        that contact impulse was measured (reach_probe) to knock the arm
+        259mm->374mm off target -- worse than never having converged at all.
+        Ramping it over the segment (already steps_per_segment//2 ticks,
+        close to that script's 60-tick ramp) lets contact form gradually."""
         current_pos = self.start_tool_pos
+        current_gripper = 0.0
         for target_pos, target_gripper, num_ticks in self.waypoints:
             for i in range(1, num_ticks + 1):
                 alpha = i / num_ticks
                 interpolated_pos = current_pos + alpha * (target_pos - current_pos)
-                yield interpolated_pos, DOWNWARD_ROTVEC, target_gripper
+                interpolated_gripper = current_gripper + alpha * (target_gripper - current_gripper)
+                yield interpolated_pos, DOWNWARD_ROTVEC, interpolated_gripper
             current_pos = target_pos
+            current_gripper = target_gripper
 
     def frames_until_grasp(self):
         """Frame index at which the gripper has just finished closing on the

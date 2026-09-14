@@ -77,6 +77,14 @@ class VLAPolicyClient(Node):
         # ADJUST: real-hardware camera topics -- match your actual camera driver's topic names.
         self.declare_parameter('base_image_topic', '/camera/base/image_raw')
         self.declare_parameter('wrist_image_topic', '/camera/wrist/image_raw')
+        # 'none' (default): robot_interface.py's placeholder relay, gripper
+        # state reported as NOT MEASURED. 'robotiq_socket': a real Robotiq
+        # over the UR controller's Socket ADI interface (port
+        # gripper_socket_port at robot_ip) -- see robotiq_socket_gripper.py.
+        # Only consulted when robot_backend='rtde'; the isaac_sim backend
+        # always reads the simulated joint state instead.
+        self.declare_parameter('gripper_driver', 'none')
+        self.declare_parameter('gripper_socket_port', 63352)
         self.declare_parameter('max_steps', 300)  # safety cap -- stop after this many control ticks regardless of task completion
         # Residual RL (see isaac/residual_rl_train_env.py / train_residual_policy.py,
         # README Phase 4): 'false' (default) = pi0's action is applied as-is,
@@ -128,11 +136,24 @@ class VLAPolicyClient(Node):
             self.robot = IsaacSimRobotInterface(self, callback_group=self._cb_group)
             image_topics = ('/vla/base_image', '/vla/wrist_image')
         else:
+            robot_ip = self.get_parameter('robot_ip').value
+            gripper_driver_name = self.get_parameter('gripper_driver').value
+            gripper_driver = None
+            if gripper_driver_name == 'robotiq_socket':
+                from vla_bridge.robotiq_socket_gripper import RobotiqSocketGripper
+                gripper_driver = RobotiqSocketGripper(
+                    robot_ip, port=self.get_parameter('gripper_socket_port').value)
+                gripper_driver.activate()
+                self.get_logger().info(f'gripper_driver=robotiq_socket, activated at {robot_ip}')
+            elif gripper_driver_name != 'none':
+                raise ValueError(
+                    f"unknown gripper_driver {gripper_driver_name!r} -- expected "
+                    "'none' or 'robotiq_socket'")
             # servo_time must match this node's control period: servoJ is
             # told how long each streamed target is meant to govern, so a
             # mismatch either starves the controller or overruns the next tick.
             self.robot = UR5eInterface(
-                self.get_parameter('robot_ip').value, servo_time=self.control_period_s)
+                robot_ip, servo_time=self.control_period_s, gripper_driver=gripper_driver)
             image_topics = (
                 self.get_parameter('base_image_topic').value,
                 self.get_parameter('wrist_image_topic').value,

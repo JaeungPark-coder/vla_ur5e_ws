@@ -19,16 +19,28 @@ def generate_launch_description():
     params_file = os.path.join(pkg_share, 'config', 'params.yaml')
 
     robot_backend = LaunchConfiguration('robot_backend')
+    robot_ip = LaunchConfiguration('robot_ip')
 
     return LaunchDescription([
         DeclareLaunchArgument('robot_backend', default_value='isaac_sim',
                                description="'rtde' (real UR5e) or 'isaac_sim' "
                                            "(needs ../../isaac/pick_place_scene_bridge.py running separately)"),
+        # Default matches params.yaml's own robot_ip so that leaving this
+        # unset and only editing the yaml still works -- same trade-off as
+        # robot_backend above: whichever one you actually override, override
+        # it the same way every time (both launch args here, or edit
+        # params.yaml directly and never pass these), since the launch
+        # argument's default always overwrites the yaml's value once
+        # substituted into `parameters` below. Declared at all so the
+        # `robot_ip:=<ip>` form documented in README.md's bring-up steps
+        # works instead of failing as an unrecognized launch argument.
+        DeclareLaunchArgument('robot_ip', default_value='192.168.1.100',
+                               description="real UR5e's IP address (robot_backend:=rtde only)"),
         Node(
             package='vla_bridge',
             executable='vla_policy_client',
             name='vla_policy_client',
-            parameters=[params_file, {'robot_backend': robot_backend}],
+            parameters=[params_file, {'robot_backend': robot_backend, 'robot_ip': robot_ip}],
             output='screen',
         ),
     ])

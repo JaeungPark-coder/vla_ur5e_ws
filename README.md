@@ -434,6 +434,64 @@ step 6 is what confirms those conventions are the ones OpenVLA reads.
 
 ## Known gaps / ADJUST markers to resolve on real hardware
 
+- **The scripted expert did not actually reach the cube -- found and partly
+  fixed 2026-09-14.** A smoke test of `check_cameras.py --sweep_wrist`
+  printed its own built-in warning ("the tool did not actually reach the
+  cube"), so this was chased down with a standalone reach probe
+  (per-tick tool/target/cube logging, not committed -- reproduce by driving
+  `PickPlaceScene.step_towards` over `ScriptedPickPlace.generate_frames()`
+  and comparing `grip_point_world()` against the waypoint). Two real bugs,
+  fixed here:
+  - `steps_per_segment` defaulted to 30 (0.5s/segment). RMPflow's default
+    UR5e gains cannot track a Cartesian target moving that fast: the tool
+    was still 259mm from the cube when the gripper closed. Raised to 90
+    (1.5s/segment); with the gripper disabled entirely to isolate this from
+    the bug below, that converges to ~20-40mm before the close segment
+    starts.
+  - `generate_frames()` interpolated Cartesian position per tick but jumped
+    the gripper target straight to 1.0 (fully closed) on the first tick of
+    the close segment -- an instant snap, not a close. `try_compliant_close.py`
+    (an existing, uncommitted-conclusion exploration script already in this
+    repo) had already measured that snapping shut is what makes contact
+    non-deterministic; its fix (ramp the close gradually) was generalized
+    into `generate_frames()` itself so every caller gets it, not just that
+    one script.
+  **Contact explosion during the close segment -- found, then substantially
+  (not fully) reduced, 2026-09-14.** Even with both fixes above, one trial
+  had the CUBE -- not the arm -- launched from its resting pose to over 2m
+  away during the (now-gradual) close segment, right after tracking had
+  converged to 20mm; another trial had the ARM fling itself 90cm straight up
+  instead. Two causes chased down and fixed in `isaac_sim_common.py`:
+  - `add_gripper_colliders` put a single `convexHull` on every gripper mesh,
+    including the inner-finger pads (`left_inner_finger`/`right_inner_finger`
+    -- confirmed by listing the un-instanced mesh names: `finger4step` is the
+    pad body, `fingertipsstep` the rubber insert). A hull can only puff a
+    concave grip face outward, so the close could start already
+    interpenetrating the object before the solver saw a normal contact. Those
+    two links now get `convexDecomposition` instead; everything else (rigid
+    housing that never touches the object) keeps the cheaper `convexHull`.
+  - Nothing capped how fast PhysX may separate two interpenetrating bodies.
+    Added `PhysxRigidBodyAPI.maxDepenetrationVelocity = 0.5` (m/s) on both the
+    cube (`add_shape`) and the two pad links -- a real overlap still resolves
+    within a few ticks, but a bad one can no longer produce a multi-meter
+    single-tick launch.
+  **Measured effect** (reach_probe, gripper enabled, `steps_per_segment=90`,
+  4 trials after both fixes, only counting trials where the approach itself
+  had converged before the close segment -- an unconverged approach is the
+  timing gap above, not this bug): 3/4 ended in an ordinary few-cm settle: 2
+  clean, 1 with a temporary ~15cm cube shift that recovered. The 4th still
+  drifted the tool ~300mm during the close -- much smaller than the >2m/900mm
+  launches before, but not zero. **Net effect: no longer catastrophic, not
+  yet reliable.** The remaining ~300mm case is consistent with the residual
+  ~20-40mm tracking offset from the timing fix above: against a 40mm cube,
+  that's a large fraction of the object's own size, so some closes are
+  simply off-center enough to still interpenetrate a corner rather than
+  land flat on a face. Narrowing that residual offset further (tighter
+  RMPflow convergence, or a compliant/vision-guided re-center just before
+  closing) is the next thing to try, ahead of any more solver tuning --
+  the collision/solver changes here have likely done most of what they can
+  for a grasp that starts this far off-center.
+
 - **The wrist camera is aimed wrong and this is the top blocker.** Confirmed
   by inspecting the frames of `smoketest/clipfix_check`, the run collected to
   verify the 2026-09-08 camera fixes: the base camera came out correct (the

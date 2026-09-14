@@ -143,13 +143,28 @@ def add_gripper_colliders(robot_prim):
     nothing was found (wrong path, or with_gripper=False), which the caller
     should treat as a hard failure rather than silently grasping nothing.
     """
-    from pxr import Usd, UsdGeom, UsdPhysics
+    from pxr import Usd, UsdGeom, UsdPhysics, PhysxSchema
 
     stage = robot_prim.GetStage()
     gripper_root = stage.GetPrimAtPath(f"{robot_prim.GetPath()}/Gripper")
     if not gripper_root.IsValid():
         raise RuntimeError(f"no Gripper prim under {robot_prim.GetPath()} -- call "
                             "select_gripper_variant first")
+
+    # Same cap as add_shape's cube, applied at the LINK level (not the mesh)
+    # since PhysxRigidBodyAPI is a rigid-body property -- these are the two
+    # links whose pads actually contact a grasped object. Found by prim NAME
+    # rather than a hardcoded "Robotiq_2F_85" path segment: the variant
+    # folder's actual casing didn't match the variant-set string that
+    # selected it (selecting "Robotiq_2f_85" produced a "Robotiq_2F_85"
+    # child), so a path built from `variant` would be wrong, and a different
+    # candidate (e.g. Robotiq_2F_140) would use a different folder entirely.
+    PAD_LINK_NAMES = ("left_inner_finger", "right_inner_finger")
+    n_pad_links = 0
+    for prim in Usd.PrimRange(gripper_root):
+        if prim.GetName() in PAD_LINK_NAMES:
+            PhysxSchema.PhysxRigidBodyAPI.Apply(prim).CreateMaxDepenetrationVelocityAttr(0.5)
+            n_pad_links += 1
 
     # Pass 1: un-instance. Only the prim that actually AUTHORS
     # instanceable=True (the per-link "visuals" Xform) can have that flag
@@ -167,16 +182,38 @@ def add_gripper_colliders(robot_prim):
 
     # Pass 2: now that nothing is instanced, the meshes are ordinary prims
     # reachable by a plain PrimRange -- apply a collider to each.
+    #
+    # The inner-finger pads (left/right_inner_finger -- the meshes that
+    # actually touch a grasped object, confirmed by name: "finger4step" is
+    # the pad body, "fingertipsstep" the rubber insert on top of it) get
+    # convexDecomposition instead of a single convexHull. reach_probe
+    # (2026-09-14) measured the cube launched >2m from a standing start
+    # during an already-gradual gripper close, after tracking had converged
+    # to a normal ~20-40mm grasp offset -- consistent with a single hull
+    # puffing out these pads' grip-face concavity and starting the close
+    # already deeply interpenetrating, so the solver's one-step correction
+    # is enormous. Everything else (knuckles, outer fingers, base_link) is
+    # rigid housing that never touches the object, where a coarse hull is
+    # fine and decomposition would only cost more.
+    PAD_LINK_MARKERS = ("left_inner_finger", "right_inner_finger")
     n_colliders = 0
+    n_decomposed = 0
     for prim in Usd.PrimRange(gripper_root):
         if prim.IsA(UsdGeom.Mesh):
+            path = str(prim.GetPath())
+            is_pad = any(f"/{marker}/" in path for marker in PAD_LINK_MARKERS)
+            approximation = "convexDecomposition" if is_pad else "convexHull"
             UsdPhysics.CollisionAPI.Apply(prim)
             mesh_collision = UsdPhysics.MeshCollisionAPI.Apply(prim)
-            mesh_collision.CreateApproximationAttr("convexHull")
+            mesh_collision.CreateApproximationAttr(approximation)
             n_colliders += 1
+            n_decomposed += is_pad
 
     print(f"add_gripper_colliders: un-instanced {un_instanced} prim(s), "
-          f"added convexHull colliders to {n_colliders} mesh(es)", flush=True)
+          f"added colliders to {n_colliders} mesh(es) "
+          f"({n_decomposed} convexDecomposition on the grip pads, "
+          f"{n_colliders - n_decomposed} convexHull elsewhere), "
+          f"capped max depenetration velocity on {n_pad_links} pad link(s)", flush=True)
     return n_colliders
 
 
@@ -314,6 +351,17 @@ def add_shape(stage, shape, prim_path, position, size=0.04, color=(0.8, 0.1, 0.1
     UsdPhysics.RigidBodyAPI.Apply(prim)
     mass_api = UsdPhysics.MassAPI.Apply(prim)
     mass_api.CreateMassAttr(0.05)  # 50g -- light enough for a small parallel gripper
+    # Caps how fast PhysX is allowed to push two interpenetrating bodies
+    # apart. reach_probe (2026-09-14) measured this object launched >2m from
+    # a standing start during an already-gradual gripper close -- a solver
+    # resolving deep penetration (from the grip pads' convex approximation,
+    # or just an off-center close) in one step rather than a real contact
+    # force. 0.5 m/s still separates a real overlap within a few ticks but
+    # can no longer produce that -- see the matching cap on the gripper pad
+    # links in add_gripper_colliders.
+    from pxr import PhysxSchema
+    physx_rb = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
+    physx_rb.CreateMaxDepenetrationVelocityAttr(0.5)
     return geom
 
 
