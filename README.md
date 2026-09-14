@@ -129,6 +129,88 @@ check prints: the round trip closes to machine epsilon under a *wrong* axis
 order too, which is why the independent reading is there at all. It still
 does not prove agreement with OpenVLA — that is step 6 below.
 
+## The next Isaac Sim session: two independent tracks
+
+They do not block each other -- run both. Track A finishes step 1 of the
+bring-up table; track B decides HOW to fix the grasp, which is step 3 and has
+never been run.
+
+### Track A -- pin the wrist camera (finishes step 1)
+
+```bash
+cd isaac
+python3 check_cameras.py --sweep_wrist
+```
+
+This is trustworthy now in a way it was not before. The sweep scores each
+candidate mount by how many pixels of the cube it sees **at the moment the
+scripted expert closes**, so it was only ever as good as that moment: with
+`steps_per_segment=30` the tool was still 259 mm from the cube when the
+gripper closed, and every score was measured from the wrong place. 90 is now
+the default in `scripted_pick_place.py`, so running this script picks it up
+with no flags. It also runs **without** the gripper by default, so the 1-in-4
+~300 mm drift -- which comes from the gripper pads' collision geometry -- is
+not even loaded here. The sweep is therefore independent of the grasp
+reliability work in track B.
+
+Three things to check before trusting the winner:
+
+| check | why |
+|---|---|
+| `at grasp after N/M frames: tool is Xmm from the cube` is under 60 mm | over that the script WARNs, and every score below it was taken from the wrong place |
+| no WARNING about a close runner-up | the correct orientation should win by a wide margin, not a judgement call |
+| the contact sheet PNGs actually show the cube, large and centred | a camera buried inside `wrist_3_link` renders solid black, which has happened |
+
+Then paste the printed values into `pick_place_scene.py`'s
+`WRIST_CAMERA_FLANGE_ROT_EULER` and `WRIST_CAMERA_LATERAL_M`, and commit.
+Step 1 is done.
+
+### Track B -- find out what the residual actually is (step 3)
+
+```bash
+python3 pivot_dwell_check.py                # with the gripper
+python3 pivot_dwell_check.py --no-gripper   # payload ablation
+```
+
+Do this **before** changing anything about the grasp. The ~20-40 mm tracking
+residual has three possible causes with three different fixes, and the commit
+that found it already said so: narrowing the residual is the next thing to
+try, *not* more collision or solver tuning.
+
+| both runs | reading | the fix that follows |
+|---|---|---|
+| grows in free space too | dynamics | RMPflow gain tuning, or gripper link mass/inertia -- **which this repo never sets anywhere**; the only `MassAPI` call in it is the cube's 50 g |
+| grows only at the grasp | contact | re-check the geometry: the `GRIPPER_TCP_OFFSET_M` frame fix should already have covered this, so find out why it did not |
+| neither grows | static TCP offset | the pivot spread is the answer -- correct `GRIPPER_TCP_OFFSET_M` or the flange->tool0 rotation constant |
+
+Why the ablation cannot answer the third case on its own:
+`grip_point_world()` is the flange prim plus the **constant**
+`GRIPPER_TCP_OFFSET_M`, not a gripper prim. That is what makes both runs
+measure the same reference point, and equally what makes a static offset
+error appear identically in both. The pivot half of the same script is what
+separates it: rotating about the approach axis drags a wrong TCP around an
+arc, so the error shows as spread with no mean offset, while a genuine bias
+shows as offset with no spread.
+
+One thing recorded in the script's own docstring is worth reading before
+acting on the result: lengthening the hold from 60 to 120 ticks made the
+residual grow from 24 mm to 43 mm. If that reproduces, adding a dwell at the
+end of the descent would be ineffective at best and harmful at worst -- which
+is exactly why this measurement comes first.
+
+### After both
+
+Apply the one fix track B points at -- one, not several, or the next run
+cannot say which worked -- then smoke-test before committing to a long run:
+
+```bash
+python3 collect_demos.py --num_episodes 5
+```
+
+It has to complete without hitting the attempt cap. Only then is the 50-200
+episode collection worth starting.
+
+
 ## Bring-up order
 
 **1. Check the cameras (30 seconds -- do this before every collection run)**
