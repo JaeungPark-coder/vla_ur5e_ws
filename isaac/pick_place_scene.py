@@ -88,7 +88,7 @@ MAX_DARK_FRACTION = 0.30
 # WRIST_CAMERA_LATERAL_M must clear the wrist link's radius. Aiming at
 # WRIST_CAMERA_FOCUS_M along the tool axis, rather than pointing straight
 # down that axis, keeps the target centred despite the lateral offset.
-WRIST_CAMERA_LATERAL_M = 0.06
+WRIST_CAMERA_LATERAL_M = 0.08
 WRIST_CAMERA_FOCUS_M = 0.12
 # How far BACK along the approach axis the camera sits, i.e. behind the
 # gripper looking forward over it, the way a real eye-in-hand bracket is
@@ -105,11 +105,19 @@ WRIST_CAMERA_HORIZONTAL_FOV_DEG = 70.0
 WRIST_CAMERA_FOCAL_LENGTH_MM = 24.0
 
 # Which way the camera looks, as XYZ Euler degrees taking the FLANGE frame to
-# the tool's approach direction. None means "derive it" from the measured
-# flange->tool0 offset -- a derivation whose upstream input
-# (rmpflow.get_end_effector_pose) has never been verified, which is why
-# check_cameras.py --sweep_wrist measures the answer instead.
-WRIST_CAMERA_FLANGE_ROT_EULER = None
+# the tool's approach direction. Settled 2026-09-15 by check_cameras.py
+# --sweep_wrist AFTER fixing the missing verticalAperture in _setup_cameras
+# (see that commit): the first sweep, before that fix, picked (90, 0, 0) by
+# a 688-vs-679 margin the script itself flagged as not a clear winner --
+# and the contact sheets showed why: the same direction's own ROLL images
+# (a pure in-plane rotation, which cannot change what is in frame, only
+# where) showed the cube at roll 0 and nowhere else, which is only possible
+# with a non-square FOV trading horizontal reach for vertical as it turns.
+# With verticalAperture fixed to match, the sweep picked a different
+# direction entirely, by a clearer 1532-vs-1011 margin, and its own rolls
+# now agree with each other (present at 90/180/270, occluded by the
+# gripper itself at roll 0 -- a real occlusion, not a vanishing act).
+WRIST_CAMERA_FLANGE_ROT_EULER = (0.0, 90.0, 0.0)
 BASE_CAMERA_POSITION = (0.9, 0.0, 0.5)
 # What the base camera looks at: between the cube spawn area (CUBE_X_RANGE x
 # CUBE_Y_RANGE at CUBE_Z) and the place target, so both are in frame.
@@ -301,6 +309,22 @@ class PickPlaceScene:
             math.radians(BASE_CAMERA_HORIZONTAL_FOV_DEG) / 2.0)
         base_cam.CreateFocalLengthAttr(BASE_CAMERA_FOCAL_LENGTH_MM)
         base_cam.CreateHorizontalApertureAttr(horizontal_aperture_mm)
+        # CONFIRMED 2026-09-15: verticalAperture was never set here, so it
+        # sat at USD's schema default (15.2908mm) regardless of
+        # horizontalAperture -- for this camera's 24mm focal length that is
+        # a ~35.3deg vertical FOV against the intended 60deg horizontal, on
+        # a SQUARE 256x256 render. Every frame this scene has ever rendered
+        # was vertically compressed relative to horizontal by that ratio;
+        # found chasing why check_cameras.py's wrist sweep showed the cube
+        # vanishing on 3 of 4 in-plane ROLLS of its own winning direction --
+        # a real roll of a genuinely square FOV can only move content
+        # between edges, never make it disappear, so a non-square FOV that
+        # trades horizontal reach for vertical reach as it rotates was the
+        # only remaining explanation. Matching it to horizontalAperture
+        # gives square pixels for this square CAMERA_RESOLUTION -- for a
+        # non-square resolution this would need scaling by
+        # (vertical_px / horizontal_px) instead.
+        base_cam.CreateVerticalApertureAttr(horizontal_aperture_mm)
         # CONFIRMED (2026-09-07, by inspecting an actual collected dataset): a
         # USD camera's default clippingRange is (1.0, 1000000) -- a 1 METRE
         # near plane. The base camera sits ~0.66m from the cube and the wrist
@@ -342,6 +366,13 @@ class PickPlaceScene:
             math.radians(WRIST_CAMERA_HORIZONTAL_FOV_DEG) / 2.0)
         wrist_cam.CreateFocalLengthAttr(WRIST_CAMERA_FOCAL_LENGTH_MM)
         wrist_cam.CreateHorizontalApertureAttr(wrist_aperture_mm)
+        # Same fix, same reason, as the base camera above: unset
+        # verticalAperture defaults to USD's 15.2908mm regardless of this
+        # camera's own 70deg-horizontal aperture, a ~2x FOV mismatch on this
+        # camera's shorter focal length -- worse than the base camera's, and
+        # what actually produced the vanishing-on-roll symptom this was
+        # chased down from.
+        wrist_cam.CreateVerticalApertureAttr(wrist_aperture_mm)
         self.set_wrist_camera_flange_rotation(WRIST_CAMERA_FLANGE_ROT_EULER)
 
         # Render products + annotators last, once both cameras exist. These

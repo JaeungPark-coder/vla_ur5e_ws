@@ -604,6 +604,41 @@ step 6 is what confirms those conventions are the ones OpenVLA reads.
   from the flange origin, well within that link. Direction was never the
   problem. The mount is now `WRIST_CAMERA_STANDOFF_M` along the direction the
   camera looks, and `check_cameras.py` sweeps standoff as well as direction.
+  **Update (2026-09-15): the sweep ran for real on live Isaac Sim, and found
+  a second bug behind it -- both cameras' vertical FOV was never set.** The
+  first live run picked `(90, 0, 0)` at lateral 0.08m, but by a 688-vs-679
+  margin the script itself flagged as not a clear winner, and the contact
+  sheets showed why: `wrist_rolls_at_grasp.png` -- four renders of that same
+  direction, rotated only about its own viewing axis -- showed the cube at
+  roll 0 and at literally none of rolls 90/180/270. A pure in-plane
+  rotation cannot make real content vanish, only move it; the only
+  explanation left was a non-square field of view trading horizontal reach
+  for vertical as it turns. `_setup_cameras` confirmed it: both the base and
+  wrist cameras call `CreateHorizontalApertureAttr` but never
+  `CreateVerticalApertureAttr`, so vertical sat at USD's schema default
+  (15.2908mm) regardless of the horizontal value computed from
+  `*_HORIZONTAL_FOV_DEG` -- on the wrist camera's 24mm focal length that is
+  a real vertical FOV near 35 degrees against the intended 70 horizontal,
+  rendered onto a SQUARE 256x256 image the whole project has been treating
+  as square-FOV. Every frame either camera has ever rendered was vertically
+  compressed relative to horizontal by that ratio, this ADJUST item's own
+  suspicion two sections above having gone unchecked until the roll sweep
+  forced the question. Fixed by setting each camera's vertical aperture
+  equal to its horizontal one (correct for this project's square
+  `CAMERA_RESOLUTION`; a non-square resolution would need the vertical
+  aperture scaled by its own aspect ratio instead). Re-running the sweep
+  after the fix picked a DIFFERENT direction, `(0, 90, 0)` at lateral
+  0.08m, by a clearly wider 1532-vs-1011 margin, and that direction's own
+  rolls now agree with each other (present at 90/180/270, occluded by the
+  gripper itself only at roll 0 -- a real occlusion, not the vanishing act).
+  Pinned as the new default. One preflight run afterward showed
+  `wrist_rgb cube_px=0` at a *different* random grasp, but `base_rgb` for
+  that same frame shows why: tool was 59mm from the cube, at the edge of
+  the convergence warning band, cube visibly still on the table beside the
+  gripper rather than under it -- the grasp-residual tracking issue this
+  file already documents (see "Bring-up order" step 1 and Track B above),
+  not a new camera problem. The wrist mount looks at where a converged
+  grasp puts the cube; it was simply given a grasp that had not converged.
 - **Base camera framing is small, and it is geometry, not occlusion --
   corrected 2026-09-15, this entry previously said the opposite.** The cube
   peaked at 139 of 65,536 px over a whole episode (~1 px at reset, first
@@ -685,11 +720,17 @@ step 6 is what confirms those conventions are the ones OpenVLA reads.
   generate (anything requiring visual feedback mid-motion, not just a fixed
   waypoint sequence).
 - `isaac/pick_place_scene.py`'s `BASE_CAMERA_FOCAL_LENGTH_MM`/aperture
-  setup (for Phase 6's `camera_projection.py` math to be accurate) assumes
-  USD camera focal-length/aperture attributes behave the standard way on
-  your Isaac Sim version -- if detected objects' localization error (printed
-  by `hybrid_pick_place_demo.py`) is consistently large, check the actual
-  rendered FOV against `BASE_CAMERA_HORIZONTAL_FOV_DEG` first.
+  setup (for Phase 6's `camera_projection.py` math to be accurate) **did
+  not** behave the standard way -- confirmed and fixed 2026-09-15, see the
+  wrist-camera entry above: `verticalAperture` was never set on either
+  camera, leaving it at USD's schema default regardless of the horizontal
+  value computed from `*_HORIZONTAL_FOV_DEG`, a real vertical/horizontal FOV
+  mismatch on a nominally-square render. Now set equal to the horizontal
+  aperture on both cameras. If detected objects' localization error (printed
+  by `hybrid_pick_place_demo.py`) is still consistently large on your
+  install, check the actual rendered FOV against `BASE_CAMERA_HORIZONTAL_FOV_DEG`
+  again -- that was the right instinct, just not chased down until a
+  wrist-camera roll sweep forced the question.
 - Phase 6's comparison against the pure-VLA pipeline isn't apples-to-apples
   yet: `pi0_ur5e_pick_place` was only ever fine-tuned on one cube (Phase 1's
   single-object data). A fair comparison needs Phase 1/2 redone with
