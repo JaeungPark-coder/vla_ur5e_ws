@@ -100,6 +100,18 @@ pip install pytest            # the only thing the suite needs beyond numpy/scip
 python -m pytest test/ -q     # 121 checks, ~3 s
 ```
 
+**If a plain `ModuleNotFoundError: No module named 'lark'` comes out of
+`launch_testing`/`launch`, not out of this repo's own code**, it means ROS 2
+was sourced in this shell: pytest auto-loads every installed `pytest11`
+plugin, including the ones ROS 2 Humble registers (`launch_testing`,
+`launch_ros`, `ament_lint`, ...), and one of those imports `lark`, which
+ROS's own apt packages don't pull in. `pytest.ini`'s `addopts` now disables
+those plugins by name so the command above runs the same whether or not ROS
+is sourced -- confirmed 2026-09-15 against a shell with Humble sourced and
+an Isaac conda env's Python ahead on `PATH`, the actual day-to-day shell on
+this machine. If you still hit it (an older ROS distro registering a
+different plugin name), add `-p no:<that plugin>` or just `pip install lark`.
+
 What it covers, and why each part exists:
 
 | file | holds |
@@ -592,13 +604,28 @@ step 6 is what confirms those conventions are the ones OpenVLA reads.
   from the flange origin, well within that link. Direction was never the
   problem. The mount is now `WRIST_CAMERA_STANDOFF_M` along the direction the
   camera looks, and `check_cameras.py` sweeps standoff as well as direction.
-- **Base camera framing is poor even though it works.** The arm dominates the
-  frame and occludes the cube for roughly the first half of every episode
-  (measured: ~1 cube pixel at reset, first clearly visible around frame 90,
-  peaking near 139 of 65,536 px). The policy therefore gets almost no visual
-  evidence of where the cube is during exactly the approach phase where it
-  needs it. Worth moving the camera to a less occluded viewpoint, or
-  tightening its framing onto the workspace, before a full collection run.
+- **Base camera framing is small, and it is geometry, not occlusion --
+  corrected 2026-09-15, this entry previously said the opposite.** The cube
+  peaked at 139 of 65,536 px over a whole episode (~1 px at reset, first
+  clearly visible around frame 90), which this entry used to read as the arm
+  occluding the task. `isaac/camera_framing.py` (added since, no Isaac Sim
+  needed to run it) checks that against pure trigonometry and it is not an
+  occlusion number at all: a 4 cm cube at this camera's distance subtends
+  about 14 px across (~200 px2) regardless of what else is in frame, and the
+  workspace that has to stay in frame (cube spawn spread + place target, 0.50
+  m of it) caps it at ~20.5 px across (419 px2) at the current 256 px
+  resolution -- no repositioning or lensing choice beats that ceiling, only
+  shrinking the required workspace or raising resolution does. Moving the
+  camera to "a less occluded viewpoint" would not have changed the number.
+  `pick_place_scene.py` already derives its preflight floor
+  (`MIN_CUBE_PIXELS_FLOOR`, via `BASE_FRAMING.usable_peak_area_px`) from this
+  same ceiling rather than a flat guess, so the collection-time gate is
+  already geometry-aware; what is still an open choice, not yet made, is
+  whether to also act on it before a full run -- `camera_framing.py`'s own
+  output spells out the three levers and their cost: tighten `CUBE_Y_RANGE`/
+  `PLACE_TARGET_POSITION` to ~0.34 m of spread, raise `CAMERA_RESOLUTION` to
+  ~375 px, or accept the base view as coarse context and lean on the wrist
+  camera (already ~3.9x larger at the grasp) for the fine approach signal.
 - `isaac/isaac_sim_common.py`: exact Robotiq gripper asset path and its
   drive-joint name/limits are unverified placeholders (least-certain part
   of the whole pipeline -- everything downstream assumes this works).
