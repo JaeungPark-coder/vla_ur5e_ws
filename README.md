@@ -639,6 +639,45 @@ step 6 is what confirms those conventions are the ones OpenVLA reads.
   file already documents (see "Bring-up order" step 1 and Track B above),
   not a new camera problem. The wrist mount looks at where a converged
   grasp puts the cube; it was simply given a grasp that had not converged.
+- **`pivot_dwell_check.py` was run for the first time 2026-09-15, and its own
+  stdout-loss bug ate the first run before a second run's numbers pointed at
+  contact, not dynamics.** The first run produced no output at all despite
+  69 seconds of real simulation and no exception -- the exact
+  fastShutdown-swallows-block-buffered-stdout failure `check_cameras.py`
+  already documents and works around with its own `say()`/`_REPORT`
+  mirroring, which this script did not have; the 2026-09-15 01:17 fix
+  upstream had only added a `flush=True` print on the exception path, not
+  the (much larger) success path. Fixed the same way: every `print()` in
+  this file now goes through a `say()` that flushes immediately.
+
+  With that fixed, both runs (with and without `--no-gripper`) produced
+  real numbers, but at a scale the file's own docstring (24mm -> 43mm) did
+  not prepare for: 300-600mm, not tens of mm. The reason is methodological,
+  not physical -- `main()` commands `hold()` straight from `scene.reset()`'s
+  home configuration in one shot (432mm and 500mm initial error at tick 1
+  in the two runs), so most of `DWELL_SAMPLES`' tick budget (which the
+  original 24/43 observation implicitly assumed started near-converged) is
+  spent on the initial approach, not a settled hold -- and the pivot test's
+  60-tick samples land mid-approach for the same reason, so its spread/mean-
+  offset numbers are not yet a trustworthy TCP-frame measurement either.
+
+  One comparison inside the noise is clean, though, and it answers the
+  question this test exists to answer: at tick 180, free space converges to
+  9.4mm (with gripper) and 13.7mm (without) -- both settled, gripper or not.
+  The grasp target converges to 16.6mm without the gripper, but WITH it
+  diverges: 229.9mm (tick 60) -> 146.6mm (tick 90) -> 205.8mm (tick 120) ->
+  575.6mm (tick 180), growing after appearing to improve. Present only with
+  the gripper AND only at the position where its fingers reach the table is
+  exactly the CONTACT row of this file's own decision table, and the scale
+  (fully diverging, not settling to an elevated residual) matches this
+  project's own documented contact-explosion history (`isaac_sim_common.py`'s
+  `convexDecomposition` + `maxDepenetrationVelocity` fixes for the transient
+  close segment) more than a stable one -- worth checking whether that same
+  fix holds up under a SUSTAINED hold rather than the brief close-and-lift
+  those fixes were tuned against, which is what neither this run nor those
+  fixes' own validation has tested. Not yet done this session: re-running
+  with a longer tick budget (or a target the arm starts already near) to get
+  a genuine settled-residual number and a trustworthy pivot spread.
 - **Base camera framing is small, and it is geometry, not occlusion --
   corrected 2026-09-15, this entry previously said the opposite.** The cube
   peaked at 139 of 65,536 px over a whole episode (~1 px at reset, first

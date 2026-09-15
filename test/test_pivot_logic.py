@@ -19,7 +19,7 @@ import pytest
 
 SOURCE = Path(__file__).resolve().parents[1] / 'isaac' / 'pivot_dwell_check.py'
 
-WANTED_FUNCTIONS = {'hold', 'report_dwell'}
+WANTED_FUNCTIONS = {'hold', 'report_dwell', 'say'}
 WANTED_CONSTANTS = {'DWELL_SAMPLES', 'SETTLED_TOLERANCE_M',
                     'PIVOT_ROLLS_DEG', 'PIVOT_TILTS_DEG'}
 

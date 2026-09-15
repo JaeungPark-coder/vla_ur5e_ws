@@ -78,6 +78,20 @@ PIVOT_ROLLS_DEG = (0.0, 45.0, -45.0, 90.0, -90.0)
 PIVOT_TILTS_DEG = (0.0, 10.0, -10.0)
 
 
+def say(line=""):
+    """print(..., flush=True) -- CONFIRMED 2026-09-15 this file needed it:
+    a real run (69s of real dwell/pivot work, no exception, no traceback)
+    produced a completely empty log when its stdout was redirected to a
+    file. Plain print() left every line sitting in a block-buffered stdout
+    that Kit's fastShutdown (see check_cameras.py's own say()/_REPORT
+    workaround for the same failure) tore down before the interpreter's
+    normal exit ever flushed it. The 2026-09-15 01:17 fix upstream only
+    covered the exception path (its own flush=True print before re-raising);
+    every print() on the SUCCESS path -- the entire report this script
+    exists to produce -- was still exposed."""
+    print(line, flush=True)
+
+
 def hold(scene, grip_pos, rotvec, ticks, gripper=0.0):
     """Command one pose for `ticks` control ticks, returning the grip-point
     error at each sample point. The target never changes, so anything that
@@ -91,16 +105,16 @@ def hold(scene, grip_pos, rotvec, ticks, gripper=0.0):
 
 
 def report_dwell(label, errors):
-    print(f"\n  {label}")
-    print("    " + "  ".join(f"{t:>5}" for t in sorted(errors)))
-    print("    " + "  ".join(f"{errors[t] * 1000:>5.1f}" for t in sorted(errors)))
-    print("    (ticks above, grip-point error in mm below)")
+    say(f"\n  {label}")
+    say("    " + "  ".join(f"{t:>5}" for t in sorted(errors)))
+    say("    " + "  ".join(f"{errors[t] * 1000:>5.1f}" for t in sorted(errors)))
+    say("    (ticks above, grip-point error in mm below)")
 
     late = [t for t in errors if t >= 60]
     if len(late) < 2:
         return None
     growth = errors[max(late)] - errors[min(late)]
-    print(f"    growth from tick {min(late)} to {max(late)}: {growth * 1000:+.1f} mm")
+    say(f"    growth from tick {min(late)} to {max(late)}: {growth * 1000:+.1f} mm")
     return growth
 
 
@@ -118,9 +132,9 @@ def main():
     scene = PickPlaceScene(with_gripper=with_gripper)
     scene.reset()
 
-    print("=" * 68)
-    print(f"PIVOT / DWELL CHECK  ({'with' if with_gripper else 'WITHOUT'} gripper)")
-    print("=" * 68)
+    say("=" * 68)
+    say(f"PIVOT / DWELL CHECK  ({'with' if with_gripper else 'WITHOUT'} gripper)")
+    say("=" * 68)
 
     free_pos = np.array([scene.cube_position[0], scene.cube_position[1], args.free_height])
     grasp_pos = scene.cube_position + np.array([0.0, 0.0, GRASP_HEIGHT])
@@ -132,7 +146,7 @@ def main():
             from isaac_sim_common import ROBOT_PRIM_PATH
             gate = FeasibilityGate(ROBOT_PRIM_PATH)
         except Exception as exc:  # noqa: BLE001 -- the check is a nicety, not the point
-            print(f"  (feasibility gate unavailable: {exc})")
+            say(f"  (feasibility gate unavailable: {exc})")
 
         def reachable(grip_pos, rotvec):
             """Reachability, so an unreachable pose is not read as bad tracking."""
@@ -143,31 +157,31 @@ def main():
             return verdict["ok"], verdict["reason"]
 
         # --- 1. does the residual grow, and where -------------------------
-        print("\n" + "-" * 68)
-        print("DWELL: hold one pose and watch the error")
-        print("-" * 68)
+        say("\n" + "-" * 68)
+        say("DWELL: hold one pose and watch the error")
+        say("-" * 68)
 
         ok, reason = reachable(free_pos, DOWNWARD_ROTVEC)
-        print(f"  free-space target {np.round(free_pos, 3)} reachable: {ok} ({reason})")
+        say(f"  free-space target {np.round(free_pos, 3)} reachable: {ok} ({reason})")
         free_growth = report_dwell(
             "free space -- nothing within reach of the fingers",
             hold(scene, free_pos, DOWNWARD_ROTVEC, max(DWELL_SAMPLES)))
 
         scene.reset()
         ok, reason = reachable(grasp_pos, DOWNWARD_ROTVEC)
-        print(f"\n  grasp target {np.round(grasp_pos, 3)} reachable: {ok} ({reason})")
+        say(f"\n  grasp target {np.round(grasp_pos, 3)} reachable: {ok} ({reason})")
         grasp_growth = report_dwell(
             "at the grasp -- the fingers are at the table",
             hold(scene, grasp_pos, DOWNWARD_ROTVEC, max(DWELL_SAMPLES)))
 
         # --- 2. is the tool centre point right ----------------------------
-        print("\n" + "-" * 68)
-        print("PIVOT: swing the arm around a fixed grip point")
-        print("-" * 68)
-        print(f"  commanding {np.round(free_pos, 3)} at {len(PIVOT_ROLLS_DEG)} rolls "
+        say("\n" + "-" * 68)
+        say("PIVOT: swing the arm around a fixed grip point")
+        say("-" * 68)
+        say(f"  commanding {np.round(free_pos, 3)} at {len(PIVOT_ROLLS_DEG)} rolls "
               f"x {len(PIVOT_TILTS_DEG)} tilts")
-        print(f"\n  {'roll':>6} {'tilt':>6}  {'reached':>8}  {'error':>8}")
-        print("  " + "-" * 34)
+        say(f"\n  {'roll':>6} {'tilt':>6}  {'reached':>8}  {'error':>8}")
+        say("  " + "-" * 34)
 
         landed = []
         base = Rot.from_rotvec(DOWNWARD_ROTVEC)
@@ -178,60 +192,60 @@ def main():
                           * Rot.from_euler("x", tilt, degrees=True)).as_rotvec()
                 ok, _ = reachable(free_pos, rotvec)
                 if not ok:
-                    print(f"  {roll:>5.0f}d {tilt:>5.0f}d  unreachable, skipped")
+                    say(f"  {roll:>5.0f}d {tilt:>5.0f}d  unreachable, skipped")
                     continue
                 scene.reset()
                 hold(scene, free_pos, rotvec, 60)
                 reached = scene.grip_point_world()
                 landed.append(reached)
-                print(f"  {roll:>5.0f}d {tilt:>5.0f}d  {'yes':>8}  "
+                say(f"  {roll:>5.0f}d {tilt:>5.0f}d  {'yes':>8}  "
                       f"{np.linalg.norm(reached - free_pos) * 1000:>6.1f}mm")
 
         # --- 3. what it all means -----------------------------------------
-        print("\n" + "=" * 68)
-        print("VERDICT")
-        print("=" * 68)
+        say("\n" + "=" * 68)
+        say("VERDICT")
+        say("=" * 68)
 
         if free_growth is not None and grasp_growth is not None:
             free_drifts = abs(free_growth) > SETTLED_TOLERANCE_M
             grasp_drifts = abs(grasp_growth) > SETTLED_TOLERANCE_M
             if free_drifts:
-                print(f"  The residual grows by {free_growth * 1000:+.1f} mm in FREE SPACE,")
-                print("  where there is nothing to touch. That is dynamics, not contact:")
-                print("  tune the wrist drive stiffness/damping and set the gripper's")
-                print("  mass and inertia -- none of which this codebase sets today.")
+                say(f"  The residual grows by {free_growth * 1000:+.1f} mm in FREE SPACE,")
+                say("  where there is nothing to touch. That is dynamics, not contact:")
+                say("  tune the wrist drive stiffness/damping and set the gripper's")
+                say("  mass and inertia -- none of which this codebase sets today.")
             elif grasp_drifts:
-                print(f"  Free space is settled ({free_growth * 1000:+.1f} mm) but the grasp")
-                print(f"  pose grows by {grasp_growth * 1000:+.1f} mm. That is contact, and it")
-                print("  means the frame correction in _grip_pose_to_tool0 is doing its job")
-                print("  in free space while the fingers still reach something at the grasp.")
+                say(f"  Free space is settled ({free_growth * 1000:+.1f} mm) but the grasp")
+                say(f"  pose grows by {grasp_growth * 1000:+.1f} mm. That is contact, and it")
+                say("  means the frame correction in _grip_pose_to_tool0 is doing its job")
+                say("  in free space while the fingers still reach something at the grasp.")
             else:
-                print("  Settled in both -- the growing residual is gone. Whatever remains")
-                print("  is a constant offset, which is what the pivot spread below measures.")
+                say("  Settled in both -- the growing residual is gone. Whatever remains")
+                say("  is a constant offset, which is what the pivot spread below measures.")
 
         if len(landed) >= 2:
             landed = np.asarray(landed)
             spread = float(np.max(np.linalg.norm(
                 landed[:, None, :] - landed[None, :, :], axis=-1)))
             mean_offset = float(np.linalg.norm(landed.mean(axis=0) - free_pos))
-            print(f"\n  pivot spread across orientations: {spread * 1000:.1f} mm")
-            print(f"  mean offset from the commanded point: {mean_offset * 1000:.1f} mm")
-            print("\n  The spread is the frame error: a correct flange-to-fingertip")
-            print("  transform keeps the grip point still while the arm rotates around")
-            print("  it, so whatever the point moves is how wrong that transform is.")
-            print("  The mean offset is different -- a constant bias, which tracking")
-            print("  error and a wrong GRIPPER_TCP_OFFSET_M both produce, and which")
-            print("  rotating cannot separate.")
-            print(f"  These rolls span 180 degrees, so the tip traces a half circle of")
-            print(f"  radius equal to the error, making the spread about TWICE it --")
-            print(f"  roughly {spread * 500:.1f} mm of transform error here. A pure")
-            print("  transform error averages out of the mean offset entirely, so the")
-            print("  two numbers measure different faults and do not overlap.")
+            say(f"\n  pivot spread across orientations: {spread * 1000:.1f} mm")
+            say(f"  mean offset from the commanded point: {mean_offset * 1000:.1f} mm")
+            say("\n  The spread is the frame error: a correct flange-to-fingertip")
+            say("  transform keeps the grip point still while the arm rotates around")
+            say("  it, so whatever the point moves is how wrong that transform is.")
+            say("  The mean offset is different -- a constant bias, which tracking")
+            say("  error and a wrong GRIPPER_TCP_OFFSET_M both produce, and which")
+            say("  rotating cannot separate.")
+            say(f"  These rolls span 180 degrees, so the tip traces a half circle of")
+            say(f"  radius equal to the error, making the spread about TWICE it --")
+            say(f"  roughly {spread * 500:.1f} mm of transform error here. A pure")
+            say("  transform error averages out of the mean offset entirely, so the")
+            say("  two numbers measure different faults and do not overlap.")
 
-        print("\n  Then run the other half:  python3 pivot_dwell_check.py"
+        say("\n  Then run the other half:  python3 pivot_dwell_check.py"
               f"{' ' if args.no_gripper else ' --no-gripper'}")
-        print("  A residual present with the gripper and absent without it is about")
-        print("  the gripper -- its mass, or its fingers touching something.")
+        say("  A residual present with the gripper and absent without it is about")
+        say("  the gripper -- its mass, or its fingers touching something.")
     except BaseException:
         # Print BEFORE the finally closes Kit. isaac_scene.py's shutdown bug
         # was exactly this shape: simulation_app.close() can take the process
