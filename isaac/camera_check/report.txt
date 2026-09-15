@@ -1,13 +1,301 @@
 writing this report to camera_check/report.txt as well as stdout (Kit's shutdown discards a block-buffered stdout when piped)
 running WITHOUT a gripper -- the cameras are mounted on the arm, so leaving the gripper out changes nothing this script measures and avoids its instability (pass --with_gripper to include it).
 scene built; resetting...
-reset OK -- cube at [0.493 0.098 0.02 ], wrist camera at [ 0.817  0.353 -0.017]
+reset OK -- cube at [ 0.472 -0.072  0.02 ], wrist camera at [0.937 0.233 0.183]
 driving the scripted expert to the grasp...
-at grasp after 225/630 frames: tool is 59mm from the cube
+at grasp after 225/630 frames: tool is 30mm from the cube
 
-camera readings (at_grasp, cube at [0.493 0.098 0.02 ]):
-  base_rgb           cube_px=   157  near_black=  5.4%  mean= 114.4  std= 57.29
-  wrist_rgb          cube_px=     0  near_black= 28.3%  mean=  58.6  std= 62.54
+camera readings (at_grasp, cube at [ 0.472 -0.072  0.02 ]):
+  base_rgb           cube_px=     0  near_black=  7.0%  mean= 111.1  std= 61.52
+  wrist_rgb          cube_px=     0  near_black= 62.0%  mean=   9.4  std= 16.39
 
-preflight: OK
+preflight: PROBLEMS
+  - wrist_rgb: 62% of the frame is near-black -- the camera is aimed past the scene, not at it
 wrote camera_check/cameras_at_grasp.png
+
+wrist sweep -- committed: rot=(0.0, 0.0, 0.0) lateral=0.12m focus=0.12m (rot None resolves to the derived [180.0, 0.0, 0.0])
+scoring each candidate over 5 independent cube spawns (pass --wrist_samples to change this)
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 290mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 138mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 36mm from the cube
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 63mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 132mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (0, 0, 0)@0.05     cube_px mean=     0 min=    0 max=    0  near_black= 56.4%  cam_at=[ 0.451 -0.249  0.049]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 58mm from the cube
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 79mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 105mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 273mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 133mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (180, 0, 0)@0.05   cube_px mean=   408 min=    0 max=  919  near_black= 14.9%  cam_at=[0.459 0.101 0.301]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 119mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 58mm from the cube
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 246mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 178mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 86mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (90, 0, 0)@0.05    cube_px mean=   209 min=    0 max=  742  near_black= 28.0%  cam_at=[ 0.442 -0.266  0.218]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 41mm from the cube
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 27mm from the cube
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 243mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 217mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 51mm from the cube
+  (-90, 0, 0)@0.05   cube_px mean=    99 min=    0 max=  350  near_black= 38.3%  cam_at=[0.538 0.022 0.102]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 93mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 34mm from the cube
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 99mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 153mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 130mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (0, 90, 0)@0.05    cube_px mean=     1 min=    0 max=    5  near_black= 27.3%  cam_at=[0.329 0.055 0.208]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 218mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 196mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 143mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 109mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 190mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (0, -90, 0)@0.05   cube_px mean=    10 min=    0 max=   51  near_black= 25.6%  cam_at=[0.51  0.099 0.114]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 196mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 243mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 64mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 204mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 97mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (0, 0, 0)@0.08     cube_px mean=     0 min=    0 max=    0  near_black= 46.9%  cam_at=[ 0.394 -0.098  0.042]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 82mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 76mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 134mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 74mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 77mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (180, 0, 0)@0.08   cube_px mean=   343 min=    0 max=  953  near_black= 15.3%  cam_at=[0.454 0.083 0.284]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 161mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 108mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 206mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 273mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 249mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (90, 0, 0)@0.08    cube_px mean=   188 min=    0 max=  498  near_black= 21.1%  cam_at=[0.521 0.037 0.264]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 157mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 96mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 76mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 194mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 96mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (-90, 0, 0)@0.08   cube_px mean=   147 min=    0 max=  494  near_black= 45.1%  cam_at=[0.385 0.088 0.081]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 175mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 143mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 258mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 73mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 239mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (0, 90, 0)@0.08    cube_px mean=   207 min=    0 max=  902  near_black= 27.0%  cam_at=[0.322 0.162 0.237]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 125mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 180mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 258mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 116mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 138mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (0, -90, 0)@0.08   cube_px mean=   187 min=    0 max=  698  near_black= 39.1%  cam_at=[0.645 0.046 0.135]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 197mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 230mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 87mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 248mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 216mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (0, 0, 0)@0.12     cube_px mean=     0 min=    0 max=    0  near_black= 53.2%  cam_at=[0.384 0.003 0.042]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 101mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 38mm from the cube
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 148mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 88mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 201mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (180, 0, 0)@0.12   cube_px mean=   341 min=    0 max=  929  near_black= 17.2%  cam_at=[0.528 0.246 0.267]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 219mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 106mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 161mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 189mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 93mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (90, 0, 0)@0.12    cube_px mean=    56 min=    0 max=  279  near_black= 35.6%  cam_at=[ 0.395 -0.136  0.282]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 121mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 46mm from the cube
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 89mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 97mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 88mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (-90, 0, 0)@0.12   cube_px mean=   518 min=    0 max= 1488  near_black= 55.2%  cam_at=[ 0.424 -0.023  0.041]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 115mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 54mm from the cube
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 146mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 109mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 67mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (0, 90, 0)@0.12    cube_px mean=   317 min=    0 max=  856  near_black= 22.9%  cam_at=[ 0.313 -0.124  0.279]
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 153mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 194mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 252mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 175mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+driving the scripted expert to the grasp...
+at grasp after 225/630 frames: tool is 125mm from the cube
+WARNING: the tool did not actually reach the cube. Every wrist-camera score below is measured from the wrong place -- fix the reach (RMPflow tracking, or the waypoint heights in scripted_pick_place.py) before trusting the sweep.
+  (0, -90, 0)@0.12   cube_px mean=   149 min=    0 max=  745  near_black= 55.6%  cam_at=[ 0.6   -0.208  0.017]
+wrote camera_check/wrist_dirs_at_grasp_lateral0.05.png
+wrote camera_check/wrist_dirs_at_grasp_lateral0.08.png
+wrote camera_check/wrist_dirs_at_grasp_lateral0.12.png
+
+NO MOUNT WORKS -- even the most reliable candidate's WORST sample saw only 0 cube pixels (518 mean) at the grasp, where an eye-in-hand camera should see thousands.
+Some candidates do render the scene, so the mount is roughly right but no direction reliably sees the cube across different spawns. A wider CUBE_X_RANGE/CUBE_Y_RANGE than any fixed eye-in-hand mount can cover is one explanation worth ruling out before trying more mount candidates.

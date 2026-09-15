@@ -88,7 +88,7 @@ MAX_DARK_FRACTION = 0.30
 # WRIST_CAMERA_LATERAL_M must clear the wrist link's radius. Aiming at
 # WRIST_CAMERA_FOCUS_M along the tool axis, rather than pointing straight
 # down that axis, keeps the target centred despite the lateral offset.
-WRIST_CAMERA_LATERAL_M = 0.08
+WRIST_CAMERA_LATERAL_M = 0.12
 WRIST_CAMERA_FOCUS_M = 0.12
 # How far BACK along the approach axis the camera sits, i.e. behind the
 # gripper looking forward over it, the way a real eye-in-hand bracket is
@@ -105,19 +105,22 @@ WRIST_CAMERA_HORIZONTAL_FOV_DEG = 70.0
 WRIST_CAMERA_FOCAL_LENGTH_MM = 24.0
 
 # Which way the camera looks, as XYZ Euler degrees taking the FLANGE frame to
-# the tool's approach direction. Settled 2026-09-15 by check_cameras.py
-# --sweep_wrist AFTER fixing the missing verticalAperture in _setup_cameras
-# (see that commit): the first sweep, before that fix, picked (90, 0, 0) by
-# a 688-vs-679 margin the script itself flagged as not a clear winner --
-# and the contact sheets showed why: the same direction's own ROLL images
-# (a pure in-plane rotation, which cannot change what is in frame, only
-# where) showed the cube at roll 0 and nowhere else, which is only possible
-# with a non-square FOV trading horizontal reach for vertical as it turns.
-# With verticalAperture fixed to match, the sweep picked a different
-# direction entirely, by a clearer 1532-vs-1011 margin, and its own rolls
-# now agree with each other (present at 90/180/270, occluded by the
-# gripper itself at roll 0 -- a real occlusion, not a vanishing act).
-WRIST_CAMERA_FLANGE_ROT_EULER = (0.0, 90.0, 0.0)
+# the tool's approach direction. NOT a validated winner -- a placeholder,
+# left here only because it clears the reset-pose black-frame failure two
+# earlier picks did not (see git history: (0, 90, 0)@0.08 buried the camera
+# in the arm's own geometry at reset every time). Chasing a real winner
+# stopped 2026-09-15 when a multi-sample sweep (see check_cameras.py's
+# WRIST_SAMPLES fix, same commit) showed why three different "clear winners"
+# in a row (688px, 1532px, 1011px, each from a single random grasp) each
+# failed a held-out check: of 91 grasp attempts sampled across that sweep,
+# 80 (88%) never actually reached the cube (median 130mm off, worst 290mm)
+# -- see scripted_pick_place.py's steps_per_segment, a fixed tick budget per
+# segment that does not scale with how far that segment actually has to
+# travel. No camera placement can be validated against a grasp that mostly
+# does not happen; fix that first, THEN re-run
+# `check_cameras.py --sweep_wrist --wrist_samples 5` (and `--at_reset`) for
+# a trustworthy winner.
+WRIST_CAMERA_FLANGE_ROT_EULER = (0.0, 0.0, 0.0)
 BASE_CAMERA_POSITION = (0.9, 0.0, 0.5)
 # What the base camera looks at: between the cube spawn area (CUBE_X_RANGE x
 # CUBE_Y_RANGE at CUBE_Z) and the place target, so both are in frame.

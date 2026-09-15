@@ -179,41 +179,76 @@ def _render_wrist(scene, euler, lateral=None):
     return scene.get_observation()["wrist_rgb"]
 
 
-def sweep_wrist(scene, out_dir, stage_name):
+def sweep_wrist(scene, out_dir, stage_name, at_grasp, n_samples):
     """Sweep the wrist camera's mount -- direction AND lateral offset -- and score
-    each by how much of the cube it actually sees.
+    each by how much of the cube it actually sees, averaged over `n_samples`
+    independent random cube spawns when scoring at the grasp.
 
-    Both axes are swept because the first attempt failed on the one that was
-    not being varied: every orientation rendered solid black, because at the
-    original 5 cm the camera was inside the arm's own wrist_3_link. Direction
-    alone cannot fix a camera that is buried."""
+    Both direction and lateral are swept because the first attempt failed on
+    the one that was not being varied: every orientation rendered solid
+    black, because at the original 5 cm the camera was inside the arm's own
+    wrist_3_link. Direction alone cannot fix a camera that is buried.
+
+    MULTIPLE SAMPLES PER CANDIDATE, not one -- added 2026-09-15 after a
+    single-sample sweep's own "winners" (688, then 1532, then 1011 cube px,
+    each looking like a clear pick in its own report) turned out to each be
+    one lucky cube spawn. A held-out check across 4 fresh spawns of THREE of
+    those exact settings came back 0-534 px, most of them 0 more often than
+    not -- the wrist camera's view of the cube at the grasp depends on where
+    in CUBE_X_RANGE/CUBE_Y_RANGE the cube spawned, not just on the mount, and
+    one spawn cannot tell a mount that is reliably mediocre from one that is
+    occasionally excellent and often useless. Only `at_grasp` sweeps resample
+    the cube each time; `at_reset` does not need to -- the arm's reset pose
+    does not depend on where the cube spawned, so the wrist view there is
+    already deterministic given the mount, confirmed by inspection."""
     derived = scene.derived_wrist_rotation().as_euler("xyz", degrees=True)
     say(f"\nwrist sweep -- committed: rot={WRIST_CAMERA_FLANGE_ROT_EULER} "
         f"lateral={WRIST_CAMERA_LATERAL_M}m focus={WRIST_CAMERA_FOCUS_M}m "
         f"(rot None resolves to the derived {np.round(derived, 1).tolist()})")
+    if at_grasp:
+        say(f"scoring each candidate over {n_samples} independent cube spawns "
+            f"(pass --wrist_samples to change this)")
 
     scored, panels = [], []
     for lateral in WRIST_LATERAL_CANDIDATES:
         for euler in WRIST_DIRECTION_CANDIDATES:
-            frame = _render_wrist(scene, euler, lateral)
-            m = _metrics(frame, scene)
             label = f"{tuple(int(v) for v in euler)}@{lateral:g}"
-            say(_fmt(label, m) + f"  cam_at={np.round(scene.wrist_camera_world_position(), 3)}")
-            scored.append((m["cube_px"], euler, lateral, m))
-            panels.append((label, _rgb(frame)))
+            samples = []
+            last_frame = None
+            for _ in range(n_samples if at_grasp else 1):
+                if at_grasp:
+                    _drive_to_grasp(scene, scene.reset())
+                last_frame = _render_wrist(scene, euler, lateral)
+                samples.append(_metrics(last_frame, scene))
+            px_values = [m["cube_px"] for m in samples]
+            mean_px = sum(px_values) / len(px_values)
+            min_px, max_px = min(px_values), max(px_values)
+            mean_dark = sum(m["dark"] for m in samples) / len(samples)
+            if at_grasp:
+                say(f"  {label:18s} cube_px mean={mean_px:6.0f} min={min_px:5d} max={max_px:5d}  "
+                    f"near_black={100 * mean_dark:5.1f}%  cam_at={np.round(scene.wrist_camera_world_position(), 3)}")
+            else:
+                say(_fmt(label, samples[0]) + f"  cam_at={np.round(scene.wrist_camera_world_position(), 3)}")
+            scored.append((mean_px, min_px, max_px, euler, lateral, mean_dark))
+            panels.append((label, _rgb(last_frame)))
     for i in range(0, len(panels), len(WRIST_DIRECTION_CANDIDATES)):
         row = panels[i:i + len(WRIST_DIRECTION_CANDIDATES)]
         tag = row[0][0].split("@")[1]
         _contact_sheet(row, os.path.join(out_dir, f"wrist_dirs_{stage_name}_lateral{tag}.png"))
 
-    scored.sort(key=lambda s: -s[0])
-    best_px, best_euler, best_lateral, best_m = scored[0]
-    runner_up = scored[1][0]
+    # Rank by the WORST sample, not the average: a mount that is reliably
+    # mediocre beats one that is occasionally excellent and often at 0,
+    # because collect_demos.py's preflight and every episode after it has to
+    # survive whatever the random spawn happens to be, not the best case.
+    scored.sort(key=lambda s: (-s[1], -s[0]))
+    best_mean, best_min, best_max, best_euler, best_lateral, best_dark = scored[0]
+    runner_up_min = scored[1][1]
 
-    if best_px < 200:
-        all_black = all(m["dark"] > 0.95 for _, _, _, m in scored)
-        say(f"\nNO MOUNT WORKS -- the best sees only {best_px} cube pixels at the grasp, where "
-            f"an eye-in-hand camera should see thousands.")
+    if best_min < 200:
+        all_black = all(dark > 0.95 for _, _, _, _, _, dark in scored)
+        say(f"\nNO MOUNT WORKS -- even the most reliable candidate's WORST sample saw only "
+            f"{best_min} cube pixels ({best_mean:.0f} mean) at the grasp, where an eye-in-hand "
+            f"camera should see thousands.")
         if all_black:
             say("Every candidate is essentially all-black at every offset, which means the "
                 "camera is not seeing the scene at all rather than seeing the wrong part of it. "
@@ -222,18 +257,29 @@ def sweep_wrist(scene, out_dir, stage_name):
                 "away everything close to it.")
         else:
             say("Some candidates do render the scene, so the mount is roughly right but no "
-                "direction is looking at the cube. Check that the arm actually reached the cube "
-                "(the base_rgb panel of the cameras_* sheet shows where it ended up).")
+                "direction reliably sees the cube across different spawns. A wider "
+                "CUBE_X_RANGE/CUBE_Y_RANGE than any fixed eye-in-hand mount can cover is one "
+                "explanation worth ruling out before trying more mount candidates.")
         return None
 
-    say(f"\nBEST: rot={tuple(int(v) for v in best_euler)} lateral={best_lateral:g}m "
-        f"with {best_px} cube pixels ({100 * best_m['dark']:.0f}% near-black), "
-        f"next best {runner_up}")
-    if best_px < 2 * max(runner_up, 1):
-        say("WARNING: the winner is not a clear one. Look at the contact sheets before trusting "
-            "it -- the right panel shows the table filling the view from close up.")
+    say(f"\nBEST: rot={tuple(int(v) for v in best_euler)} lateral={best_lateral:g}m -- "
+        f"worst-case {best_min} cube px, mean {best_mean:.0f}, next-best worst-case {runner_up_min} "
+        f"({100 * best_dark:.0f}% near-black on average)")
+    if best_min < 0.5 * best_mean:
+        say(f"WARNING: this candidate is unreliable even though it won -- its worst sample "
+            f"({best_min}px) is under half its mean ({best_mean:.0f}px). A single-sample sweep "
+            f"would have reported whichever spawn it got as if it were representative; this is "
+            f"exactly the failure mode that made this a warning to check for.")
+    if best_min < 2 * max(runner_up_min, 1):
+        say("WARNING: the winner is not a clear one on worst-case either. Look at the contact "
+            "sheets before trusting it -- the right panel shows the table filling the view from "
+            "close up.")
 
-    # Now settle the roll about the winning viewing axis.
+    # Now settle the roll about the winning viewing axis, on a fresh spawn --
+    # scene is otherwise left wherever the last-tested candidate's last
+    # sample happened to land, which is not representative of the winner.
+    if at_grasp:
+        _drive_to_grasp(scene, scene.reset())
     roll_panels = []
     for roll in WRIST_ROLL_CANDIDATES:
         from scipy.spatial.transform import Rotation as Rot
@@ -251,7 +297,7 @@ def sweep_wrist(scene, out_dir, stage_name):
     return best_euler, best_lateral
 
 
-def run(out_dir, do_sweep, at_grasp, with_gripper):
+def run(out_dir, do_sweep, at_grasp, with_gripper, wrist_samples):
     os.makedirs(out_dir, exist_ok=True)
     _REPORT["path"] = os.path.join(out_dir, "report.txt")
     open(_REPORT["path"], "w").close()
@@ -290,7 +336,7 @@ def run(out_dir, do_sweep, at_grasp, with_gripper):
         if not at_grasp:
             say("\n(sweep scores by cube pixels at the grasp -- rerun without --at_reset for a "
                   "meaningful ranking)")
-        sweep_wrist(scene, out_dir, stage_name)
+        sweep_wrist(scene, out_dir, stage_name, at_grasp, wrist_samples)
 
 
 def main():
@@ -308,6 +354,10 @@ def main():
     parser.add_argument("--at_reset", action="store_true",
                         help="look at the arm's default pose instead of at the grasp (default is "
                              "the grasp, which is what the wrist camera is actually for)")
+    parser.add_argument("--wrist_samples", type=int, default=5,
+                        help="independent random cube spawns to average each --sweep_wrist "
+                             "candidate over (at_grasp only -- a single sample was confirmed "
+                             "2026-09-15 to pick winners that were really just lucky spawns)")
     args = parser.parse_args()
 
     # Print any traceback BEFORE closing the app. simulation_app.close() runs
@@ -316,7 +366,7 @@ def main():
     # exactly like a clean exit, and has done three times now.
     try:
         run(args.out_dir, args.sweep_wrist, at_grasp=not args.at_reset,
-            with_gripper=args.with_gripper)
+            with_gripper=args.with_gripper, wrist_samples=args.wrist_samples)
     except BaseException:
         import traceback
         say("\n=== FAILED ===")

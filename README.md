@@ -678,6 +678,55 @@ step 6 is what confirms those conventions are the ones OpenVLA reads.
   fixes' own validation has tested. Not yet done this session: re-running
   with a longer tick budget (or a target the arm starts already near) to get
   a genuine settled-residual number and a trustworthy pivot spread.
+- **The scripted expert fails to reach the cube on most random spawns --
+  found 2026-09-15 while trying to pick a wrist camera mount, and it turns
+  out to be the real reason no mount could be found, not a camera problem
+  at all.** Started as: pick a `check_cameras.py --sweep_wrist` winner and
+  it kept picking a different "clear" winner each run (688px, then 1532px,
+  then 1011px) that turned out to be one lucky cube spawn each time -- a
+  held-out check of 4 fresh spawns against three of those exact settings
+  came back 0-534px, mostly 0. That forced fixing the sweep itself first
+  (see the entry below), and scoring every candidate over several spawns
+  instead of one immediately reported `NO MOUNT WORKS` -- correctly, this
+  time: of 91 grasp attempts across the fixed sweep, **80 (88%) never
+  reached the cube** (tool-to-cube distance at the nominal grasp point:
+  median 130mm, worst 290mm, only 11 under the 60mm bar this file's own
+  bring-up table checks against). No camera placement fixes an arm that
+  is not there.
+
+  The cause is in `scripted_pick_place.py`, not RMPflow: `steps_per_segment
+  =90` is a FIXED tick budget per segment regardless of how far that
+  segment actually has to travel. The docstring's own validation ("converges
+  to ~40mm before the close segment starts") was measured once, not across
+  `CUBE_X_RANGE`/`CUBE_Y_RANGE` -- the first segment's distance (arm's fixed
+  start pose to `above_cube`) varies with where the cube randomly spawned,
+  and 90 ticks (1.5s) that comfortably converges a short reach can leave a
+  long one most of the way there and no further, every single time, at
+  exactly frame 225/630 (the fixed point three segments end at) regardless
+  of how far off that leaves the tool. This is upstream of, and likely
+  explains a good share of, Track B's own dwell numbers above (432mm and
+  500mm initial error commanded in one shot from reset) and probably
+  `collect_demos.py`'s real attempt/reject rate, neither of which has been
+  re-examined with this in mind yet. Not yet done this session: making
+  `steps_per_segment` (or just the first segment's) scale with the actual
+  Cartesian distance instead of being a flat constant, then re-running the
+  reach-rate check above to see how much of the 88% failure rate that
+  actually closes.
+- **`check_cameras.py --sweep_wrist`'s single-sample scoring was itself the
+  bug that hid the finding above -- fixed 2026-09-15.** Scoring at one
+  random cube spawn cannot tell a mount that is reliably mediocre from one
+  that is occasionally excellent and usually useless, and there was no
+  reason to expect otherwise until three different "clear winners" in a row
+  each failed a held-out check. `sweep_wrist` now takes `--wrist_samples`
+  (default 5) and resamples the cube for every one of them at the grasp
+  stage (at_reset does not need to -- the arm's reset pose does not depend
+  on where the cube spawned), ranks candidates by their WORST sample rather
+  than their single or mean score, and warns explicitly when a winner's
+  worst sample sits under half its mean -- the exact shape of the deception
+  this fix closes. `WRIST_CAMERA_FLANGE_ROT_EULER`/`_LATERAL_M` are left
+  uncommitted to a "winner" for now: with the reach failure above still
+  open, no mount can be honestly validated, since most of the samples any
+  sweep takes are measuring a grasp that never happened.
 - **Base camera framing is small, and it is geometry, not occlusion --
   corrected 2026-09-15, this entry previously said the opposite.** The cube
   peaked at 139 of 65,536 px over a whole episode (~1 px at reset, first
