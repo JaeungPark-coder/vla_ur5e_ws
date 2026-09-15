@@ -141,79 +141,92 @@ check prints: the round trip closes to machine epsilon under a *wrong* axis
 order too, which is why the independent reading is there at all. It still
 does not prove agreement with OpenVLA — that is step 6 below.
 
-## The next Isaac Sim session: two independent tracks
+## The next Isaac Sim session
 
-They do not block each other -- run both. Track A finishes step 1 of the
-bring-up table; track B decides HOW to fix the grasp, which is step 3 and has
-never been run.
+**2026-09-15 update: both tracks below were actually run this session, and
+neither ended where its own plan expected.** Read this before re-running
+either -- it changes the order.
 
-### Track A -- pin the wrist camera (finishes step 1)
+### What happened when Track A and Track B were actually run
+
+Track A (pin the wrist camera) looked done three separate times -- the sweep
+reported a confident, well-separated winner (688px, then 1532px, then
+1011px cube pixels at the grasp) each time a bug in either the camera or the
+sweep itself got fixed. Each winner failed a held-out check anyway. The
+sweep was scoring every candidate against exactly ONE random cube spawn,
+which cannot tell a mount that is reliably mediocre from one that is
+occasionally excellent and usually useless -- fixed by making
+`check_cameras.py --sweep_wrist` average `--wrist_samples` (default 5)
+independent spawns per candidate and rank by the WORST one. Doing that
+immediately reported `NO MOUNT WORKS`, correctly: of 91 grasp attempts
+sampled across that sweep, **80 (88%) never actually reached the cube**
+(median 130mm off, worst 290mm). Track B's own free-space dwell numbers
+(432mm/500mm initial error commanded in one shot from a cold reset) were an
+early, unrecognised symptom of the same thing.
+
+The actual cause, found chasing that: `scripted_pick_place.py`'s
+`steps_per_segment=90` is a fixed tick budget per segment regardless of how
+far that segment actually has to travel. Its own docstring's validation
+("converges to ~40mm") was measured once, not across
+`CUBE_X_RANGE`/`CUBE_Y_RANGE` -- a short reach converges fine in 90 ticks, a
+long one does not, and every attempt hits the same fixed frame count
+(225/630) regardless of which. **No camera placement, and no reading of
+Track B's dwell/pivot numbers, can be trusted until this is fixed** -- both
+tools measure a grasp that mostly does not happen.
+
+Track B did still answer its own question once you look past the scale
+mismatch: WITH the gripper, the grasp-position hold diverges (575.6mm by
+tick 180, after briefly improving); WITHOUT it, both free space and the
+grasp position settle cleanly (9-17mm). Present only with the gripper AND
+only where its fingers reach the table is this file's own CONTACT row, not
+dynamics -- so the fix, once the reach problem below no longer confounds the
+measurement, is on the collision/contact side (this project's existing
+`convexDecomposition`/`maxDepenetrationVelocity` history, checked against a
+SUSTAINED hold rather than the brief close-and-lift those were tuned
+against), not RMPflow gains or the gripper's mass/inertia.
+
+### 1. Fix `steps_per_segment` first -- this blocks everything else
+
+Make it (or at least the first, most variable segment) scale with the
+actual Cartesian distance instead of being a flat constant -- e.g. a minimum
+ticks-per-metre rather than a fixed 90 regardless of reach. Then re-run the
+reach-rate check to see how much of the 88% failure closes:
 
 ```bash
 cd isaac
-python3 check_cameras.py --sweep_wrist
+python3 check_cameras.py --sweep_wrist --wrist_samples 5
 ```
 
-This is trustworthy now in a way it was not before. The sweep scores each
-candidate mount by how many pixels of the cube it sees **at the moment the
-scripted expert closes**, so it was only ever as good as that moment: with
-`steps_per_segment=30` the tool was still 259 mm from the cube when the
-gripper closed, and every score was measured from the wrong place. 90 is now
-the default in `scripted_pick_place.py`, so running this script picks it up
-with no flags. It also runs **without** the gripper by default, so the 1-in-4
-~300 mm drift -- which comes from the gripper pads' collision geometry -- is
-not even loaded here. The sweep is therefore independent of the grasp
-reliability work in track B.
+Watch the `tool is Xmm from the cube` / `WARNING: the tool did not actually
+reach the cube` lines this now prints on every sample, not just the final
+verdict -- the fraction of those warnings across the run IS the number that
+matters here, more than whatever mount ends up winning.
 
-Three things to check before trusting the winner:
+### 2. Only then, pin the wrist camera
 
-| check | why |
-|---|---|
-| `at grasp after N/M frames: tool is Xmm from the cube` is under 60 mm | over that the script WARNs, and every score below it was taken from the wrong place |
-| no WARNING about a close runner-up | the correct orientation should win by a wide margin, not a judgement call |
-| the contact sheet PNGs actually show the cube, large and centred | a camera buried inside `wrist_3_link` renders solid black, which has happened |
+Once reach failures are rare, `check_cameras.py --sweep_wrist
+--wrist_samples 5` (keep the multi-sample flag -- a single sample is exactly
+what produced three false "winners" this session) should return a candidate
+whose WORST sample, not just its mean, clears ~200px. Check it against
+**both** stages before trusting it -- `--sweep_wrist` (at the grasp) and
+`--sweep_wrist --at_reset` -- a mount that is fine at one has still been
+found buried in the arm's own geometry at the other. Paste the winner into
+`WRIST_CAMERA_FLANGE_ROT_EULER`/`WRIST_CAMERA_LATERAL_M` and commit.
 
-Then paste the printed values into `pick_place_scene.py`'s
-`WRIST_CAMERA_FLANGE_ROT_EULER` and `WRIST_CAMERA_LATERAL_M`, and commit.
-Step 1 is done.
-
-### Track B -- find out what the residual actually is (step 3)
+### 3. Re-run Track B for a genuine settled-residual number
 
 ```bash
 python3 pivot_dwell_check.py                # with the gripper
 python3 pivot_dwell_check.py --no-gripper   # payload ablation
 ```
 
-Do this **before** changing anything about the grasp. The ~20-40 mm tracking
-residual has three possible causes with three different fixes, and the commit
-that found it already said so: narrowing the residual is the next thing to
-try, *not* more collision or solver tuning.
+With reach failures no longer confounding it, this should finally produce
+numbers on the scale its own docstring describes (tens of mm, not hundreds)
+and a trustworthy pivot spread. If the grasp-position-with-gripper
+divergence from this session reproduces, that is the CONTACT fix to make
+(see above) -- not dynamics or a TCP offset.
 
-| both runs | reading | the fix that follows |
-|---|---|---|
-| grows in free space too | dynamics | RMPflow gain tuning, or gripper link mass/inertia -- **which this repo never sets anywhere**; the only `MassAPI` call in it is the cube's 50 g |
-| grows only at the grasp | contact | re-check the geometry: the `GRIPPER_TCP_OFFSET_M` frame fix should already have covered this, so find out why it did not |
-| neither grows | static TCP offset | the pivot spread is the answer -- correct `GRIPPER_TCP_OFFSET_M` or the flange->tool0 rotation constant |
-
-Why the ablation cannot answer the third case on its own:
-`grip_point_world()` is the flange prim plus the **constant**
-`GRIPPER_TCP_OFFSET_M`, not a gripper prim. That is what makes both runs
-measure the same reference point, and equally what makes a static offset
-error appear identically in both. The pivot half of the same script is what
-separates it: rotating about the approach axis drags a wrong TCP around an
-arc, so the error shows as spread with no mean offset, while a genuine bias
-shows as offset with no spread.
-
-One thing recorded in the script's own docstring is worth reading before
-acting on the result: lengthening the hold from 60 to 120 ticks made the
-residual grow from 24 mm to 43 mm. If that reproduces, adding a dwell at the
-end of the descent would be ineffective at best and harmful at worst -- which
-is exactly why this measurement comes first.
-
-### After both
-
-Apply the one fix track B points at -- one, not several, or the next run
-cannot say which worked -- then smoke-test before committing to a long run:
+### 4. Smoke-test before committing to a long collection run
 
 ```bash
 python3 collect_demos.py --num_episodes 5
