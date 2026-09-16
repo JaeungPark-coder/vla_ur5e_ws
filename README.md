@@ -143,63 +143,97 @@ does not prove agreement with OpenVLA — that is step 6 below.
 
 ## The next Isaac Sim session
 
-**2026-09-16 update: the 88% reach-failure number two sections below (and
-everything reasoned from it) was itself measured through a broken reading
-of the cube's position, now fixed.** Read the `get_cube_position()` entry
-in "Known gaps" before trusting anything below that cites that 88% figure
--- it does not mean what it looked like it meant. Short version: the cube
-prim used to be torn down and rebuilt every episode, and reading its pose
-afterward (`prim_world_pose`) came back frozen at whatever the FIRST
-episode's position was, for the rest of the process. Fixed by creating the
-prim once and repositioning it in place (`set_rigid_body_translation`).
-With that fixed, a 12-episode sample came back mostly plausible (tool
-tracking 11-40mm, cube drift 28-236mm) with two real outliers: one 5.26m
-contact-explosion event and two genuine large tracking misses -- a
-different, messier, but actually-true picture than "88% miss".
+**2026-09-16 update, second pass: the "12-episode with-gripper" numbers
+directly below (28-236mm cube drift, a 5.26m explosion) were themselves
+measured through a SECOND, separate cube-position bug, now also fixed --
+this is not the same bug as the frozen-read one `get_cube_position()`'s
+"Known gaps" entry describes, and fixing that one was not enough on its
+own.** The repositioning fix that replaced "tear down and rebuild the
+prim" (`set_rigid_body_translation`, a raw USD translate-op write before
+`world.reset()`) turned out to have its own bug: **`world.reset()`'s
+Stop+Play cycle discards whatever the USD attribute holds at Stop time and
+snaps the rigid body back to the pose PhysX cached from its very FIRST
+Play** -- every episode after the first landed at the exact same fixed
+point (confirmed: `[0.396, -0.177, 0.02]`, unchanged across 10 fresh
+resets with different random spawns) regardless of what had just been
+authored. This is what a 91-sample and later a 34-sample
+`check_cameras.py --sweep_wrist` run were actually measuring as "the tool
+didn't reach the cube" in 94% of samples (32/34, distances 100-400mm):
+RMPflow tracking was fine the whole time (2-23mm), the cube itself simply
+wasn't where `cube_position` said it was, for every episode but the first.
 
-### 1. Re-run the reach/camera/pivot diagnostics now that they can be trusted
+Fixed in `pick_place_scene.py`'s `reset()`: reposition the cube through a
+persistent `isaacsim.core.prims.SingleRigidPrim` (`.set_world_pose()`,
+called AFTER `world.reset()`, once `.initialize()`d each episode the same
+way `self.robot` already is) instead of a raw USD op before it --
+`set_world_pose` writes straight into the live PhysX rigid-body view,
+bypassing the Stop/Play cache entirely. `set_rigid_body_translation` is
+removed from `isaac_sim_common.py` (no remaining callers). **Verified**:
+15 fresh episodes, `with_gripper=False`, cube drift exactly **0.0mm** in
+every one (previously 0-337mm); a full `--sweep_wrist --wrist_samples 5`
+run (90 grasp attempts across 6 directions x 3 laterals) then landed the
+tool **17-55mm** from the cube in literally every sample -- no more
+`WARNING: the tool did not actually reach the cube` lines at all. Treat
+every number below this point that predates 2026-09-16's second pass
+(the 12-episode drift/explosion numbers, any `NO MOUNT WORKS` sweep
+result) as measured through this bug and not necessarily still true.
+
+### 1. A genuine wrist-camera-mount result is in, and it is real this time: no mount works
+
+With reach no longer confounding the score, `check_cameras.py --sweep_wrist
+--wrist_samples 5` (all 18 direction x lateral candidates, 5 cube spawns
+each) still reports:
+
+```
+NO MOUNT WORKS -- even the most reliable candidate's WORST sample saw only
+0 cube pixels (588 mean) at the grasp, where an eye-in-hand camera should
+see thousands.
+```
+
+Every candidate's worst sample over 5 spawns was 0 px; means ranged
+0-588px. This is no longer a measurement artifact -- it is the mount
+genuinely failing to keep the cube in frame across `CUBE_X_RANGE` (0.35-
+0.55m) x `CUBE_Y_RANGE` (-0.20-0.20m), a 0.20 x 0.40m spawn area no single
+fixed eye-in-hand direction+offset covers from every point in it. Two
+things worth trying, in order of how much they change:
+  - Narrow `CUBE_X_RANGE`/`CUBE_Y_RANGE` and re-sweep -- if a mount starts
+    working at a smaller spread, the spawn range itself was the problem,
+    not the mount. Cheap to test, changes what domain randomization the
+    eventual policy gets.
+  - Widen the wrist camera's FOV/aperture instead of hunting further
+    orientations -- `check_cameras.py`'s own six candidates only sweep
+    direction and lateral offset, not focal length; a wider-angle lens
+    mounted at the current-best `(180, 0, 0)@0.08` position (588 mean px)
+    may be enough without touching the spawn distribution at all.
+Re-check **both** stages (`--sweep_wrist` and `--sweep_wrist --at_reset`)
+once a candidate looks promising -- a mount fine at one stage has
+previously been found buried in the arm's own geometry at the other.
+
+### 2. Chase the 5.26m contact-explosion event -- but re-measure it first
+
+The 12-episode with-gripper run that found this was itself run before the
+second cube-position bug above was fixed, so its cube-drift numbers
+(28-236mm) are suspect the same way the camera sweep's were. Re-run that
+12-episode with-gripper check first; if the 5.26m explosion still
+reproduces under the fixed measurement, it's real and worth a
+`reach_probe`-style per-tick trace (log cube position and tool position
+every tick, not just at the end) on a reproducing case -- likely this
+project's own already-partially-fixed contact-explosion shape (see the
+`convexDecomposition`/`maxDepenetrationVelocity` entries elsewhere in this
+file) recurring with the fingers now actually touching the cube (this
+session's diagnostics ran mostly `with_gripper=False`, so this failure
+mode has only been directly observed once).
+
+### 3. Re-run pivot_dwell_check.py for a genuine settled-residual number
 
 ```bash
-cd isaac
-python3 check_cameras.py --sweep_wrist --wrist_samples 5
-python3 check_cameras.py --sweep_wrist --wrist_samples 5 --at_reset
 python3 pivot_dwell_check.py
 python3 pivot_dwell_check.py --no-gripper
 ```
 
-None of these produced a trustworthy number this session -- the sweep
-never got a not-`NO MOUNT WORKS` result while the reach-rate confound was
-still live, and pivot_dwell_check's own numbers (hundreds of mm) were read
-before the measurement fix existed. Watch the same lines as before (`tool
-is Xmm from the cube`, `WARNING: the tool did not actually reach`), but
-now they mean what they say.
-
-### 2. Chase the 5.26m contact-explosion event
-
-12 fresh with-gripper episodes had one launch that large and two large
-tracking misses unrelated to it. This is this project's own
-already-partially-fixed contact-explosion shape (see the
-`convexDecomposition`/`maxDepenetrationVelocity` entries elsewhere in this
-file) recurring, or a new instance of it -- worth a `reach_probe`-style
-per-tick trace (same technique that found the measurement bug: log cube
-position and tool position every tick, not just at the end) on a case that
-reproduces it, to see whether it is the same finger-pad convex-hull
-mechanism or something else now that the fingers are what is actually
-touching the cube (this session's probes ran mostly `with_gripper=False`
-for the reach-rate work, so this specific failure was only seen once, with
-the gripper on).
-
-### 3. Only then, pin the wrist camera and get a genuine settled-residual number
-
-Once (1) comes back with real numbers: `check_cameras.py --sweep_wrist
---wrist_samples 5` (keep the multi-sample flag -- a single sample already
-produced three false "winners" this project's history) should return a
-candidate whose WORST sample, not just its mean, clears ~200px. Check
-**both** stages (`--sweep_wrist` and `--sweep_wrist --at_reset`) before
-trusting it -- a mount fine at one has been found buried in the arm's own
-geometry at the other. Then re-run `pivot_dwell_check.py` for a settled
-residual on the scale its own docstring describes (tens of mm), not the
-hundreds this session saw before the fix.
+Its own prior numbers (hundreds of mm) were read before either
+cube-position fix existed. Expect tens of mm (the RMPflow tracking error
+this session actually measured directly was 2-39mm), not hundreds.
 
 ### 4. Smoke-test before committing to a long collection run
 
@@ -207,20 +241,15 @@ hundreds this session saw before the fix.
 python3 collect_demos.py --num_episodes 5
 ```
 
-Worth noting: this scores `grasp_succeeded`/`place_error_m` against the
-same `get_cube_position()` that was just fixed, so any collection run made
-before 2026-09-16 with this scene may have accepted/rejected episodes
-based on the wrong cube position too -- if you have an existing dataset
-collected before this fix, treat its accept/reject labels as suspect.
-
-### 4. Smoke-test before committing to a long collection run
-
-```bash
-python3 collect_demos.py --num_episodes 5
-```
-
-It has to complete without hitting the attempt cap. Only then is the 50-200
-episode collection worth starting.
+It has to complete without hitting the attempt cap. Worth noting:
+`grasp_succeeded`/`place_error_m` are scored against `get_cube_position()`,
+so any collection run made before 2026-09-16 with this scene may have
+accepted/rejected episodes based on the wrong cube position -- if you have
+an existing dataset collected before this fix, treat its accept/reject
+labels as suspect. Only once this smoke test passes is the 50-200 episode
+collection worth starting -- and only after (1) above gives the wrist
+camera an actual answer, since a collection run with a camera that cannot
+see the cube teaches nothing.
 
 
 ## Bring-up order
@@ -888,8 +917,41 @@ step 6 is what confirms those conventions are the ones OpenVLA reads.
   `convexDecomposition`/`maxDepenetrationVelocity` entries elsewhere in
   this file), just not fully closed off by those fixes -- and two others
   showed genuine large tracking misses (304mm, 412mm) unrelated to the
-  cube at all. **Not yet done:** re-running the actual reach-rate/pivot
-  diagnostics now that they can trust what they measure, to get real
-  numbers for how often each of these (normal tracking / contact
-  explosion / genuine tracking miss) actually happens -- the 88% figure
-  above no longer means anything and should not be cited.
+  cube at all.
+
+  **This "fix" was itself incomplete, found the same day (2026-09-16,
+  second pass) chasing why a 34-sample `--sweep_wrist` run still failed to
+  reach the cube 94% of the time (32/34, 100-400mm off) with the above fix
+  already in place and no gripper attached at all.** `set_rigid_body_translation`
+  writes the new position to a raw USD translate op BEFORE calling
+  `world.reset()` -- but `world.reset()`'s Stop+Play cycle does not
+  re-read that attribute the way it looks like it should. Stop() snaps a
+  simulated rigid body back to the pose PhysX cached from its very FIRST
+  Play, discarding any USD-attribute write made since. Confirmed directly
+  (`diag_reset_stages.py`, scratchpad): across 10 fresh resets with 10
+  different random spawns, the cube landed at the exact same
+  `[0.396, -0.177, 0.02]` after every single `world.reset()` call, matching
+  neither that episode's spawn nor any physically sensible drift -- a fixed
+  constant, not noise. Everything measured against `get_cube_position()`
+  between the two 2026-09-16 fixes (the 8/12-good 12-episode number above,
+  the 5.26m explosion, both `NO MOUNT WORKS` sweep results) inherited this
+  bug too and should be treated the same way the frozen-read numbers were:
+  suggestive of scale, not to be cited as a rate.
+
+  Fixed by repositioning through a persistent
+  `isaacsim.core.prims.SingleRigidPrim` instead: construct it once (only
+  possible after the first `world.reset()` has Played), call
+  `.initialize()` every episode the same way `self.robot` already is, then
+  `.set_world_pose()` AFTER `world.reset()`, not a raw USD op before it --
+  `set_world_pose` writes directly into the live PhysX rigid-body view
+  (`RigidPrim.set_world_poses`'s own `physics_view.set_transforms(...)`
+  path), which Stop() cannot discard because nothing is Stopping in
+  between the write and the next read. `set_rigid_body_translation` is
+  removed (no remaining callers). **Verified**: 15 fresh episodes,
+  `with_gripper=False`, cube drift exactly **0.0mm** in every one; the full
+  `--sweep_wrist --wrist_samples 5` sweep (90 grasp attempts) then reached
+  the cube in **17-55mm** in literally every sample, zero
+  `WARNING: the tool did not actually reach` lines. See "The next Isaac Sim
+  session" above for what this now genuinely shows about the wrist camera
+  mount (a real `NO MOUNT WORKS`, not a reach-confounded one) and what's
+  still unverified (the 5.26m explosion, `pivot_dwell_check.py`'s residual).

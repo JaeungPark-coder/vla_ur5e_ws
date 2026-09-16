@@ -28,14 +28,14 @@ from scipy.spatial.transform import Rotation as Rot
 from isaacsim.core.api import World
 from isaacsim.core.utils.nucleus import get_assets_root_path
 from isaacsim.core.utils.stage import add_reference_to_stage, get_current_stage
-from isaacsim.core.prims import SingleArticulation
+from isaacsim.core.prims import SingleArticulation, SingleRigidPrim
 
 import camera_framing
 from isaac_sim_common import (
     UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH, TOOL_LINK_PRIM_PATH,
     select_gripper_variant, add_gripper_colliders, GripperController, setup_rmpflow, prim_world_pose,
     GRIPPER_VARIANT_SET_NAME,
-    add_cube, add_shape, add_place_target_marker, NullGripper, set_rigid_body_translation,
+    add_cube, add_shape, add_place_target_marker, NullGripper,
 )
 import object_configs
 
@@ -292,6 +292,10 @@ class PickPlaceScene:
         self._rng = np.random.default_rng()
         self.cube_position = None
         self._object_spawn_generation = 0
+        # SingleRigidPrim for the cube, constructed once reset() has created
+        # the cube prim and played physics at least once -- see reset()'s
+        # own comment for why this replaced set_rigid_body_translation.
+        self.cube_rigid_prim = None
 
     def _setup_cameras(self):
         base_cam = UsdGeom.Camera.Define(self.stage, BASE_CAMERA_PRIM_PATH)
@@ -471,20 +475,36 @@ class PickPlaceScene:
         # and recreating this prim at the same path every episode -- what
         # this used to do -- left prim_world_pose/get_cube_position's
         # ComputeLocalToWorldTransform read frozen at the FIRST episode's
-        # position forever, across every episode after it, regardless of
-        # further resets or steps (spawn-vs-read error: 0, 156, 184, 260,
-        # 267mm over 5 fresh episodes in that repro). Everything that scored
-        # against get_cube_position() -- grasp_succeeded, place_error_m,
-        # check_cameras' reach check -- was blind to the real cube position
-        # from the second episode of any given process onward. Fixed the
-        # same way the place-target marker below already does it: create
-        # the prim ONCE, keep it, and reposition the SAME prim on every
-        # reset (set_rigid_body_translation) instead of tearing it down.
+        # position forever, across every episode after it (spawn-vs-read
+        # error: 0, 156, 184, 260, 267mm over 5 fresh episodes in that
+        # repro). Fixed by creating the prim ONCE and repositioning the
+        # SAME prim on every reset instead of tearing it down -- but the
+        # first attempt at that reposition (a raw USD translate op, set
+        # BEFORE world.reset()) turned out to have its own, separate bug:
+        # CONFIRMED 2026-09-16 (diag_reset_stages.py) that world.reset()'s
+        # Stop+Play cycle discards whatever the USD attribute holds at Stop
+        # time and snaps the rigid body back to the pose PhysX cached from
+        # its very FIRST Play -- every episode after the first landed at
+        # the exact same fixed point (e.g. [0.396, -0.177, 0.02]) regardless
+        # of what had just been authored, which is what check_cameras.py's
+        # --sweep_wrist --wrist_samples 5 was actually measuring as "the
+        # tool didn't reach the cube" in 32/34 samples: RMPflow tracking
+        # was fine (2-23mm), the cube itself wasn't where cube_position said.
+        # Fix: reposition through SingleRigidPrim.set_world_pose AFTER
+        # world.reset(), not through a raw USD op before it -- it writes
+        # straight into the live PhysX rigid-body view (see
+        # isaacsim.core.prims RigidPrim.set_world_poses:
+        # physics_view.set_transforms(...) when the handle is valid),
+        # bypassing the Stop/Play cache entirely. CONFIRMED zero drift
+        # across 10 fresh episodes (diag_single_rigid_prim_fix.py) once
+        # done in this order. Same "construct once, initialize() every
+        # episode" pattern as self.robot below -- constructing a NEW
+        # SingleRigidPrim after every reset crashed with "Simulation view
+        # object is invalidated".
         cube_prim = self.stage.GetPrimAtPath(CUBE_PRIM_PATH)
-        if not cube_prim.IsValid():
+        cube_prim_is_new = not cube_prim.IsValid()
+        if cube_prim_is_new:
             add_cube(self.stage, CUBE_PRIM_PATH, self.cube_position, size=CUBE_SIZE_M)
-        else:
-            set_rigid_body_translation(cube_prim, self.cube_position)
 
         if not self.stage.GetPrimAtPath(TARGET_MARKER_PRIM_PATH).IsValid():
             add_place_target_marker(self.stage, TARGET_MARKER_PRIM_PATH, PLACE_TARGET_POSITION)
@@ -495,6 +515,21 @@ class PickPlaceScene:
         # registered via world.scene (see __init__'s comment) -- redo it
         # every episode, not just once at construction.
         self.robot.initialize()
+
+        if self.cube_rigid_prim is None:
+            # Only constructible once physics has Played at least once
+            # (mirrors self.robot needing world.reset() before initialize()).
+            # cube_prim_is_new is True here, so the cube is already sitting
+            # at self.cube_position from add_cube -- no reposition needed
+            # this episode.
+            self.cube_rigid_prim = SingleRigidPrim(CUBE_PRIM_PATH, name="cube_rigid")
+            self.cube_rigid_prim.initialize()
+        else:
+            self.cube_rigid_prim.initialize()
+            self.cube_rigid_prim.set_world_pose(position=self.cube_position)
+            self.cube_rigid_prim.set_linear_velocity(np.zeros(3))
+            self.cube_rigid_prim.set_angular_velocity(np.zeros(3))
+
         self._sync_gripper_to_flange()
         self.gripper.open()
         # A fresh world.reset() hasn't rendered a frame yet -- the replicator
