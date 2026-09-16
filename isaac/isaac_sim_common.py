@@ -318,12 +318,63 @@ def setup_rmpflow(robot_articulation):
 
 
 def prim_world_pose(prim):
+    """CONFIRMED 2026-09-16 (check_pose_readout_multireset.py): reliable for
+    an ARTICULATED prim (recomputed from live joint state every step -- this
+    is how the robot/gripper links are read, and that tracking is fine), but
+    for a prim that gets `stage.RemovePrim` + re-`Define`-d at the SAME path
+    across multiple episodes (a free rigid body like the cube in
+    pick_place_scene.reset(), previously), ComputeLocalToWorldTransform
+    reads correctly on the FIRST episode and then FREEZES at that first
+    episode's transform forever, regardless of how many further resets or
+    physics steps happen -- across 5 fresh episodes, error against the true
+    spawn position went 0mm, 156mm, 260mm, 184mm, 267mm, never correcting
+    itself. Most likely Fabric's own stage/sim-history cache, keyed by prim
+    path, not being invalidated by a raw USD remove+recreate at that same
+    path within one still-running World/Kit session (the same session logs
+    "gFabricState->gUsdStageToSimStageWithHistoryMap had 1 outstanding
+    SimStageWithHistory(s)" on shutdown, consistent with this).
+    Everything downstream that scored against a stale cube read this way
+    (grasp_succeeded, place_error_m, check_cameras' reach check, and this
+    session's own reach-rate/cube-drift diagnostics) was measuring against
+    the WRONG position for every episode after the first.
+    Do not call this on a free rigid body prim that gets removed and
+    recreated across episodes -- use set_rigid_body_translation (below) to
+    reposition the SAME persistent prim instead, and read its pose back
+    with this function only once that prim has never been removed."""
     xform = UsdGeom.Xformable(prim)
     mat = xform.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
     translation = mat.ExtractTranslation()
     quat = mat.ExtractRotationQuat()
     quat_xyzw = [quat.imaginary[0], quat.imaginary[1], quat.imaginary[2], quat.real]
     return np.array([translation[0], translation[1], translation[2]]), np.array(quat_xyzw)
+
+
+def set_rigid_body_translation(prim, position):
+    """Repositions an EXISTING prim's translate op in place, rather than
+    removing and recreating the prim at the same path -- see
+    prim_world_pose's own docstring for why: doing the latter across
+    episodes left ComputeLocalToWorldTransform frozen at the first
+    episode's transform forever. Reuses the prim's existing translate op if
+    it already has one (AddTranslateOp() a second time would compose an
+    extra op rather than replacing it)."""
+    xformable = UsdGeom.Xformable(prim)
+    translate_op = next(
+        (op for op in xformable.GetOrderedXformOps()
+         if op.GetOpType() == UsdGeom.XformOp.TypeTranslate), None)
+    if translate_op is None:
+        translate_op = xformable.AddTranslateOp()
+    translate_op.Set(Gf.Vec3d(*[float(v) for v in position]))
+    # Zero out any velocity carried over from before this reposition -- this
+    # prim is reused (not recreated) across episodes now, so unlike a fresh
+    # prim it can genuinely have accumulated velocity from the previous
+    # episode's physics. world.reset()'s Stop+Play is expected to reinit
+    # from the authored transform with zero velocity, but authoring zero
+    # explicitly here removes the ambiguity rather than relying on that.
+    rigid_body = UsdPhysics.RigidBodyAPI(prim)
+    if rigid_body.GetVelocityAttr():
+        rigid_body.GetVelocityAttr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    if rigid_body.GetAngularVelocityAttr():
+        rigid_body.GetAngularVelocityAttr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
 
 
 def add_shape(stage, shape, prim_path, position, size=0.04, color=(0.8, 0.1, 0.1)):

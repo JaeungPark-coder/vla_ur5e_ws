@@ -143,88 +143,75 @@ does not prove agreement with OpenVLA — that is step 6 below.
 
 ## The next Isaac Sim session
 
-**2026-09-15 update: both tracks below were actually run this session, and
-neither ended where its own plan expected.** Read this before re-running
-either -- it changes the order.
+**2026-09-16 update: the 88% reach-failure number two sections below (and
+everything reasoned from it) was itself measured through a broken reading
+of the cube's position, now fixed.** Read the `get_cube_position()` entry
+in "Known gaps" before trusting anything below that cites that 88% figure
+-- it does not mean what it looked like it meant. Short version: the cube
+prim used to be torn down and rebuilt every episode, and reading its pose
+afterward (`prim_world_pose`) came back frozen at whatever the FIRST
+episode's position was, for the rest of the process. Fixed by creating the
+prim once and repositioning it in place (`set_rigid_body_translation`).
+With that fixed, a 12-episode sample came back mostly plausible (tool
+tracking 11-40mm, cube drift 28-236mm) with two real outliers: one 5.26m
+contact-explosion event and two genuine large tracking misses -- a
+different, messier, but actually-true picture than "88% miss".
 
-### What happened when Track A and Track B were actually run
-
-Track A (pin the wrist camera) looked done three separate times -- the sweep
-reported a confident, well-separated winner (688px, then 1532px, then
-1011px cube pixels at the grasp) each time a bug in either the camera or the
-sweep itself got fixed. Each winner failed a held-out check anyway. The
-sweep was scoring every candidate against exactly ONE random cube spawn,
-which cannot tell a mount that is reliably mediocre from one that is
-occasionally excellent and usually useless -- fixed by making
-`check_cameras.py --sweep_wrist` average `--wrist_samples` (default 5)
-independent spawns per candidate and rank by the WORST one. Doing that
-immediately reported `NO MOUNT WORKS`, correctly: of 91 grasp attempts
-sampled across that sweep, **80 (88%) never actually reached the cube**
-(median 130mm off, worst 290mm). Track B's own free-space dwell numbers
-(432mm/500mm initial error commanded in one shot from a cold reset) were an
-early, unrecognised symptom of the same thing.
-
-The actual cause, found chasing that: `scripted_pick_place.py`'s
-`steps_per_segment=90` is a fixed tick budget per segment regardless of how
-far that segment actually has to travel. Its own docstring's validation
-("converges to ~40mm") was measured once, not across
-`CUBE_X_RANGE`/`CUBE_Y_RANGE` -- a short reach converges fine in 90 ticks, a
-long one does not, and every attempt hits the same fixed frame count
-(225/630) regardless of which. **No camera placement, and no reading of
-Track B's dwell/pivot numbers, can be trusted until this is fixed** -- both
-tools measure a grasp that mostly does not happen.
-
-Track B did still answer its own question once you look past the scale
-mismatch: WITH the gripper, the grasp-position hold diverges (575.6mm by
-tick 180, after briefly improving); WITHOUT it, both free space and the
-grasp position settle cleanly (9-17mm). Present only with the gripper AND
-only where its fingers reach the table is this file's own CONTACT row, not
-dynamics -- so the fix, once the reach problem below no longer confounds the
-measurement, is on the collision/contact side (this project's existing
-`convexDecomposition`/`maxDepenetrationVelocity` history, checked against a
-SUSTAINED hold rather than the brief close-and-lift those were tuned
-against), not RMPflow gains or the gripper's mass/inertia.
-
-### 1. Fix `steps_per_segment` first -- this blocks everything else
-
-Make it (or at least the first, most variable segment) scale with the
-actual Cartesian distance instead of being a flat constant -- e.g. a minimum
-ticks-per-metre rather than a fixed 90 regardless of reach. Then re-run the
-reach-rate check to see how much of the 88% failure closes:
+### 1. Re-run the reach/camera/pivot diagnostics now that they can be trusted
 
 ```bash
 cd isaac
 python3 check_cameras.py --sweep_wrist --wrist_samples 5
+python3 check_cameras.py --sweep_wrist --wrist_samples 5 --at_reset
+python3 pivot_dwell_check.py
+python3 pivot_dwell_check.py --no-gripper
 ```
 
-Watch the `tool is Xmm from the cube` / `WARNING: the tool did not actually
-reach the cube` lines this now prints on every sample, not just the final
-verdict -- the fraction of those warnings across the run IS the number that
-matters here, more than whatever mount ends up winning.
+None of these produced a trustworthy number this session -- the sweep
+never got a not-`NO MOUNT WORKS` result while the reach-rate confound was
+still live, and pivot_dwell_check's own numbers (hundreds of mm) were read
+before the measurement fix existed. Watch the same lines as before (`tool
+is Xmm from the cube`, `WARNING: the tool did not actually reach`), but
+now they mean what they say.
 
-### 2. Only then, pin the wrist camera
+### 2. Chase the 5.26m contact-explosion event
 
-Once reach failures are rare, `check_cameras.py --sweep_wrist
---wrist_samples 5` (keep the multi-sample flag -- a single sample is exactly
-what produced three false "winners" this session) should return a candidate
-whose WORST sample, not just its mean, clears ~200px. Check it against
-**both** stages before trusting it -- `--sweep_wrist` (at the grasp) and
-`--sweep_wrist --at_reset` -- a mount that is fine at one has still been
-found buried in the arm's own geometry at the other. Paste the winner into
-`WRIST_CAMERA_FLANGE_ROT_EULER`/`WRIST_CAMERA_LATERAL_M` and commit.
+12 fresh with-gripper episodes had one launch that large and two large
+tracking misses unrelated to it. This is this project's own
+already-partially-fixed contact-explosion shape (see the
+`convexDecomposition`/`maxDepenetrationVelocity` entries elsewhere in this
+file) recurring, or a new instance of it -- worth a `reach_probe`-style
+per-tick trace (same technique that found the measurement bug: log cube
+position and tool position every tick, not just at the end) on a case that
+reproduces it, to see whether it is the same finger-pad convex-hull
+mechanism or something else now that the fingers are what is actually
+touching the cube (this session's probes ran mostly `with_gripper=False`
+for the reach-rate work, so this specific failure was only seen once, with
+the gripper on).
 
-### 3. Re-run Track B for a genuine settled-residual number
+### 3. Only then, pin the wrist camera and get a genuine settled-residual number
+
+Once (1) comes back with real numbers: `check_cameras.py --sweep_wrist
+--wrist_samples 5` (keep the multi-sample flag -- a single sample already
+produced three false "winners" this project's history) should return a
+candidate whose WORST sample, not just its mean, clears ~200px. Check
+**both** stages (`--sweep_wrist` and `--sweep_wrist --at_reset`) before
+trusting it -- a mount fine at one has been found buried in the arm's own
+geometry at the other. Then re-run `pivot_dwell_check.py` for a settled
+residual on the scale its own docstring describes (tens of mm), not the
+hundreds this session saw before the fix.
+
+### 4. Smoke-test before committing to a long collection run
 
 ```bash
-python3 pivot_dwell_check.py                # with the gripper
-python3 pivot_dwell_check.py --no-gripper   # payload ablation
+python3 collect_demos.py --num_episodes 5
 ```
 
-With reach failures no longer confounding it, this should finally produce
-numbers on the scale its own docstring describes (tens of mm, not hundreds)
-and a trustworthy pivot spread. If the grasp-position-with-gripper
-divergence from this session reproduces, that is the CONTACT fix to make
-(see above) -- not dynamics or a TCP offset.
+Worth noting: this scores `grasp_succeeded`/`place_error_m` against the
+same `get_cube_position()` that was just fixed, so any collection run made
+before 2026-09-16 with this scene may have accepted/rejected episodes
+based on the wrong cube position too -- if you have an existing dataset
+collected before this fix, treat its accept/reject labels as suspect.
 
 ### 4. Smoke-test before committing to a long collection run
 
@@ -843,3 +830,66 @@ step 6 is what confirms those conventions are the ones OpenVLA reads.
   are inferred from the general OXE convention, not fetched from your
   checkout's actual `configs.py` -- verify both against an existing config
   entry there before trusting them.
+- **`get_cube_position()` has been reading a FROZEN, wrong cube position
+  since at least whenever this scene started recreating the cube prim on
+  every reset -- found and fixed 2026-09-16, and this retroactively puts a
+  question mark over every prior measurement that scored against it.**
+  Chasing the 88% reach-failure finding above further (why did giving the
+  approach MORE time, then a whole extra settle segment, change nothing?)
+  led to logging cube position every tick instead of once: the cube
+  "jumped" 100-300mm in a single tick at frame 0 of episodes 2+ in a run,
+  to a position that turned out to be an EARLIER episode's actual spawn
+  point, with the arm still essentially at its reset pose -- not a
+  physically possible contact event. `check_pose_readout_multireset.py`
+  (a faithful repro of `reset()`'s actual prim lifecycle, not
+  `check_pose_readout.py`'s existing single-add test, which does not
+  reproduce this) confirmed it directly: `prim_world_pose`'s
+  `ComputeLocalToWorldTransform` reads correctly on the very first episode
+  of a process and then FREEZES at that first episode's transform forever
+  -- 0, 156, 184, 260, 267mm of error against 5 fresh episodes' true spawn
+  points, never once correcting itself no matter how many further resets
+  or physics steps ran. Root cause, as best determined: `reset()` did
+  `stage.RemovePrim(CUBE_PRIM_PATH)` then re-`add_cube`-d a brand new prim
+  at that same path every episode; Fabric's own stage/sim-history cache
+  (keyed by prim path, and per this same session's own shutdown log --
+  `gFabricState->gUsdStageToSimStageWithHistoryMap had 1 outstanding
+  SimStageWithHistory(s)` -- not obviously invalidated by a raw
+  remove-and-recreate at that path within one still-running Kit session)
+  is the leading candidate, though not independently confirmed beyond that
+  log line agreeing with the symptom.
+
+  **This means every prior claim in this file that scored against
+  `get_cube_position()` -- yesterday's 88% reach-failure rate, today's
+  earlier "the cube gets launched 0-301mm" findings, and by the same logic
+  `collect_demos.py`'s own `grasp_succeeded`/`place_error_m` scoring and
+  `cube_pixels_visible`'s ground truth -- was comparing against the WRONG
+  cube position for every episode after the first in whatever process ran
+  it.** Neither the `steps_per_segment` distance-scaling fix nor the
+  `SETTLE_TICKS` dwell added earlier this session were wrong to add (both
+  are still reasonable, and neither was reverted), but neither had
+  anything real to fix: more time cannot help a comparison that was never
+  measuring the cube's true position to begin with.
+
+  Fixed by not repeating the mistake `TARGET_MARKER_PRIM_PATH` already
+  avoids: the cube prim is now created ONCE (guarded by the same
+  `IsValid()` check the marker uses) and repositioned in place on every
+  reset via the new `set_rigid_body_translation` (isaac_sim_common.py --
+  reuses the prim's existing translate op rather than adding a second one,
+  and explicitly zeroes velocity since this prim is now reused rather than
+  fresh every episode) instead of being torn down and rebuilt.
+
+  **With the measurement fixed, a real (if messier) picture emerged from
+  12 fresh with-gripper episodes**: most (8 of 12) now show plausible
+  numbers -- tool tracking 11-40mm off its intended target, cube drift
+  28-236mm, roughly the scale this file's other sections already expect
+  from a light 50g object near a closing gripper. But two clearly did not:
+  one episode's cube moved **5.26 metres** in the approach -- squarely
+  this project's own already-documented contact-explosion shape (see the
+  `convexDecomposition`/`maxDepenetrationVelocity` entries elsewhere in
+  this file), just not fully closed off by those fixes -- and two others
+  showed genuine large tracking misses (304mm, 412mm) unrelated to the
+  cube at all. **Not yet done:** re-running the actual reach-rate/pivot
+  diagnostics now that they can trust what they measure, to get real
+  numbers for how often each of these (normal tracking / contact
+  explosion / genuine tracking miss) actually happens -- the 88% figure
+  above no longer means anything and should not be cited.

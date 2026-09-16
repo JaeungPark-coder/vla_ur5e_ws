@@ -20,6 +20,78 @@ DOWNWARD_ROTVEC = np.array([0.0, np.pi, 0.0])
 STANDOFF_HEIGHT = 0.15  # meters above the table for approach/retract waypoints
 GRASP_HEIGHT = 0.02     # tool height when grasping/placing -- matches the cube's resting height
 
+# physics_dt in pick_place_scene.py -- 90 ticks/1.5s in the comment below is
+# this, not a coincidence.
+CONTROL_HZ = 60.0
+
+# CONFIRMED 2026-09-16 this needed to exist: a flat steps_per_segment=90 for
+# EVERY segment, regardless of how far that segment actually has to travel,
+# left the tool short of the cube on 80/91 (88%) of random grasp attempts
+# sampled across a wrist-camera sweep (median 130mm off, worst 290mm) --
+# `check_cameras.py --sweep_wrist`'s own multi-sample fix (same investigation)
+# is what surfaced this; no camera mount could be validated against a grasp
+# that mostly did not happen. steps_per_segment=90 was tuned once, at
+# whatever distance reach_probe happened to command -- not against
+# CUBE_X_RANGE x CUBE_Y_RANGE's full 0.20 x 0.40m spawn spread, where the
+# first segment's distance (the arm's fixed start pose to `above_cube`)
+# varies with where the cube landed. A short reach converges fine in 90
+# ticks; a long one does not, and every attempt got the same fixed tick
+# count regardless.
+#
+# MIN_TRACKING_SPEED_MPS is a conservative, NOT YET independently validated
+# estimate of how fast a Cartesian target can move while RMPflow's default
+# UR5e gains still track it closely -- chosen so that a segment gets AT
+# LEAST steps_per_segment ticks (preserving the original, validated timing
+# for short reaches) and MORE for longer ones, rather than replacing one
+# unvalidated constant with another equally unvalidated one. Confirm/retune
+# by re-running the same multi-sample reach-rate check
+# (`check_cameras.py --sweep_wrist --wrist_samples 5`, watching the
+# `tool is Xmm from the cube` / `WARNING: the tool did not actually reach`
+# lines) and adjusting this until the failure rate actually drops -- not
+# by trusting this number on its own.
+MIN_TRACKING_SPEED_MPS = 0.15
+
+
+def _ticks_for_distance(distance_m, floor_ticks):
+    """At least `floor_ticks` (the original, validated short-reach timing),
+    more if the distance would need it at MIN_TRACKING_SPEED_MPS."""
+    return max(floor_ticks, int(np.ceil(distance_m / MIN_TRACKING_SPEED_MPS * CONTROL_HZ)))
+
+
+# CONFIRMED 2026-09-16, and this is the actual fix the 88% miss rate above
+# needed -- MIN_TRACKING_SPEED_MPS was not it. Logging cube position
+# alongside tool position through the SAME 91-sample sweep showed the tool
+# converging to within 2-39mm of its INTENDED target in nearly every sample
+# (tracking was never the problem) while the CUBE independently drifted
+# 0-301mm from where it spawned, WITH NO GRIPPER EVEN ATTACHED. Re-run WITH
+# the gripper (the real configuration) confirmed the same thing: cube drift
+# 34-225mm across 12 fresh samples, again with the tool tracking its
+# intended target closely in most of them. The reach failures were never a
+# camera or a tracking problem -- they were measuring distance to a cube
+# that had already been knocked away by the descent that was supposed to
+# approach it.
+#
+# The likely mechanism: `at_cube`'s Z (cube_position.z + GRASP_HEIGHT) is
+# cube_position.z + 0.02 -- for a 4cm cube resting with its centre at
+# cube_position.z, that is exactly the cube's TOP FACE, zero clearance.
+# Segment 1 ("descend to the cube") is a pure vertical drop only if segment
+# 0 ("approach from above") has fully converged in X/Y first -- and Track
+# B's own pivot_dwell_check measured a real 20-40mm free-space tracking
+# residual that does not vanish the instant a segment's tick budget ends.
+# 20-40mm off-centre against a 40mm cube is enough to clip an edge instead
+# of centring on top of it, and this cube is light (50g) -- exactly the
+# shape of this project's own already-documented contact-explosion history
+# (see isaac_sim_common.py's convexDecomposition/maxDepenetrationVelocity
+# fixes for the CLOSE segment), just occurring one segment earlier, and
+# just as present with no gripper attached at all.
+#
+# Fix: let the approach segment's residual actually settle -- Track B's own
+# dwell measurement showed free-space error dropping to under ~20mm by
+# tick 90-180 -- INTO A HOLD AT THE SAME POINT, before the vertical descent
+# that risks contact begins. This is a zero-distance "segment" at
+# above_cube, so _ticks_for_distance's floor applies unchanged.
+SETTLE_TICKS = 90
+
 
 class ScriptedPickPlace:
     def __init__(self, start_tool_pos, cube_position, target_position, steps_per_segment=90):
@@ -28,29 +100,39 @@ class ScriptedPickPlace:
         target faster than RMPflow's default UR5e gains track it -- the tool
         was still 259mm from the cube at the moment the gripper closed. 90
         ticks (1.5s/segment) converges to ~40mm before the close segment
-        starts. This changes demonstration *timing*, not the task -- widen
-        further if a future asset/gain change makes tracking lag again."""
+        starts, AT THE DISTANCE THAT WAS TESTED -- see MIN_TRACKING_SPEED_MPS
+        above for why that no longer means every segment gets exactly 90."""
         self.start_tool_pos = np.asarray(start_tool_pos, dtype=float)
         self.waypoints = self._build_waypoints(
+            self.start_tool_pos,
             np.asarray(cube_position, dtype=float), np.asarray(target_position, dtype=float), steps_per_segment)
 
     @staticmethod
-    def _build_waypoints(cube_position, target_position, steps_per_segment):
+    def _build_waypoints(start_tool_pos, cube_position, target_position, steps_per_segment):
         above_cube = cube_position + np.array([0.0, 0.0, STANDOFF_HEIGHT])
         at_cube = cube_position + np.array([0.0, 0.0, GRASP_HEIGHT])
         above_target = target_position + np.array([0.0, 0.0, STANDOFF_HEIGHT])
         at_target = target_position + np.array([0.0, 0.0, GRASP_HEIGHT])
 
+        # (from_position, to_position, target_gripper, floor_ticks) -- the
+        # actual tick count is derived per segment from the real distance
+        # from_position -> to_position, below.
+        segments = [
+            (start_tool_pos, above_cube, 0.0, steps_per_segment),      # approach from above
+            (above_cube, above_cube, 0.0, SETTLE_TICKS),               # settle before descending -- see SETTLE_TICKS
+            (above_cube, at_cube, 0.0, steps_per_segment),             # descend to the cube
+            (at_cube, at_cube, 1.0, steps_per_segment // 2),           # close the gripper in place
+            (at_cube, above_cube, 1.0, steps_per_segment),             # lift
+            (above_cube, above_target, 1.0, steps_per_segment),       # transport
+            (above_target, at_target, 1.0, steps_per_segment),         # descend to the target
+            (at_target, at_target, 0.0, steps_per_segment // 2),      # open the gripper, release
+            (at_target, above_target, 0.0, steps_per_segment),         # retract
+        ]
+
         # (target_position, target_gripper, num_control_ticks_to_reach_it)
         return [
-            (above_cube, 0.0, steps_per_segment),        # approach from above
-            (at_cube, 0.0, steps_per_segment),            # descend to the cube
-            (at_cube, 1.0, steps_per_segment // 2),        # close the gripper in place
-            (above_cube, 1.0, steps_per_segment),          # lift
-            (above_target, 1.0, steps_per_segment),        # transport
-            (at_target, 1.0, steps_per_segment),            # descend to the target
-            (at_target, 0.0, steps_per_segment // 2),      # open the gripper, release
-            (above_target, 0.0, steps_per_segment),         # retract
+            (to_pos, gripper, _ticks_for_distance(float(np.linalg.norm(to_pos - from_pos)), floor_ticks))
+            for from_pos, to_pos, gripper, floor_ticks in segments
         ]
 
     def generate_frames(self):
@@ -80,14 +162,18 @@ class ScriptedPickPlace:
 
     def frames_until_grasp(self):
         """Frame index at which the gripper has just finished closing on the
-        cube -- the approach/descend/close segments, before the lift.
+        cube -- the approach/settle/descend/close segments, before the lift.
 
         Exposed because callers that want to look at "the grasp" were
         guessing a fraction of total_frames() and getting it wrong:
         check_cameras.py used 45%, which is frame 94 of 210, i.e. 19 frames
         INTO the lift, with the tool already 14.5 cm away from the cube. The
-        boundary is a property of the waypoint list, so read it from there."""
-        return sum(num_ticks for _, _, num_ticks in self.waypoints[:3])
+        boundary is a property of the waypoint list, so read it from there.
+
+        [:4] = approach, settle, descend, close -- see _build_waypoints'
+        `segments` list (the settle segment was added 2026-09-16; keep this
+        slice in sync with that list's order if it changes again)."""
+        return sum(num_ticks for _, _, num_ticks in self.waypoints[:4])
 
     def total_frames(self):
         return sum(num_ticks for _, _, num_ticks in self.waypoints)

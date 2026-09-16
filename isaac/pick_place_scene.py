@@ -35,7 +35,7 @@ from isaac_sim_common import (
     UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH, TOOL_LINK_PRIM_PATH,
     select_gripper_variant, add_gripper_colliders, GripperController, setup_rmpflow, prim_world_pose,
     GRIPPER_VARIANT_SET_NAME,
-    add_cube, add_shape, add_place_target_marker, NullGripper,
+    add_cube, add_shape, add_place_target_marker, NullGripper, set_rigid_body_translation,
 )
 import object_configs
 
@@ -467,9 +467,24 @@ class PickPlaceScene:
         cube_y = self._rng.uniform(*CUBE_Y_RANGE)
         self.cube_position = np.array([cube_x, cube_y, CUBE_Z])
 
-        if self.stage.GetPrimAtPath(CUBE_PRIM_PATH).IsValid():
-            self.stage.RemovePrim(CUBE_PRIM_PATH)
-        add_cube(self.stage, CUBE_PRIM_PATH, self.cube_position, size=CUBE_SIZE_M)
+        # CONFIRMED 2026-09-16 (check_pose_readout_multireset.py): removing
+        # and recreating this prim at the same path every episode -- what
+        # this used to do -- left prim_world_pose/get_cube_position's
+        # ComputeLocalToWorldTransform read frozen at the FIRST episode's
+        # position forever, across every episode after it, regardless of
+        # further resets or steps (spawn-vs-read error: 0, 156, 184, 260,
+        # 267mm over 5 fresh episodes in that repro). Everything that scored
+        # against get_cube_position() -- grasp_succeeded, place_error_m,
+        # check_cameras' reach check -- was blind to the real cube position
+        # from the second episode of any given process onward. Fixed the
+        # same way the place-target marker below already does it: create
+        # the prim ONCE, keep it, and reposition the SAME prim on every
+        # reset (set_rigid_body_translation) instead of tearing it down.
+        cube_prim = self.stage.GetPrimAtPath(CUBE_PRIM_PATH)
+        if not cube_prim.IsValid():
+            add_cube(self.stage, CUBE_PRIM_PATH, self.cube_position, size=CUBE_SIZE_M)
+        else:
+            set_rigid_body_translation(cube_prim, self.cube_position)
 
         if not self.stage.GetPrimAtPath(TARGET_MARKER_PRIM_PATH).IsValid():
             add_place_target_marker(self.stage, TARGET_MARKER_PRIM_PATH, PLACE_TARGET_POSITION)
