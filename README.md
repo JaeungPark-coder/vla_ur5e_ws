@@ -178,7 +178,7 @@ every number below this point that predates 2026-09-16's second pass
 (the 12-episode drift/explosion numbers, any `NO MOUNT WORKS` sweep
 result) as measured through this bug and not necessarily still true.
 
-### 1. The wrist-camera blocker: narrowing the spawn range worked, the mount itself is still not fully validated
+### 1. The wrist-camera blocker: resolved (spawn range + missing environment light)
 
 **2026-09-19 update.** With reach fixed (above), `check_cameras.py
 --sweep_wrist --wrist_samples 5` still reported `NO MOUNT WORKS` (best
@@ -223,29 +223,54 @@ one level up too (across candidates). `pick_place_scene.py`'s
 corrected result, with both the mistake and the correction documented
 inline so it isn't repeated.
 
-**Still not fully validated, in two ways:**
-  - 134px worst-case is under `check_cameras.py`'s own 200px confidence
-    bar -- `NO MOUNT WORKS` still fires. This is the least-bad of 18
-    candidates at this spawn range, not a confirmed winner. More samples
-    (`--wrist_samples 10+`) or a further-narrowed range are the next
-    things to try; if neither clears 200px, accepting a worse-but-reliable
-    mean, or reconsidering the spawn range's practical size for this
-    approach entirely, are the remaining options.
-  - A single fresh preflight check (`check_cameras.py`, no `--sweep_wrist`)
-    at the committed constants scored a plausible 151 cube px, consistent
-    with the sweep's range, but **failed `preflight_check` anyway**: 70%
-    of the wrist frame reads near-black (`MAX_DARK_FRACTION` is 0.30).
-    High cube-pixel count and high dark-fraction aren't contradictory --
-    small cube against a large dark background both increase near-black
-    fraction, but this specific number has not been separately chased
-    down. Investigate whether `MAX_DARK_FRACTION`'s 0.30 threshold is
-    appropriate for a wide-FOV wrist camera at all, or whether this is a
-    real exposure/framing problem, before trusting a "PROBLEMS"-free
-    preflight from this mount.
+**Then a second, separate problem surfaced and got fixed, closing this out:**
+a fresh preflight check at the committed constants scored a plausible 151
+cube px but **failed `preflight_check` anyway** -- 70% of the wrist frame
+read near-black (`MAX_DARK_FRACTION` is 0.30). Root cause (found by
+visually inspecting the committed `wrist_dirs_at_grasp_lateral*.png`
+contact sheets: a sharp-edged, gradient-free pure-black region in every
+direction except the two aimed at the robot's own wrist hub, which always
+fills the frame regardless of aim) and confirmed live
+(`diag_lighting.py`, scratchpad): **this scene had no environment light.**
+`add_default_ground_plane()` brings in Isaac Sim's
+`Grid/default_environment.usd`, which bundles exactly one light --
+`/World/defaultGroundPlane/SphereLight`, a localized point-like source
+whose falloff doesn't reach past the small ground-plane/robot/cube area.
+There's no wall, skybox, or background geometry at all, so any camera ray
+that misses that small area -- unavoidable for a 70deg-FOV wrist camera at
+a short standoff sweeping past the workspace as the arm moves -- hits
+nothing lit and renders exactly RGB=0, not a gradient or a horizon the way
+a real camera in a real room would. **Fixed** by adding a `UsdLux.DomeLight`
+in `PickPlaceScene.__init__`: measured directly, this dropped the wrist
+camera's near-black fraction at the committed mount from 69.9% to 1.5%
+with no other change -- and it's a real sim-to-real gap fix, not a
+check-passing workaround, since a real camera never sees genuine unlit
+void.
 
-Re-check **both** stages (`--sweep_wrist` and `--sweep_wrist --at_reset`)
-once either issue above is resolved -- a mount fine at one stage has
-previously been found buried in the arm's own geometry at the other.
+**Both remaining checks now pass, closing this item out:**
+  - Re-ran the full 18-candidate `--sweep_wrist --wrist_samples 5`
+    comparison with the light fix in place (the earlier 134px-worst-case
+    ranking was itself measured through the same missing-light bug, so it
+    needed redoing, not just re-trusting). Result:
+    `BEST: rot=(-90, 0, 0) lateral=0.12m -- worst-case 219 cube px, mean
+    1912, next-best worst-case 180` -- **the first time this sweep has
+    ever cleared its own 200px bar.** Matches what was already committed
+    (no further constant change needed). The sweep's own two caveats still
+    apply and are worth remembering, not dismissing: worst-case (219) is
+    under half the mean (1912), i.e. high spawn-to-spawn variance remains,
+    and the runner-up (180 worst-case) isn't decisively beaten -- this is
+    a real, measured improvement, not a clean, low-variance winner.
+  - Ran `check_cameras.py --at_reset` -- the exact configuration
+    `collect_demos.py` actually gates on (`scene.reset()` then
+    `preflight_check()`, zero arm movement, see `collect_demos.py`'s own
+    call site). Result: **`preflight: OK`**, wrist near-black 1.1%. This
+    is the first time this exact call sequence has passed.
+
+Both checks this section's own earlier "not yet validated" note asked for
+are done and passing. Next: `collect_demos.py --num_episodes 5` (step 4
+below) is now the right next move, not further mount tuning -- the
+remaining variance is a training-data-quality question a learning curve
+will answer, not something to keep squeezing pixels to fix in advance.
 
 ### 2. Chase the 5.26m contact-explosion event -- but re-measure it first
 

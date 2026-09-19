@@ -1,14 +1,11 @@
 writing this report to camera_check/report.txt as well as stdout (Kit's shutdown discards a block-buffered stdout when piped)
 running WITHOUT a gripper -- the cameras are mounted on the arm, so leaving the gripper out changes nothing this script measures and avoids its instability (pass --with_gripper to include it).
 scene built; resetting...
-reset OK -- cube at [0.449 0.018 0.02 ], wrist camera at [0.697 0.233 0.183]
-driving the scripted expert to the grasp...
-at grasp after 396/825 frames: tool is 25mm from the cube
+reset OK -- cube at [ 0.462 -0.02   0.02 ], wrist camera at [0.697 0.233 0.183]
 
-camera readings (at_grasp, cube at [0.449 0.018 0.02 ]):
-  base_rgb           cube_px=     0  near_black=  3.3%  mean= 114.7  std= 57.60
-  wrist_rgb          cube_px=   151  near_black= 69.7%  mean=  14.1  std= 31.40
+camera readings (at_reset, cube at [ 0.462 -0.02   0.02 ]):
+  base_rgb           cube_px=     0  near_black=  0.1%  mean= 112.9  std= 69.20
+  wrist_rgb          cube_px=     0  near_black=  1.1%  mean= 114.0  std= 72.77
 
-preflight: PROBLEMS
-  - wrist_rgb: 70% of the frame is near-black -- the camera is aimed past the scene, not at it
-wrote camera_check/cameras_at_grasp.png
+preflight: OK
+wrote camera_check/cameras_at_reset.png

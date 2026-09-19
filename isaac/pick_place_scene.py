@@ -22,7 +22,7 @@ import math
 
 import numpy as np
 import omni.replicator.core as rep
-from pxr import UsdGeom, Gf
+from pxr import UsdGeom, UsdLux, Gf
 from scipy.spatial.transform import Rotation as Rot
 
 from isaacsim.core.api import World
@@ -310,6 +310,28 @@ class PickPlaceScene:
         self.world = World(stage_units_in_meters=1.0)
         self.world.scene.add_default_ground_plane()
         self.stage = get_current_stage()
+
+        # CONFIRMED 2026-09-19 (diag_lighting.py, scratchpad): the wrist
+        # camera's persistent "70% near-black" preflight failure at every
+        # mount candidate tried was an environment-lighting gap, not a
+        # framing problem. add_default_ground_plane() above brings in
+        # Isaac/Environments/Grid/default_environment.usd, which bundles
+        # exactly one light -- /World/defaultGroundPlane/SphereLight, a
+        # localized point-like source whose falloff does not reach far past
+        # the small ground-plane/robot/cube area this scene otherwise
+        # populates (no walls, skybox, or background geometry at all). Any
+        # camera ray that misses that small area -- unavoidable for a
+        # wide-FOV (70deg) wrist camera at a short (0.08-0.14m) standoff,
+        # sweeping past the workspace as the arm moves -- hits nothing lit
+        # and renders exactly RGB=0, not a gradient or a visible horizon the
+        # way a real camera in a real room would. Measured directly: adding
+        # a DomeLight dropped the wrist camera's near-black fraction at the
+        # committed mount from 69.9% to 1.5% with no other change. This is
+        # also a real sim-to-real gap independent of any preflight check --
+        # a real camera never sees genuine unlit void -- so this is a scene
+        # fix, not a check-passing workaround.
+        dome_light = UsdLux.DomeLight.Define(self.stage, "/World/DomeLight")
+        dome_light.CreateIntensityAttr(1000.0)
 
         robot_prim = add_reference_to_stage(assets_root + UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH)
         # Turn the asset's own gripper on BEFORE any articulation view is
