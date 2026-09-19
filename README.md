@@ -178,35 +178,73 @@ every number below this point that predates 2026-09-16's second pass
 (the 12-episode drift/explosion numbers, any `NO MOUNT WORKS` sweep
 result) as measured through this bug and not necessarily still true.
 
-### 1. A genuine wrist-camera-mount result is in, and it is real this time: no mount works
+### 1. The wrist-camera blocker: narrowing the spawn range worked, the mount itself is still not fully validated
 
-With reach no longer confounding the score, `check_cameras.py --sweep_wrist
---wrist_samples 5` (all 18 direction x lateral candidates, 5 cube spawns
-each) still reports:
+**2026-09-19 update.** With reach fixed (above), `check_cameras.py
+--sweep_wrist --wrist_samples 5` still reported `NO MOUNT WORKS` (best
+worst-case 0px, best mean 588px @ `(180,0,0)@0.08`) across the original
+`CUBE_X_RANGE` (0.35-0.55m) x `CUBE_Y_RANGE` (-0.20-0.20m) spawn area.
+Chased two hypotheses for why, in order:
 
-```
-NO MOUNT WORKS -- even the most reliable candidate's WORST sample saw only
-0 cube pixels (588 mean) at the grasp, where an eye-in-hand camera should
-see thousands.
-```
+1. **Widen the wrist camera's standoff (lateral offset), on the theory
+   that the ~17-55mm grasp residual was exceeding the frame's half-width
+   at the object plane** (a pinhole estimate: `tan(35deg) * 0.08m ~= 56mm`
+   half-width at `WRIST_CAMERA_HORIZONTAL_FOV_DEG=70`, and the cube needs
+   to stay within ~36mm of the optical axis to render fully). **Falsified
+   by direct measurement**: adding 0.14m to `WRIST_LATERAL_CANDIDATES` and
+   re-sweeping still came back `NO MOUNT WORKS`, and didn't even beat the
+   existing best mean for the winning direction (624px @0.08 vs 506px
+   @0.14 in that run). The camera's real geometry (aimed at
+   `WRIST_CAMERA_FOCUS_M` along the tool axis, offset back by
+   `WRIST_CAMERA_BACK_M`) doesn't reduce to a simple pinhole half-width, so
+   lateral offset alone was never the lever.
+2. **Narrow `CUBE_X_RANGE`/`CUBE_Y_RANGE`, on the sweep script's own
+   second stated hypothesis** (a fixed mount cannot cover a spawn area
+   wider than its own field of view from every point in it). **Confirmed**:
+   narrowed both ranges to a quarter of the original area, same centre
+   (`(0.40, 0.50)` x `(-0.10, 0.10)`, committed in `pick_place_scene.py`).
+   The exact candidate that had scored 0px worst-case across the full
+   range scored 588-760px across 8 fresh spawns confined to the narrower
+   box -- the spawn range, not the mount, was the actual cause of
+   `NO MOUNT WORKS`.
 
-Every candidate's worst sample over 5 spawns was 0 px; means ranged
-0-588px. This is no longer a measurement artifact -- it is the mount
-genuinely failing to keep the cube in frame across `CUBE_X_RANGE` (0.35-
-0.55m) x `CUBE_Y_RANGE` (-0.20-0.20m), a 0.20 x 0.40m spawn area no single
-fixed eye-in-hand direction+offset covers from every point in it. Two
-things worth trying, in order of how much they change:
-  - Narrow `CUBE_X_RANGE`/`CUBE_Y_RANGE` and re-sweep -- if a mount starts
-    working at a smaller spread, the spawn range itself was the problem,
-    not the mount. Cheap to test, changes what domain randomization the
-    eventual policy gets.
-  - Widen the wrist camera's FOV/aperture instead of hunting further
-    orientations -- `check_cameras.py`'s own six candidates only sweep
-    direction and lateral offset, not focal length; a wider-angle lens
-    mounted at the current-best `(180, 0, 0)@0.08` position (588 mean px)
-    may be enough without touching the spawn distribution at all.
+**Re-running the full 18-candidate sweep at the narrowed range** (not just
+that one spot-checked candidate) surfaced a second lesson: the spot-check
+above was itself premature. The properly controlled comparison picked
+`(-90, 0, 0)@0.12m` as the actual best of all 18 by worst-case pixels
+(134px worst-case, 206px mean) -- the spot-checked `(180,0,0)@0.08`
+candidate scored **0px worst-case** in that same controlled run, because a
+single candidate checked in isolation (even across several samples) can't
+rule out that every other candidate is comparably variable. This is the
+same lesson `check_cameras.py`'s own multi-sample fix already enforces
+one level down (across samples of one candidate) -- it turned out to apply
+one level up too (across candidates). `pick_place_scene.py`'s
+`WRIST_CAMERA_FLANGE_ROT_EULER`/`WRIST_CAMERA_LATERAL_M` now hold this
+corrected result, with both the mistake and the correction documented
+inline so it isn't repeated.
+
+**Still not fully validated, in two ways:**
+  - 134px worst-case is under `check_cameras.py`'s own 200px confidence
+    bar -- `NO MOUNT WORKS` still fires. This is the least-bad of 18
+    candidates at this spawn range, not a confirmed winner. More samples
+    (`--wrist_samples 10+`) or a further-narrowed range are the next
+    things to try; if neither clears 200px, accepting a worse-but-reliable
+    mean, or reconsidering the spawn range's practical size for this
+    approach entirely, are the remaining options.
+  - A single fresh preflight check (`check_cameras.py`, no `--sweep_wrist`)
+    at the committed constants scored a plausible 151 cube px, consistent
+    with the sweep's range, but **failed `preflight_check` anyway**: 70%
+    of the wrist frame reads near-black (`MAX_DARK_FRACTION` is 0.30).
+    High cube-pixel count and high dark-fraction aren't contradictory --
+    small cube against a large dark background both increase near-black
+    fraction, but this specific number has not been separately chased
+    down. Investigate whether `MAX_DARK_FRACTION`'s 0.30 threshold is
+    appropriate for a wide-FOV wrist camera at all, or whether this is a
+    real exposure/framing problem, before trusting a "PROBLEMS"-free
+    preflight from this mount.
+
 Re-check **both** stages (`--sweep_wrist` and `--sweep_wrist --at_reset`)
-once a candidate looks promising -- a mount fine at one stage has
+once either issue above is resolved -- a mount fine at one stage has
 previously been found buried in the arm's own geometry at the other.
 
 ### 2. Chase the 5.26m contact-explosion event -- but re-measure it first

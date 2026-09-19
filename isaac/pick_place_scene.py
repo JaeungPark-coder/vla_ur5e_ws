@@ -46,8 +46,33 @@ WRIST_CAMERA_PRIM_PATH = f"{TOOL_LINK_PRIM_PATH}/wrist_camera"
 
 # Workspace bounds the cube is randomized within (robot base frame, meters) --
 # ADJUST to whatever's actually reachable/visible on your table setup.
-CUBE_X_RANGE = (0.35, 0.55)
-CUBE_Y_RANGE = (-0.20, 0.20)
+#
+# CONFIRMED 2026-09-19: narrowed from (0.35, 0.55) x (-0.20, 0.20) (0.20 x
+# 0.40m) to a quarter of that area, same centre. The full range was the
+# actual cause of check_cameras.py --sweep_wrist's own "NO MOUNT WORKS"
+# result -- confirmed by first widening the wrist camera's standoff
+# (0.08->0.14m) on the theory that the measured 17-55mm grasp residual was
+# exceeding the frame's half-width at the old standoff (a plausible-looking
+# calculation: tan(35deg)*0.08m ~= 56mm half-width, and the cube needs to
+# stay within ~36mm of the optical axis to render fully). That prediction
+# did NOT hold: a full re-sweep with 0.14m added came back NO MOUNT WORKS
+# again, and did not even beat the existing best mean (624px @0.08 vs
+# 506px @0.14 for the same direction) -- lateral offset was not the lever,
+# because the camera's distance to the object also depends on
+# WRIST_CAMERA_FOCUS_M/WRIST_CAMERA_BACK_M, not lateral offset alone, so
+# the simple pinhole half-width estimate did not describe this camera's
+# actual geometry. Falling back to the sweep script's OWN other stated
+# hypothesis instead -- the spawn area itself being wider than any fixed
+# mount can cover -- and testing it directly: the SAME candidate that had
+# scored min=0 px across the full range (WRIST_CAMERA_FLANGE_ROT_EULER
+# below @0.08m lateral) scored min=588/mean=695/max=760 px over 8 fresh
+# spawns confined to this narrower box. Re-run
+# `check_cameras.py --sweep_wrist --wrist_samples 5` over the full
+# direction/lateral grid at this narrower range before assuming 0.08m is
+# still the best lateral choice here -- only the one candidate above was
+# re-checked, not the full 18-candidate grid.
+CUBE_X_RANGE = (0.40, 0.50)
+CUBE_Y_RANGE = (-0.10, 0.10)
 CUBE_SIZE_M = 0.04  # edge length of the spawned cube
 CUBE_Z = 0.02  # resting height for a 4cm cube on the table surface
 PLACE_TARGET_POSITION = np.array([0.45, 0.30, 0.0])
@@ -88,6 +113,26 @@ MAX_DARK_FRACTION = 0.30
 # WRIST_CAMERA_LATERAL_M must clear the wrist link's radius. Aiming at
 # WRIST_CAMERA_FOCUS_M along the tool axis, rather than pointing straight
 # down that axis, keeps the target centred despite the lateral offset.
+#
+# CONFIRMED 2026-09-19, from the FULL 18-candidate `--sweep_wrist
+# --wrist_samples 5` comparison at the narrowed CUBE_X_RANGE/CUBE_Y_RANGE
+# above (see that constant's own comment for why the range was narrowed):
+# 0.12m, paired with WRIST_CAMERA_FLANGE_ROT_EULER=(-90,0,0), is the
+# best-ranked candidate of all 18 by worst-case pixels (134px worst, 206px
+# mean) -- ranked by worst-case specifically because an earlier
+# single-sample sweep's "clear winners" each turned out to be one lucky
+# spawn (see check_cameras.py's WRIST_SAMPLES history). This superseded an
+# EARLIER, premature choice of 0.08m: an 8-sample spot-check of just the
+# (180,0,0)@0.08 candidate alone (not compared against the other 17) had
+# looked clean (588-760px), but the properly controlled comparison across
+# all candidates scored that same candidate at min=0 in its own 5 samples
+# -- a reminder that a candidate has to be judged against the full sweep,
+# not a spot-check in isolation, exactly the lesson WRIST_SAMPLES already
+# exists to enforce. NOT yet fully validated: 134px worst-case is still
+# under check_cameras.py's own 200px confidence bar (NO MOUNT WORKS still
+# fires), just the least-bad of 18 -- see WRIST_CAMERA_FLANGE_ROT_EULER's
+# own comment for what to try next (more samples, a further-narrowed
+# range, or accepting this as the practical ceiling).
 WRIST_CAMERA_LATERAL_M = 0.12
 WRIST_CAMERA_FOCUS_M = 0.12
 # How far BACK along the approach axis the camera sits, i.e. behind the
@@ -105,22 +150,51 @@ WRIST_CAMERA_HORIZONTAL_FOV_DEG = 70.0
 WRIST_CAMERA_FOCAL_LENGTH_MM = 24.0
 
 # Which way the camera looks, as XYZ Euler degrees taking the FLANGE frame to
-# the tool's approach direction. NOT a validated winner -- a placeholder,
-# left here only because it clears the reset-pose black-frame failure two
-# earlier picks did not (see git history: (0, 90, 0)@0.08 buried the camera
-# in the arm's own geometry at reset every time). Chasing a real winner
-# stopped 2026-09-15 when a multi-sample sweep (see check_cameras.py's
-# WRIST_SAMPLES fix, same commit) showed why three different "clear winners"
-# in a row (688px, 1532px, 1011px, each from a single random grasp) each
-# failed a held-out check: of 91 grasp attempts sampled across that sweep,
-# 80 (88%) never actually reached the cube (median 130mm off, worst 290mm)
-# -- see scripted_pick_place.py's steps_per_segment, a fixed tick budget per
-# segment that does not scale with how far that segment actually has to
-# travel. No camera placement can be validated against a grasp that mostly
-# does not happen; fix that first, THEN re-run
-# `check_cameras.py --sweep_wrist --wrist_samples 5` (and `--at_reset`) for
-# a trustworthy winner.
-WRIST_CAMERA_FLANGE_ROT_EULER = (0.0, 0.0, 0.0)
+# the tool's approach direction.
+#
+# CONFIRMED 2026-09-19: best of 18 candidates (all 6 WRIST_DIRECTION_
+# CANDIDATES x all 4 WRIST_LATERAL_CANDIDATES) by worst-case pixels, in a
+# single controlled `--sweep_wrist --wrist_samples 5` run at the narrowed
+# CUBE_X_RANGE/CUBE_Y_RANGE above: (-90, 0, 0)@0.12m scored 134px worst-
+# case / 206px mean, the only candidate whose worst sample topped 100px
+# (every other candidate, (180,0,0) included, hit 0px on at least one of
+# its 5 samples). NOT fully validated: check_cameras.py's own sweep still
+# printed NO MOUNT WORKS, since 134px is under its 200px confidence bar --
+# this is the least-bad of 18, not a confirmed winner. Re-run with more
+# samples (--wrist_samples 10+) or a further-narrowed spawn range before
+# trusting it for a real collection run; if it still can't clear 200px
+# worst-case, accepting a worse but reliable mean, or narrowing the spawn
+# area further, are the remaining levers (see CUBE_X_RANGE's comment).
+#
+# Do NOT re-derive (180, 0, 0)@0.08m from this file's own git history as a
+# "validated winner" -- that WAS this file's committed value for a few
+# hours on 2026-09-19, from an 8-sample spot-check of that ONE candidate in
+# isolation (588-760px, looked clean). The properly controlled 18-candidate
+# comparison above scored that same candidate at 0px worst-case in its own
+# 5 samples. A spot-check of one candidate alone cannot rule out that every
+# OTHER candidate is comparably bad or worse -- exactly the lesson
+# check_cameras.py's own WRIST_SAMPLES multi-sample fix (2026-09-15)
+# already existed to enforce, applied here one level up (across candidates,
+# not just across samples of one candidate).
+#
+# Older history, for why this took so long to pin down at all: the
+# placeholder here was (0.0, 0.0, 0.0) for most of this project's life,
+# kept only because it cleared a reset-pose black-frame failure two earlier
+# picks did not (see git history: (0, 90, 0)@0.08 buried the camera in the
+# arm's own geometry at reset). It was never validated at the grasp, and
+# turns out to have been one of the WORST directions there (0 mean px in
+# every sweep this session ran). Three single-sample "winners" in a row
+# (688px, 1532px, 1011px) were each an artifact of scoring against one
+# lucky cube spawn -- see check_cameras.py's WRIST_SAMPLES multi-sample fix
+# (2026-09-15). Once that was fixed, sweeps kept coming back NO MOUNT WORKS
+# regardless of direction, which pointed at the reach measurement itself
+# (fixed 2026-09-16, see isaac_sim_common.py's set_rigid_body_translation/
+# SingleRigidPrim history) and then, once THAT was fixed and reach was
+# solid (17-55mm every sample), at the spawn area being wider than any
+# fixed mount could cover -- see CUBE_X_RANGE's own comment for that last
+# step's falsified alternative (widening the standoff) and confirmed fix
+# (narrowing the spawn area).
+WRIST_CAMERA_FLANGE_ROT_EULER = (-90.0, 0.0, 0.0)
 BASE_CAMERA_POSITION = (0.9, 0.0, 0.5)
 # What the base camera looks at: between the cube spawn area (CUBE_X_RANGE x
 # CUBE_Y_RANGE at CUBE_Z) and the place target, so both are in frame.
