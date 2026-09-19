@@ -404,18 +404,106 @@ round started. Diagnostic script kept as
 -- this was a feasibility probe, not a production implementation) for
 whoever picks this up next.
 
-**Where this leaves the grasp-reliability investigation**: four real
-findings today (settle timing, friction, gripper drive gains, and this
-axis/vision probe), one root cause still not found. The vision correction
-half-working in one episode and actively backfiring in another suggests
-either the image-column/world-X relationship isn't as stable across the
-frame as the one-point calibration assumed (parallax / lens distortion
-at a wide 70deg FOV and short standoff), or 5mm steps are too coarse
-given how little clearance a 40mm cube leaves, or both. Next session,
-before trying vision correction again: log the calibration slope at
-several different starting offsets (not just one) to check linearity
-across the frame, and/or reduce the step size and raise MAX_ITERS rather
-than assuming 3 large steps is enough.
+**Two follow-up checks, isolating detection/mapping/control as three
+separate variables instead of judging the vision correction by grasp
+outcome alone (the same trap that made the friction check ambiguous
+earlier):**
+
+- **Pixel-to-mm mapping, measured directly against ground truth (no
+  grasping, no rendering-based reasoning about "centred" at all).** Holding
+  the tool fixed at a real converged close-start pose (reached via the
+  actual policy's approach path -- a direct jump from `scene.reset()`'s
+  home pose to a single low target does NOT reliably converge on its own,
+  confirmed live: one attempt landed 174mm off in Y over 120 ticks) and
+  placing the cube at known X offsets around it: detection was 5/5 at
+  -30mm, dropping to 3/5 and 2/5 at -20/-10mm, and **0/5 at 0mm and every
+  positive offset tried (+10/+20/+30mm)**.
+- **A pure-geometry PhysX raycast (`get_physx_scene_query_interface().
+  raycast_closest`, no rendering or colour thresholding at all) from the
+  camera's actual eye point to the cube's actual centre, at the same
+  offsets, to separate "occluded" from "the detector just isn't finding
+  it."** Result: **partially confirmed, partially a different bug.** At
+  0mm and +10mm the ray is genuinely blocked by
+  `.../Robotiq_2F_85/right_inner_finger`'s pad mesh before reaching the
+  cube -- occlusion by the gripper's own near finger, confirmed
+  geometrically, exactly matching those two offsets' 0/5 detection. But at
+  +20mm and +30mm the ray hits the cube CLEANLY (no occlusion) while RGB
+  detection still found nothing -- that miss is a separate detector/framing
+  issue, not occlusion, and is not yet explained.
+
+**What this means**: the wrist camera has a confirmed structural blind
+spot at exactly the alignment a grasp needs (0 to +10mm on the closing
+axis, from this specific mount's near finger) -- pixel-centre re-centring
+cannot be the whole answer here, since the target it would converge
+toward is inside the occluded band. Worth revisiting per the four options
+already on the table: aim `WRIST_CAMERA_FOCUS_M` closer than the TCP so
+the approach is visible before the jaws would occlude it, a top-down
+mount (more `WRIST_CAMERA_BACK_M`, less `_LATERAL_M`) instead of a side
+bracket, using the base camera for final centring instead, or redefining
+the correction target as "last visible offset before occlusion" rather
+than pixel-centre. Not yet attempted.
+
+**A second, independent lead was chased in parallel: is the grasp failure
+actually about alignment at all, or about contact/dynamics?** Three points
+argued for the latter: (1) several close attempts today had near-zero
+tool speed and 16-55mm alignment yet still failed to lift the cube --
+if alignment were the whole story, the best-aligned attempts should
+succeed; (2) the 2026-09-15 `pivot_dwell_check.py` run (documented in
+"Known gaps" below) found the grasp-pose dwell error diverging (229.9mm
+-> 575.6mm) specifically with the gripper attached, while free space
+stayed flat -- exactly this file's own CONTACT/DYNAMICS decision table's
+CONTACT signature; (3) `grep` confirms gripper link mass/inertia has never
+been set anywhere in this codebase (the one `MassAPI` call in
+`isaac_sim_common.py` is for the cube, not the gripper) -- today's
+`finger_joint` stiffness fix (171.89 -> 20000 kp) raises exactly the risk
+`pivot_dwell_check.py`'s own docstring names: a stiff, undamped drive
+pressing an uncalibrated-mass body into contact.
+
+That 2026-09-15 run was itself methodologically flawed the same way the
+mapping test above nearly was: `hold()` commanded its target in one jump
+from `scene.reset()`'s home pose (432-500mm of initial error at tick 1),
+so most of its tick budget was spent finishing that jump, not holding a
+converged pose -- already flagged as unverified in "Known gaps" below.
+Fixed by adding `settle_to()`: a graduated above-then-descend approach
+(mirroring the real scripted policy's own path) run BEFORE the dwell
+measurement starts, so tick 1 of `hold()` now measures genuine dwell
+drift. **Re-run with the fix, and with today's three grasp-pipeline fixes
+already in place: `--no-gripper` is flat at 13.1mm (free space) / 4.7mm
+(grasp pose) from tick 1 through 180; WITH the gripper, free space is
+flat at 9.4mm (matching 2026-09-15 exactly) and -- previously the
+diverging case -- the grasp-pose dwell is now ALSO completely flat at
+32.4mm, zero growth.** The CONTACT divergence this test exists to catch
+is gone. This is strong evidence today's `finger_joint` gains fix (item 3
+above) was load-bearing for more than closing force -- it also resolved a
+real, previously-diverging contact/dynamics instability, independently of
+whether it fixes the overall grasp success rate.
+
+**Caveat that keeps this open, not closed**: `hold()`'s dwell test keeps
+the gripper OPEN (`gripper=0.0`) the entire time -- it measures whether
+the arm holds a fixed pose near the table, not what happens during the
+transient of the fingers actively CLOSING onto an object, which is the
+scenario the smoke test's 30.7m explosion actually happened in. A settled
+dwell with the gripper open does not yet rule out an under-calibrated
+mass/inertia problem specific to the closing transient. Not yet tested:
+repeat this same settled-dwell measurement WHILE ramping the gripper
+closed on the cube (mirroring the real close segment) rather than holding
+it open, to see whether the transient -- not just the static hold --
+stays stable too.
+
+**A new, separate, and possibly bigger lead came out of the SAME re-run**:
+`pivot_dwell_check.py`'s PIVOT test (swings the grip point through 5 rolls
+x 3 tilts to isolate a static flange-to-fingertip transform error from
+dwell drift) measured a **~90-100mm transform error, present both with
+and without the gripper** (pivot spread 180.9mm/200.1mm -> ~90.4mm/100.1mm
+transform error; mean offset from the commanded point 314-321mm, mostly a
+separate tracking/GRIPPER_TCP_OFFSET_M bias the rotation test can't
+isolate further). A `GRIPPER_TCP_OFFSET_M` or frame-composition error of
+this size, constant and direction-dependent on orientation, is large
+enough to be a real candidate for the axis-concentrated (X-heavy, Y-near-
+zero) offset the earlier axis decomposition found -- a fixed frame bias
+would project differently onto world axes than a random tracking residual
+would. Not yet cross-checked against the axis-decomposition data or acted
+on -- this is this session's newest open thread, not a closed one.
 
 **1. Check the cameras (30 seconds -- do this before every collection run)**
 ```bash
@@ -867,9 +955,39 @@ step 6 is what confirms those conventions are the ones OpenVLA reads.
   close segment) more than a stable one -- worth checking whether that same
   fix holds up under a SUSTAINED hold rather than the brief close-and-lift
   those fixes were tuned against, which is what neither this run nor those
-  fixes' own validation has tested. Not yet done this session: re-running
-  with a longer tick budget (or a target the arm starts already near) to get
-  a genuine settled-residual number and a trustworthy pivot spread.
+  fixes' own validation has tested.
+
+  **Re-run 2026-09-19, with both the methodology and the scene fixed.**
+  Added `settle_to()`: a graduated above-then-descend approach run BEFORE
+  the dwell measurement starts (mirroring the real scripted policy, which
+  never jumps straight to a low target from home either), so `hold()`'s
+  tick 1 now measures genuine dwell drift instead of the tail of an
+  unconverged jump. With that fix AND today's three grasp-pipeline fixes
+  (settle-before-close, friction, `finger_joint` gains -- see "The next
+  Isaac Sim session" above) already in place: `--no-gripper` is flat at
+  13.1mm (free space) / 4.7mm (grasp pose) from tick 1 through 180 --
+  settled, no growth, and with plenty of margin under `SETTLED_TOLERANCE_M`.
+  **WITH the gripper, free space is flat at 9.4mm (matching this entry's
+  original 2026-09-15 number exactly) and the grasp-pose dwell -- the
+  case that diverged to 575.6mm before -- is now ALSO flat at 32.4mm.**
+  The CONTACT divergence is gone. Strong evidence the `finger_joint` gains
+  fix was load-bearing for this specifically, not just for closing force,
+  matching this file's own DYNAMICS theory (soft drive gains sagging
+  against an uncalibrated-mass load) more than the CONTACT one. Caveat:
+  `hold()` keeps the gripper OPEN throughout -- this confirms a fixed pose
+  holds near the table, not that the transient of the fingers actively
+  CLOSING onto an object is equally stable, which is the regime the
+  smoke test's 30.7m explosion (see "The next Isaac Sim session" above)
+  actually occurred in. Not yet tested: repeat this measurement while
+  ramping the gripper closed on the cube instead of holding it open.
+
+  The SAME re-run's PIVOT test also turned up something new: a ~90-100mm
+  flange-to-fingertip transform error, present both with and without the
+  gripper (pivot spread 180.9mm/200.1mm). Not yet cross-checked against
+  the axis-decomposition finding above, but a constant, orientation-
+  dependent frame bias of this size is a real candidate for at least part
+  of the X-heavy, Y-near-zero offset pattern found there -- newest open
+  thread, not yet acted on.
 - **The scripted expert fails to reach the cube on most random spawns --
   found 2026-09-15 while trying to pick a wrist camera mount, and it turns
   out to be the real reason no mount could be found, not a camera problem

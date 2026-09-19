@@ -92,10 +92,37 @@ def say(line=""):
     print(line, flush=True)
 
 
+def settle_to(scene, grip_pos, rotvec, ticks=180):
+    """Pre-converge to grip_pos BEFORE the dwell measurement starts, via a
+    graduated above->descend approach, and don't count any of these ticks.
+
+    CONFIRMED 2026-09-19 (vla_ur5e_ws/isaac/diag_pixel_to_mm_mapping.py,
+    scratchpad): jumping the tool directly from scene.reset()'s home
+    configuration to a single low/far target in one shot does not reliably
+    converge within a normal tick budget -- one measured case landed 174mm
+    off in Y after 120 ticks of doing exactly that. The scripted policy
+    (scripted_pick_place.py) never does this; it always goes through a
+    graduated approach(above)->settle->descend->settle path. hold() below
+    was commanding its target in one jump from reset(), which is almost
+    certainly why the 2026-09-15 run's own numbers opened at 432-500mm of
+    error at tick 1 and needed hundreds of ticks just to approach -- most
+    of DWELL_SAMPLES' budget was spent finishing that initial jump, not
+    holding a converged pose, which is what this test needs to actually
+    measure CONTACT vs DYNAMICS drift rather than approach-convergence
+    drift."""
+    above = grip_pos + np.array([0.0, 0.0, 0.15])
+    for _ in range(ticks):
+        scene.step_towards(above, rotvec, 0.0)
+    for _ in range(ticks):
+        scene.step_towards(grip_pos, rotvec, 0.0)
+
+
 def hold(scene, grip_pos, rotvec, ticks, gripper=0.0):
     """Command one pose for `ticks` control ticks, returning the grip-point
     error at each sample point. The target never changes, so anything that
-    moves is the arm failing to hold it."""
+    moves is the arm failing to hold it. Caller is responsible for having
+    already converged near grip_pos (see settle_to) -- this measures dwell
+    drift from tick 1, not approach convergence."""
     errors = {}
     for tick in range(1, min(ticks, max(DWELL_SAMPLES)) + 1):
         scene.step_towards(grip_pos, rotvec, gripper)
@@ -163,6 +190,7 @@ def main():
 
         ok, reason = reachable(free_pos, DOWNWARD_ROTVEC)
         say(f"  free-space target {np.round(free_pos, 3)} reachable: {ok} ({reason})")
+        settle_to(scene, free_pos, DOWNWARD_ROTVEC)
         free_growth = report_dwell(
             "free space -- nothing within reach of the fingers",
             hold(scene, free_pos, DOWNWARD_ROTVEC, max(DWELL_SAMPLES)))
@@ -170,6 +198,7 @@ def main():
         scene.reset()
         ok, reason = reachable(grasp_pos, DOWNWARD_ROTVEC)
         say(f"\n  grasp target {np.round(grasp_pos, 3)} reachable: {ok} ({reason})")
+        settle_to(scene, grasp_pos, DOWNWARD_ROTVEC)
         grasp_growth = report_dwell(
             "at the grasp -- the fingers are at the table",
             hold(scene, grasp_pos, DOWNWARD_ROTVEC, max(DWELL_SAMPLES)))
