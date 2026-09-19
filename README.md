@@ -505,6 +505,27 @@ would project differently onto world axes than a random tracking residual
 would. Not yet cross-checked against the axis-decomposition data or acted
 on -- this is this session's newest open thread, not a closed one.
 
+**2026-09-20 update: those PIVOT numbers were almost certainly measured
+through the same convergence bug `settle_to()` had just fixed for the
+DWELL half, and should not be acted on until re-measured.** Reading the
+script after the fact: the 2026-09-19 commit added `settle_to()` to both
+dwell measurements but left the PIVOT loop as `scene.reset()` then
+`hold(..., 60)` -- 60 ticks in one jump from the home pose, the exact
+pattern the dwell fix's own docstring describes opening at 432-500mm of
+error. Every signature fits an approach-convergence artifact rather than
+a frame error: a 314-321mm mean offset (the dwell tests, once settled,
+sit at 4.7-32mm, so a real static bias has to fit inside that), a
+180-200mm spread that is just how far each of 15 orientations got in 60
+ticks, and identical numbers with and without the gripper (convergence
+doesn't care about payload; a real TCP error would at least be measured
+more cleanly without it). Fixed in `pivot_dwell_check.py` (the PIVOT loop
+now calls `settle_to()` before its hold, same as the dwell half). **Not
+yet re-run on Isaac Sim** -- do that first next session
+(`python3 pivot_dwell_check.py` and `--no-gripper`); expect a spread in
+the tens of mm at most. Only if a large spread survives the settled
+measurement does the frame-bias hypothesis above deserve the
+axis-decomposition cross-check.
+
 **1. Check the cameras (30 seconds -- do this before every collection run)**
 ```bash
 cd isaac

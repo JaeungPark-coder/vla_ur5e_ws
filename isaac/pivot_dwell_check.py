@@ -224,6 +224,18 @@ def main():
                     say(f"  {roll:>5.0f}d {tilt:>5.0f}d  unreachable, skipped")
                     continue
                 scene.reset()
+                # Same convergence bug settle_to() fixed for the two dwell
+                # measurements above, left behind here in the 2026-09-19 pass:
+                # 60 ticks straight from reset()'s home pose is nowhere near
+                # enough to converge (the dwell tests opened at 432-500mm
+                # doing exactly this), so what got read was how far each
+                # orientation happened to get in 60 ticks, not where its
+                # converged grip point sits. That is what the 2026-09-19
+                # "~90-100mm transform error, 314-321mm mean offset" numbers
+                # measured -- both with and without the gripper, exactly as an
+                # approach-convergence artifact would be. Settle first, then
+                # hold a little longer so the reading is a converged pose.
+                settle_to(scene, free_pos, rotvec)
                 hold(scene, free_pos, rotvec, 60)
                 reached = scene.grip_point_world()
                 landed.append(reached)
