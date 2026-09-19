@@ -362,22 +362,60 @@ worth keeping regardless (a mis-timed settle, zero friction, and a
 100x-underpowered gripper drive are each independently wrong), but they
 were not the bottleneck actually blocking data collection.
 
-**The remaining suspect, and the strongest one so far**: axis-decomposing
-the tool-cube offset through the close segment (using the pre-fix
-tick-by-tick trace, since the gripper's fixed downward approach orientation
--- and therefore its closing axis -- didn't change with any of the three
-fixes above) shows the offset sitting almost entirely on ONE horizontal
-axis (X: -8mm to +26mm across the close segment) while the other stays
-near zero throughout (Y: within +-5mm the whole time) -- and the cube's own
-observed push direction as it's contacted tracks the same axis. That is
-consistent with the residual falling specifically on the gripper's closing
-axis (the worst-case direction for a parallel-jaw gripper: it reduces
-"bite" on one pad and increases it on the other, rather than sitting
-harmlessly along the flat width of the pads) rather than being spread
-omnidirectionally. If confirmed, a single-axis vision correction using the
-wrist camera (fixed today, see item 1) right before the close segment --
-not a full 2D re-centering -- would be the targeted fix. Not yet
-attempted.
+**A fourth thing was tried, chasing the strongest lead of the three**:
+axis-decomposing the tool-cube offset through the close segment (using the
+pre-fix tick-by-tick trace, since the gripper's fixed downward approach
+orientation -- and therefore its closing axis -- didn't change with any of
+the three fixes above) showed the offset sitting almost entirely on ONE
+horizontal axis (X: -8mm to +26mm across the close segment) while the
+other stayed near zero throughout (Y: within +-5mm the whole time) -- and
+the cube's own observed push direction as it's contacted tracked the same
+axis. That is consistent with the residual falling specifically on the
+gripper's closing axis (the worst-case direction for a parallel-jaw
+gripper: it reduces "bite" on one pad and increases it on the other,
+rather than sitting harmlessly along the flat width of the pads) rather
+than being spread omnidirectionally.
+
+**Tried a closed-loop, sign-only wrist-camera X correction right before
+the close segment** (deliberately closed-loop rather than a precomputed
+pixel-to-metre conversion -- this project's own camera geometry has been
+wrong multiple times today from precomputed math alone, never from a
+measured loop): calibrate the image-column/world-X sign relationship with
+one measured nudge (confirmed: moving +X moves the cube's image column
+LEFT at the committed wrist mount), then up to 3 iterations of
+render -> measure cube centroid column -> if off-centre, step 5mm along
+the calibrated direction -> re-settle, before manually holding that
+corrected position through the gripper's close ramp (the original close
+segment can't be reused as-is here -- it targets the uncorrected point and
+would undo the correction).
+
+**Result: inconsistent, and the pre-agreed stop condition was hit.** Of 5
+episodes: 1 (ep1) improved monotonically with each correction (-44.4px ->
+-45.2px -> -21.5px) but still didn't reach a successful grasp; 3 (ep0,
+ep2, ep4) had the cube leave the wrist frame entirely after a single 5mm
+correction; 1 (ep3) got WORSE in the same direction after a correction
+that should have helped (+49.4px -> +110.7px). `grasp_succeeded` returned
+True for 2/5 (ep0, ep4), but their `max_cube_z` (5.65m and 0.24m) match
+this project's own well-established contact-explosion pattern, not a
+controlled lift -- read as 0/5 genuine successes, not 2/5. 3/5 episodes
+scored `max_cube_z < 0.05m`, meeting the stop threshold agreed before this
+round started. Diagnostic script kept as
+`diag_vision_recenter.py`-equivalent logic (scratchpad only, not committed
+-- this was a feasibility probe, not a production implementation) for
+whoever picks this up next.
+
+**Where this leaves the grasp-reliability investigation**: four real
+findings today (settle timing, friction, gripper drive gains, and this
+axis/vision probe), one root cause still not found. The vision correction
+half-working in one episode and actively backfiring in another suggests
+either the image-column/world-X relationship isn't as stable across the
+frame as the one-point calibration assumed (parallax / lens distortion
+at a wide 70deg FOV and short standoff), or 5mm steps are too coarse
+given how little clearance a 40mm cube leaves, or both. Next session,
+before trying vision correction again: log the calibration slope at
+several different starting offsets (not just one) to check linearity
+across the frame, and/or reduce the step size and raise MAX_ITERS rather
+than assuming 3 large steps is enough.
 
 **1. Check the cameras (30 seconds -- do this before every collection run)**
 ```bash
