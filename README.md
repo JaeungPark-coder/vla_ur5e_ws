@@ -314,8 +314,70 @@ collection worth starting -- and only after (1) above gives the wrist
 camera an actual answer, since a collection run with a camera that cannot
 see the cube teaches nothing.
 
+**2026-09-19: this smoke test was run for the first time (with the wrist
+camera now trustworthy) and failed completely -- 0/5, 15/15 attempts
+rejected, one attempt launching the cube 30.7m (a contact-explosion event,
+worse than the 5.26m one in item 2 above).** Three separate, real,
+independently-confirmed bugs were found and fixed chasing this, all
+verified with before/after measurements (see `scripted_pick_place.py`'s
+`SETTLE_TICKS` comment and `isaac_sim_common.py`'s `bind_grip_friction_
+material`/`GripperController._fix_drive_gains` docstrings for the full
+reasoning each):
 
-## Bring-up order
+1. **`SETTLE_TICKS` only existed before the descend segment, not between
+   descend and close.** A tick-by-tick trace showed the tool 21mm from the
+   cube with nonzero residual velocity at the exact moment CLOSE started.
+   Added a second settle segment after descend -- confirmed this drops
+   tool speed at close-start to 0-9mm/s in the common case (some episodes
+   still show a genuine large tracking miss, an unrelated pre-existing
+   failure mode).
+2. **No friction material was set anywhere in this codebase** -- on
+   either the gripper pads or any pickable object (confirmed by grep: zero
+   PhysicsMaterial/MaterialAPI/friction lines existed before this).
+   `find_grasp_frame.py` (an existing but never-finished diagnostic)
+   re-run confirmed "NOTHING GRASPS" even at 7.2mm tracking error -- the
+   tightest alignment measured all session. Added
+   `bind_grip_friction_material` (0.9 static / 0.7 dynamic), bound to both
+   the gripper pads and every pickable object. Verified bound correctly
+   (`UsdShade.MaterialBindingAPI.ComputeBoundMaterial` on both sides
+   confirms it), but made **no measurable difference** to grasp success on
+   its own -- ruled out as the (sole) cause.
+3. **The gripper's own `finger_joint` shipped with kp=171.89, kd=0.0115**
+   -- three to four orders of magnitude weaker than the arm's own joints
+   (kp in the 5.7e4-5.9e5 range). Driven from open to the fully-closed
+   target over a real 90-tick close segment, it converged to only 0.374 of
+   its 0.80 rad target (47%) -- in free space, nothing to contact. Fixed
+   via `GripperController._fix_drive_gains` (kp=20000, kd=500, applied once
+   the drive joint index is first resolved). Verified: now reaches 0.790
+   rad (98.75%) over the same 90 ticks. Mimic joints (the other 5 gripper
+   joints following `finger_joint`) were checked in the same pass and
+   confirmed working correctly -- not a contributing cause.
+
+**None of these three fixes, individually or combined, actually raised
+genuine grasp success above 0/5** in repeated 5-episode checks --
+`max_cube_z` stayed in the 0.02-0.04m range (well under `LIFT_Z_THRESHOLD`
+=0.08m) in every non-explosive attempt, even with 0mm/s tool speed and a
+fully-closing, high-friction gripper. All three are real, verified fixes
+worth keeping regardless (a mis-timed settle, zero friction, and a
+100x-underpowered gripper drive are each independently wrong), but they
+were not the bottleneck actually blocking data collection.
+
+**The remaining suspect, and the strongest one so far**: axis-decomposing
+the tool-cube offset through the close segment (using the pre-fix
+tick-by-tick trace, since the gripper's fixed downward approach orientation
+-- and therefore its closing axis -- didn't change with any of the three
+fixes above) shows the offset sitting almost entirely on ONE horizontal
+axis (X: -8mm to +26mm across the close segment) while the other stays
+near zero throughout (Y: within +-5mm the whole time) -- and the cube's own
+observed push direction as it's contacted tracks the same axis. That is
+consistent with the residual falling specifically on the gripper's closing
+axis (the worst-case direction for a parallel-jaw gripper: it reduces
+"bite" on one pad and increases it on the other, rather than sitting
+harmlessly along the flat width of the pads) rather than being spread
+omnidirectionally. If confirmed, a single-axis vision correction using the
+wrist camera (fixed today, see item 1) right before the close segment --
+not a full 2D re-centering -- would be the targeted fix. Not yet
+attempted.
 
 **1. Check the cameras (30 seconds -- do this before every collection run)**
 ```bash

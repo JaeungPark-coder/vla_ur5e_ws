@@ -90,6 +90,27 @@ def _ticks_for_distance(distance_m, floor_ticks):
 # tick 90-180 -- INTO A HOLD AT THE SAME POINT, before the vertical descent
 # that risks contact begins. This is a zero-distance "segment" at
 # above_cube, so _ticks_for_distance's floor applies unchanged.
+#
+# CONFIRMED 2026-09-19: this fix was only applied at ONE of the two places
+# it was needed. collect_demos.py --num_episodes 5 (with_gripper=True, the
+# real configuration) failed 0/5 -- a tick-by-tick trace showed the tool
+# 21mm from the cube at the exact moment the CLOSE segment starts (right
+# after descend, with no settle in between, unlike above_cube's settle
+# before descend), the cube then shoved ~30mm sideways as the fingers
+# closed on it off-centre instead of around it, and the gripper closing
+# fully (1.00) on empty air -- the cube never left the table for the rest
+# of the episode. The SAME pattern this comment already describes for
+# "approach residual before descend" applies just as much to "descend
+# residual before close": descend is itself a 13cm vertical move (STANDOFF_
+# HEIGHT to GRASP_HEIGHT) that generates its own tracking residual and,
+# unlike the approach-then-descend case, nothing let it settle before the
+# next segment (closing) started. This is also the likely mechanism behind
+# a separate 30.7m contact-explosion event seen in the same run: descend
+# ending exactly when close begins means the tool may still have nonzero
+# residual VELOCITY, not just position error, at first contact -- a moving
+# fingertip hitting the cube is a different (and worse) impulse than a
+# stationary one nudging it, which the existing maxDepenetrationVelocity
+# cap (isaac_sim_common.py) is not designed to absorb.
 SETTLE_TICKS = 90
 
 
@@ -121,6 +142,7 @@ class ScriptedPickPlace:
             (start_tool_pos, above_cube, 0.0, steps_per_segment),      # approach from above
             (above_cube, above_cube, 0.0, SETTLE_TICKS),               # settle before descending -- see SETTLE_TICKS
             (above_cube, at_cube, 0.0, steps_per_segment),             # descend to the cube
+            (at_cube, at_cube, 0.0, SETTLE_TICKS),                     # settle before closing -- see SETTLE_TICKS
             (at_cube, at_cube, 1.0, steps_per_segment // 2),           # close the gripper in place
             (at_cube, above_cube, 1.0, steps_per_segment),             # lift
             (above_cube, above_target, 1.0, steps_per_segment),       # transport
@@ -170,10 +192,12 @@ class ScriptedPickPlace:
         INTO the lift, with the tool already 14.5 cm away from the cube. The
         boundary is a property of the waypoint list, so read it from there.
 
-        [:4] = approach, settle, descend, close -- see _build_waypoints'
-        `segments` list (the settle segment was added 2026-09-16; keep this
-        slice in sync with that list's order if it changes again)."""
-        return sum(num_ticks for _, _, num_ticks in self.waypoints[:4])
+        [:5] = approach, settle, descend, settle, close -- see
+        _build_waypoints' `segments` list (a settle segment before descend
+        was added 2026-09-16; a second one after descend, before close, was
+        added 2026-09-19 -- keep this slice in sync with that list's order
+        if it changes again)."""
+        return sum(num_ticks for _, _, num_ticks in self.waypoints[:5])
 
     def total_frames(self):
         return sum(num_ticks for _, _, num_ticks in self.waypoints)
