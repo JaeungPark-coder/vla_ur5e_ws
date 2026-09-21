@@ -22,7 +22,7 @@ import math
 
 import numpy as np
 import omni.replicator.core as rep
-from pxr import UsdGeom, Gf
+from pxr import UsdGeom, UsdLux, Gf
 from scipy.spatial.transform import Rotation as Rot
 
 from isaacsim.core.api import World
@@ -33,7 +33,8 @@ from isaacsim.core.prims import SingleArticulation, SingleRigidPrim
 import camera_framing
 from isaac_sim_common import (
     UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH, TOOL_LINK_PRIM_PATH,
-    select_gripper_variant, add_gripper_colliders, GripperController, setup_rmpflow, prim_world_pose,
+    select_gripper_variant, add_gripper_colliders, rescale_gripper_mass_to_spec,
+    GripperController, setup_rmpflow, prim_world_pose,
     GRIPPER_VARIANT_SET_NAME,
     add_cube, add_shape, add_place_target_marker, NullGripper,
 )
@@ -46,8 +47,31 @@ WRIST_CAMERA_PRIM_PATH = f"{TOOL_LINK_PRIM_PATH}/wrist_camera"
 
 # Workspace bounds the cube is randomized within (robot base frame, meters) --
 # ADJUST to whatever's actually reachable/visible on your table setup.
-CUBE_X_RANGE = (0.35, 0.55)
-CUBE_Y_RANGE = (-0.20, 0.20)
+#
+# All four edges pulled in by 0.07 on 2026-09-21 (X: 0.35/0.55 -> 0.42/0.48;
+# Y: -0.20/0.20 -> -0.13/0.13). check_rmpflow_stability.py (30 fresh
+# episodes, 15 each on the GPU and CPU physics pipelines -- same on both, so
+# this is a real RMPflow/geometry effect, not a GPU-pipeline artifact) found
+# the tool-tracking residual spiking to 200mm-1.4m (finite, never NaN/Inf)
+# concentrated near the spawn range's edges -- but NOT one specific edge:
+# X>=0.49 was the first one caught, then a separate run turned up a
+# X=0.456/Y=0.19 spawn (near the Y edge instead) also spiking to 1.09m, and
+# a third run (after narrowing X alone) turned up a Y=-0.175 spawn (the
+# OTHER Y edge) spiking to 887mm. Three of four edges had independently
+# shown this before any of them were deliberately targeted, which is why
+# all four are pulled in together here instead of chasing them one at a
+# time -- treat this as a real, reproducible edge-proximity risk, not a
+# bounded region on one axis.
+#
+# NOT a validated safe boundary, and NOT free: this leaves only a 0.06 x
+# 0.26m spawn area for a 0.04m cube, which may be too little spatial
+# randomization for what reset()'s own comment calls out (forcing the
+# eventual policy to look at the image, not memorize one pose) -- re-run
+# check_rmpflow_stability.py --with-gripper --episodes 20 (both --device cpu
+# and the GPU default) after any further change here, and reconsider the
+# margin if training data ends up too repetitive.
+CUBE_X_RANGE = (0.42, 0.48)
+CUBE_Y_RANGE = (-0.13, 0.13)
 CUBE_SIZE_M = 0.04  # edge length of the spawned cube
 CUBE_Z = 0.02  # resting height for a 4cm cube on the table surface
 PLACE_TARGET_POSITION = np.array([0.45, 0.30, 0.0])
@@ -88,7 +112,15 @@ MAX_DARK_FRACTION = 0.30
 # WRIST_CAMERA_LATERAL_M must clear the wrist link's radius. Aiming at
 # WRIST_CAMERA_FOCUS_M along the tool axis, rather than pointing straight
 # down that axis, keeps the target centred despite the lateral offset.
-WRIST_CAMERA_LATERAL_M = 0.12
+#
+# VALIDATED 2026-09-21 (check_wrist_mount_raycast.py's two-stage search: a
+# cheap FOV-cone + PhysX-raycast screen over a 294-candidate grid across 5
+# fresh grasp poses, narrowed to 10 survivors, THEN rendered for real):
+# 0.16 was the largest lateral tested and the winner -- worst-case 351 cube
+# px, mean 555, across 3 fresh render samples, 0% near-black. Re-run that
+# script (wider LATERAL_CANDIDATES) if a still-larger offset might do
+# better; this was only tested up to 0.16.
+WRIST_CAMERA_LATERAL_M = 0.16
 WRIST_CAMERA_FOCUS_M = 0.12
 # How far BACK along the approach axis the camera sits, i.e. behind the
 # gripper looking forward over it, the way a real eye-in-hand bracket is
@@ -104,23 +136,43 @@ WRIST_CAMERA_BACK_M = 0.12
 WRIST_CAMERA_HORIZONTAL_FOV_DEG = 70.0
 WRIST_CAMERA_FOCAL_LENGTH_MM = 24.0
 
+# VALIDATED 2026-09-21 (same check_wrist_mount_raycast.py run as
+# WRIST_CAMERA_LATERAL_M's winner -- see that constant's comment): 15
+# degrees down. History worth keeping, because it shows why this needed a
+# real search rather than a plausible-sounding external number: an earlier
+# attempt set this to 30 (citing an external comparison of frontal vs.
+# ~30-degree-down eye-in-hand mounts), and the one direct measurement taken
+# of THAT value made things WORSE, not better (39% near-black at tilt=0 vs.
+# 60% at tilt=30, both against the OLD rot=(0,0,0)/lateral=0.12 mount, and
+# without the fill light below -- see WRIST_CAMERA_FLANGE_ROT_EULER and
+# _setup_cameras' fillDomeLight comment). It later turned out most of that
+# near-black reading was a missing scene light, not the mount at all; 15
+# degrees down only won once BOTH the light was fixed and the search moved
+# from a single hand-picked sample to a real geometry-then-render sweep.
+WRIST_CAMERA_DOWN_TILT_DEG = 15.0
+
 # Which way the camera looks, as XYZ Euler degrees taking the FLANGE frame to
-# the tool's approach direction. NOT a validated winner -- a placeholder,
-# left here only because it clears the reset-pose black-frame failure two
-# earlier picks did not (see git history: (0, 90, 0)@0.08 buried the camera
-# in the arm's own geometry at reset every time). Chasing a real winner
-# stopped 2026-09-15 when a multi-sample sweep (see check_cameras.py's
-# WRIST_SAMPLES fix, same commit) showed why three different "clear winners"
-# in a row (688px, 1532px, 1011px, each from a single random grasp) each
-# failed a held-out check: of 91 grasp attempts sampled across that sweep,
-# 80 (88%) never actually reached the cube (median 130mm off, worst 290mm)
-# -- see scripted_pick_place.py's steps_per_segment, a fixed tick budget per
-# segment that does not scale with how far that segment actually has to
-# travel. No camera placement can be validated against a grasp that mostly
-# does not happen; fix that first, THEN re-run
-# `check_cameras.py --sweep_wrist --wrist_samples 5` (and `--at_reset`) for
-# a trustworthy winner.
-WRIST_CAMERA_FLANGE_ROT_EULER = (0.0, 0.0, 0.0)
+# the tool's approach direction.
+#
+# VALIDATED 2026-09-21: check_wrist_mount_raycast.py's two-stage search
+# (294 (direction, lateral, tilt) candidates screened by FOV-cone membership
+# + an unoccluded PhysX raycast to the cube's centre across 5 fresh grasp
+# poses -- no rendering, so cheap enough to cover that many -- then the top
+# 10 survivors actually rendered, 3 fresh grasp samples each) found
+# (180, 0, 0) @ lateral=0.16, tilt=15 as the winner: worst-case 351 cube px,
+# mean 555, 0% near-black across all 3 render samples. Two things had to be
+# fixed FIRST for this search to mean anything, both confirmed the same
+# day: the reach/tracking instability that made every earlier attempt's
+# grasp poses unreliable (see CUBE_X_RANGE/CUBE_Y_RANGE's comment and
+# rescale_gripper_mass_to_spec), and the scene having no fill light at all
+# (see _setup_cameras' fillDomeLight comment) -- every candidate this same
+# search geometrically verified as "cube in FOV, unoccluded" still rendered
+# 57-84% near-black before that light existed, which is why every previous
+# hand-picked or partially-swept value here was untrustworthy. Re-run
+# check_wrist_mount_raycast.py after any further change to gripper mass,
+# CUBE_X_RANGE/CUBE_Y_RANGE, or scene lighting -- any of those can shift
+# which grasp poses this was validated against.
+WRIST_CAMERA_FLANGE_ROT_EULER = (180.0, 0.0, 0.0)
 BASE_CAMERA_POSITION = (0.9, 0.0, 0.5)
 # What the base camera looks at: between the cube spawn area (CUBE_X_RANGE x
 # CUBE_Y_RANGE at CUBE_Z) and the place target, so both are in frame.
@@ -135,6 +187,14 @@ CAMERA_RESOLUTION = (256, 256)
 # phase that needs it. Used as the yardstick in BASE_FRAMING below; whether
 # it is reachable at all is part of what that reports.
 TARGET_CUBE_SPAN_PX = 30.0
+
+# Named so camera_framing.py's own near-clip check (it already reads
+# scene.get("CAMERA_NEAR_CLIP_M"), added before this constant existed) has
+# something to find instead of silently skipping. Value unchanged from the
+# literal 0.01/10000.0 _setup_cameras used to hardcode -- see that function's
+# own comment for why 0.01 (1cm) replaced USD's 1m default near clip.
+CAMERA_NEAR_CLIP_M = 0.01
+CAMERA_FAR_CLIP_M = 10000.0
 
 # Base camera's horizontal FOV, realized via focal length / aperture below
 # so camera_projection.py's pinhole math (which takes this same value) is
@@ -237,6 +297,25 @@ class PickPlaceScene:
         self.world.scene.add_default_ground_plane()
         self.stage = get_current_stage()
 
+        # CONFIRMED 2026-09-21: add_default_ground_plane's own SphereLight
+        # (overhead, intensity 100000) is the ONLY light this scene ever had
+        # -- there was no other light anywhere in this file. Measured at
+        # reset: base_rgb mean=72 (tolerable, high up and unobstructed) but
+        # wrist_rgb mean=27 (the wrist camera sits low, close to the
+        # gripper/table, partly shadowed from a single overhead point
+        # source). This alone explained a near_black reading that a wrist
+        # mount / lateral / down-tilt search (check_wrist_mount_raycast.py)
+        # could NOT get below ~57-84% no matter the angle -- every candidate
+        # it geometrically verified (in-FOV, unoccluded raycast to the
+        # cube) still rendered mostly dark. Adding this fill dome light
+        # alone, with no mount/angle change at all, dropped wrist_rgb's
+        # near_black from >40% to 0.2% (mean 27 -> 79) in a direct A/B
+        # check. Intensity chosen to roughly match the ambient light level
+        # a real tabletop scene would have without blowing out the
+        # existing overhead SphereLight's highlights -- ADJUST if either
+        # camera looks over/under-exposed once this can be eyeballed.
+        UsdLux.DomeLight.Define(self.stage, "/World/fillDomeLight").CreateIntensityAttr(1500.0)
+
         robot_prim = add_reference_to_stage(assets_root + UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH)
         # Turn the asset's own gripper on BEFORE any articulation view is
         # created: selecting the variant changes the prim tree, so it has to
@@ -272,6 +351,21 @@ class PickPlaceScene:
         self.robot = SingleArticulation(ROBOT_PRIM_PATH, name="ur5e_arm")
         self.world.reset()
         self.robot.initialize()
+
+        if with_gripper:
+            # Needs a LIVE physics view to read PhysX's own auto-computed
+            # per-link masses from (see rescale_gripper_mass_to_spec's own
+            # docstring for why those proportions are trusted rather than
+            # guessed) -- cannot happen before this first robot.initialize().
+            # Authors the result into USD, so the very next world.reset()
+            # (PickPlaceScene.reset(), called by every caller before an
+            # episode actually runs) is what picks it up.
+            n_mass_links = rescale_gripper_mass_to_spec(robot_prim, self.robot)
+            if n_mass_links == 0:
+                raise RuntimeError(
+                    "rescale_gripper_mass_to_spec found no RigidBodyAPI links under Gripper -- "
+                    "the gripper prim tree has probably changed shape; inspect it before "
+                    "trusting any grasp.")
 
         # The gripper's joints are part of self.robot's articulation now (the
         # variant selected above), so the controller just drives one of its
@@ -343,7 +437,7 @@ class PickPlaceScene:
         # project by a camera-distance sweep: with the default range, zero
         # points land on a target 0.15m away; with near=0.01 the same pose
         # returns tens of thousands.
-        base_cam.CreateClippingRangeAttr().Set(Gf.Vec2f(0.01, 10000.0))
+        base_cam.CreateClippingRangeAttr().Set(Gf.Vec2f(CAMERA_NEAR_CLIP_M, CAMERA_FAR_CLIP_M))
 
         # CONFIRMED (2026-09-08, by inspecting collected frames): mounting the
         # wrist camera on the flange with translation only left it imaging the
@@ -368,7 +462,7 @@ class PickPlaceScene:
         # the camera beside the tool axis -- see WRIST_CAMERA_LATERAL_M.
         self._wrist_cam_translate_op = wrist_cam.AddTranslateOp()
         self._wrist_cam_orient_op = wrist_cam.AddOrientOp()
-        wrist_cam.CreateClippingRangeAttr().Set(Gf.Vec2f(0.01, 10000.0))
+        wrist_cam.CreateClippingRangeAttr().Set(Gf.Vec2f(CAMERA_NEAR_CLIP_M, CAMERA_FAR_CLIP_M))
         wrist_aperture_mm = 2.0 * WRIST_CAMERA_FOCAL_LENGTH_MM * math.tan(
             math.radians(WRIST_CAMERA_HORIZONTAL_FOV_DEG) / 2.0)
         wrist_cam.CreateFocalLengthAttr(WRIST_CAMERA_FOCAL_LENGTH_MM)
@@ -408,7 +502,7 @@ class PickPlaceScene:
         return Rot.from_euler("x", 180.0, degrees=True)
 
     def set_wrist_camera_flange_rotation(self, euler_xyz_deg, lateral_m=None, focus_m=None,
-                                          back_m=None):
+                                          back_m=None, down_tilt_deg=None):
         """Mount the wrist camera for a given tool-approach direction.
 
         `euler_xyz_deg` (XYZ degrees, flange -> approach frame; None uses
@@ -416,6 +510,14 @@ class PickPlaceScene:
         is then placed `lateral_m` to the side of that axis and aimed at a
         point `focus_m` along it -- see WRIST_CAMERA_LATERAL_M for why beside
         rather than on, and why aimed rather than parallel.
+
+        `down_tilt_deg` (see WRIST_CAMERA_DOWN_TILT_DEG) additionally rotates
+        the approach axis, about the same lateral bracket axis used to offset
+        the camera, before the lateral/focus/back placement above is applied
+        -- an attempt at "look down past the fingers" rather than "look
+        straight along the tool axis", per the finger-occlusion symptom at
+        close standoff. UNVERIFIED sign/magnitude against this asset -- see
+        WRIST_CAMERA_DOWN_TILT_DEG's comment.
 
         Settable at runtime so check_cameras.py can sweep mounts within one
         session instead of needing a restart per guess."""
@@ -430,9 +532,11 @@ class PickPlaceScene:
         lateral = WRIST_CAMERA_LATERAL_M if lateral_m is None else float(lateral_m)
         focus = WRIST_CAMERA_FOCUS_M if focus_m is None else float(focus_m)
         back = WRIST_CAMERA_BACK_M if back_m is None else float(back_m)
+        down_tilt = WRIST_CAMERA_DOWN_TILT_DEG if down_tilt_deg is None else float(down_tilt_deg)
         self.wrist_camera_lateral_m = lateral
         self.wrist_camera_focus_m = focus
         self.wrist_camera_back_m = back
+        self.wrist_camera_down_tilt_deg = down_tilt
 
         # A USD camera images along its own local -Z, so that is the tool's
         # approach direction expressed in the flange frame.
@@ -444,6 +548,13 @@ class PickPlaceScene:
             reference = np.array([0.0, 1.0, 0.0])
         side = np.cross(view_dir, reference)
         side /= np.linalg.norm(side)
+
+        if down_tilt != 0.0:
+            # Rotate the approach axis about the same `side` axis the lateral
+            # offset already uses, so the tilt stays in the plane the bracket
+            # geometry below is built in.
+            view_dir = Rot.from_rotvec(np.radians(down_tilt) * side).apply(view_dir)
+            view_dir /= np.linalg.norm(view_dir)
 
         # Behind the gripper and off to one side, aimed at a point out along
         # the approach axis -- so at the grasp the camera looks down over the
@@ -540,10 +651,19 @@ class PickPlaceScene:
         return self.get_observation()
 
     def _sync_gripper_to_flange(self):
-        """Teleports the (top-level, not USD-parented -- see
-        isaac_sim_common.GRIPPER_PRIM_PATH) gripper prim to the tool
-        flange's current world pose, keeping it visually/functionally
-        attached to the arm."""
+        """STALE NAME/DOCSTRING, kept 2026-09-21 only to avoid touching every
+        call site: this used to teleport a separately-attached gripper prim
+        onto the flange every tick, back when the gripper was NOT part of
+        the arm's own articulation (the "teleport" attachment mode --
+        GRIPPER_PRIM_PATH, referenced by the old version of this docstring,
+        no longer exists anywhere in isaac_sim_common.py). Since
+        select_gripper_variant welds the gripper into the arm's OWN
+        articulation via a USD variant selection, GripperController.
+        sync_pose_to_flange is a documented no-op and this call does
+        nothing for the with_gripper=True path -- there is no separate prim
+        left to sync. Confirmed misleading enough on its own to produce a
+        very reasonable but incorrect hypothesis for an unrelated PhysX
+        divergence found by a 2026-09-21 gripper-mass A/B test."""
         flange_pos, flange_quat = prim_world_pose(self.stage.GetPrimAtPath(TOOL_LINK_PRIM_PATH))
         self.gripper.sync_pose_to_flange(flange_pos, flange_quat)
 

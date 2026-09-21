@@ -17,7 +17,11 @@ isaac/                    Isaac Sim scene + scripted demo collection (Phase 1 --
   isaac_sim_common.py      robot/gripper/RMPflow setup helpers
   pick_place_scene.py      scene construction + reset (randomizes cube spawn) + per-tick control
   scripted_pick_place.py   waypoint "expert" demonstrator (approach/grasp/lift/transport/place/retract)
-  check_cameras.py         renders what each camera sees + sweeps wrist orientations -- RUN THIS FIRST
+  check_cameras.py         renders what each camera sees + sweeps wrist orientations (18-candidate, all rendered) -- RUN THIS FIRST
+  check_wrist_mount_raycast.py  2026-09-21: cheap 294-candidate FOV+raycast screen, THEN renders only the survivors -- this is what actually found the current wrist mount
+  check_rmpflow_stability.py    2026-09-21: N fresh episodes, checks joint pos/vel for NaN/Inf every tick, either physics pipeline (--device cpu|gpu) -- found the cube-spawn-edge instability
+  check_grasp_alignment.py      2026-09-21: per-tick approach/settle/descend/close trace, gripper close fraction, tool-cube offset by axis (mesh-vertex-based, not link-origin) -- current open investigation, see README
+  check_near_field_visibility.py 2026-09-21: places the cube at controlled 5-100mm standoffs on the wrist camera's own axis, checks near-clip/exposure/stale-frame separately
   collect_demos.py         runs episodes, scores each against ground truth, writes a LeRobot dataset
   pick_place_scene_bridge.py   ROS2-facing sim bridge for policy INFERENCE (Phase 3's Isaac Sim side)
   residual_rl_train_env.py     Gymnasium env for Residual RL on top of the frozen pi0 policy (Phase 5, optional)
@@ -143,42 +147,243 @@ does not prove agreement with OpenVLA — that is step 6 below.
 
 ## The next Isaac Sim session
 
-**2026-09-16 update, second pass: the "12-episode with-gripper" numbers
-directly below (28-236mm cube drift, a 5.26m explosion) were themselves
-measured through a SECOND, separate cube-position bug, now also fixed --
-this is not the same bug as the frozen-read one `get_cube_position()`'s
-"Known gaps" entry describes, and fixing that one was not enough on its
-own.** The repositioning fix that replaced "tear down and rebuild the
-prim" (`set_rigid_body_translation`, a raw USD translate-op write before
-`world.reset()`) turned out to have its own bug: **`world.reset()`'s
-Stop+Play cycle discards whatever the USD attribute holds at Stop time and
-snaps the rigid body back to the pose PhysX cached from its very FIRST
-Play** -- every episode after the first landed at the exact same fixed
-point (confirmed: `[0.396, -0.177, 0.02]`, unchanged across 10 fresh
-resets with different random spawns) regardless of what had just been
-authored. This is what a 91-sample and later a 34-sample
-`check_cameras.py --sweep_wrist` run were actually measuring as "the tool
-didn't reach the cube" in 94% of samples (32/34, distances 100-400mm):
-RMPflow tracking was fine the whole time (2-23mm), the cube itself simply
-wasn't where `cube_position` said it was, for every episode but the first.
+**2026-09-21 update: four of the long-open blockers above (wrist mount,
+scene lighting, gripper mass/divergence, cube-spawn edge instability) are
+now genuinely fixed and verified on live Isaac Sim with a working GPU --
+and fixing them uncovered a fifth, previously-invisible problem (the
+scripted grasp closes on the cube but does not lift it) that is now this
+project's actual blocker.** Read this section before touching camera
+mount, gripper mass, or `CUBE_X_RANGE`/`CUBE_Y_RANGE` again -- re-deriving
+any of it from scratch would repeat several hours of this session.
 
-Fixed in `pick_place_scene.py`'s `reset()`: reposition the cube through a
-persistent `isaacsim.core.prims.SingleRigidPrim` (`.set_world_pose()`,
-called AFTER `world.reset()`, once `.initialize()`d each episode the same
-way `self.robot` already is) instead of a raw USD op before it --
-`set_world_pose` writes straight into the live PhysX rigid-body view,
-bypassing the Stop/Play cache entirely. `set_rigid_body_translation` is
-removed from `isaac_sim_common.py` (no remaining callers). **Verified**:
-15 fresh episodes, `with_gripper=False`, cube drift exactly **0.0mm** in
-every one (previously 0-337mm); a full `--sweep_wrist --wrist_samples 5`
-run (90 grasp attempts across 6 directions x 3 laterals) then landed the
-tool **17-55mm** from the cube in literally every sample -- no more
-`WARNING: the tool did not actually reach the cube` lines at all. Treat
-every number below this point that predates 2026-09-16's second pass
-(the 12-episode drift/explosion numbers, any `NO MOUNT WORKS` sweep
-result) as measured through this bug and not necessarily still true.
+### What is actually fixed and verified (don't re-litigate these)
 
-### 1. A genuine wrist-camera-mount result is in, and it is real this time: no mount works
+- **Gripper mass/divergence -- FIXED.** This codebase never set the
+  gripper's mass (PhysX was computing it from collider volume at default
+  density). A first attempt, `set_gripper_mass_properties`, split
+  Robotiq's published 0.925kg total EVENLY across all 9 links -- an actual
+  A/B run (`check_cameras.py --sweep_wrist --with_gripper`, otherwise
+  identical) showed this made things catastrophically WORSE, not better:
+  0 "Invalid PhysX transform" events in baseline vs. **5513** with the
+  even split enabled, and reach-check distances that should read tens of
+  mm instead spiking as high as **5x10^11 mm (500 billion km)** -- a real
+  numerical explosion. Root cause: PhysX's own auto-computed masses were
+  ALREADY realistic (housing ~610g, each finger/knuckle 13-43g, summing to
+  846.8g -- only 8% under spec) and an even split inverted that ratio,
+  handing tiny links far more mass than their real proportions; PhysX's
+  reduced-coordinate articulation solver is sensitive to exactly that kind
+  of adjacent-link mass-ratio mismatch. Fixed properly by
+  `rescale_gripper_mass_to_spec` (`isaac_sim_common.py`): read PhysX's own
+  auto-computed per-link masses off the live articulation view (needs a
+  physics view, so this runs after the first `robot.initialize()`, not
+  before like the collider setup), then multiply every link by the SAME
+  scalar (0.925/0.8468 = x1.092) to hit the real total while leaving the
+  proportions untouched. **Verified**: 20/20 fresh episodes clean (max
+  residual 236-238mm, the same "settle spike" every clean episode already
+  shows), 0 divergence events; a full `--sweep_wrist --with_gripper`
+  re-run also came back at 0 divergence (vs. 5513 before), reach 53/54
+  attempts in 30-61mm.
+- **Cube spawn range -- NARROWED, not fully solved.**
+  `check_rmpflow_stability.py` (new: drives the scripted trajectory for N
+  fresh episodes, checking every joint position/velocity for NaN/Inf every
+  tick, on either physics pipeline) found the tool-tracking residual
+  spiking to 200mm-1.4m (finite, never NaN/Inf, so NOT the same bug as the
+  mass one above) concentrated near the spawn range's EDGES -- and not one
+  specific edge: X>=0.49 was the first one caught, then a separate run
+  found an X=0.456/Y=0.19 spawn (the Y edge instead) also spiking to
+  1.09m, then a third (after narrowing X alone) found a Y=-0.175 spawn
+  (the OTHER Y edge) spiking to 887mm. Confirmed identical on both the GPU
+  and CPU physics pipelines (15 episodes each), so this is a real
+  RMPflow/geometry effect near this arm's reach limit or a singularity
+  region, not a GPU-pipeline artifact. All four edges pulled in by 0.07m
+  (`CUBE_X_RANGE`: 0.35/0.55 -> **0.42/0.48**; `CUBE_Y_RANGE`: -0.20/0.20
+  -> **-0.13/0.13**) as a cheap mitigation. **Verified**: failure rate went
+  from 6/15 (40%) before narrowing to 1/15 (7%) after X alone, to
+  **0/20 (0%)** combined with the mass fix above. Cost: the spawn area is
+  now only 0.06 x 0.26m for a 0.04m cube -- may be too little spatial
+  diversity for the eventual policy's domain randomization; deliberately
+  not chased further this session (see "what's still open" below).
+- **Scene lighting -- FIXED, and this explains most of the old "wrist
+  camera aimed wrong" investigation below.** Direct inspection found
+  `add_default_ground_plane()`'s own overhead `SphereLight` (intensity
+  100000) was the ONLY light this scene ever had -- confirmed by grep,
+  zero other `UsdLux`/lighting code anywhere in `isaac_sim_common.py` or
+  `pick_place_scene.py`. Measured at reset: `base_rgb` mean=72 (tolerable,
+  high up, unobstructed) but `wrist_rgb` mean=27 (low, close to the
+  gripper/table, partly shadowed from a single overhead point source).
+  This alone explained why a fine-grained wrist-mount search
+  (`check_wrist_mount_raycast.py`, see below) could not get near_black
+  under ~57-84% no matter the direction/lateral/tilt -- EVERY candidate it
+  geometrically verified (cube in-FOV, unoccluded PhysX raycast to its
+  centre) still rendered mostly dark. Added one `UsdLux.DomeLight` fill
+  light (`/World/fillDomeLight`, intensity 1500) in
+  `PickPlaceScene.__init__`. **Verified**: wrist_rgb near_black dropped
+  from 40%+ to **0.2%** in a direct A/B check (mean 27 -> 79), with no
+  mount/angle change at all.
+- **Wrist camera mount -- a real, validated answer, for the first time.**
+  Built `check_wrist_mount_raycast.py`: a two-stage search that screens a
+  294-candidate grid (6 directions x 7 laterals x 7 tilts) with cheap
+  geometry only (FOV-cone membership + an unoccluded PhysX raycast to the
+  cube's centre, no rendering) across several fresh grasp poses, then
+  renders only the survivors for real. This is necessary because
+  `check_cameras.py`'s own render-every-candidate sweep can only afford 18
+  candidates before the GPU cost gets prohibitive. With the lighting and
+  mass/spawn-range fixes above in place: **`WRIST_CAMERA_FLANGE_ROT_EULER
+  = (180, 0, 0)`, `WRIST_CAMERA_LATERAL_M = 0.16`,
+  `WRIST_CAMERA_DOWN_TILT_DEG = 15`** -- worst-case 351 cube px, mean 555,
+  **0% near-black** across 3 fresh render samples. `preflight_check()`
+  passes cleanly (`ok: True, problems: []`) for the first time this
+  project has ever recorded. Note: an earlier attempt today set
+  `WRIST_CAMERA_DOWN_TILT_DEG = 30` on the strength of an external
+  comparison (frontal vs. ~30-degree-down eye-in-hand mounts) -- the one
+  direct measurement taken of THAT value (before the lighting fix) showed
+  it made things WORSE (39% near-black at tilt=0 vs. 60% at tilt=30 on the
+  OLD mount). Lesson already stated elsewhere in this file but worth
+  restating: an externally-plausible number is not a substitute for
+  measuring it on this specific asset/scene.
+- **Two misleading, stale code comments fixed.** `check_cameras.py`'s
+  docstring and `_render_wrist`, plus `pick_place_scene.py`'s
+  `_sync_gripper_to_flange`, described a "teleport" gripper-attachment
+  failure mode (fingers falling off the arm without a per-tick re-sync,
+  producing "Invalid PhysX transform"/"Illegal BroadPhaseUpdateData"
+  storms) that was real for an attachment scheme this project replaced
+  long ago -- the CURRENT scheme welds the gripper into the arm's own
+  articulation via a USD variant selection
+  (`isaac_sim_common.select_gripper_variant`), so
+  `GripperController.sync_pose_to_flange` is a documented no-op and there
+  is no separate gripper prim left to fall off. These comments were
+  accurate enough-sounding that they produced a very reasonable but
+  INCORRECT hypothesis for the mass-related divergence above (confirmed
+  by grep: no bare `world.step()` calls anywhere in `check_cameras.py`,
+  both before and after the divergence was found). Comments now say so
+  explicitly.
+
+### What's new and still open: the grasp closes but does not lift
+
+With all of the above fixed, `collect_demos.py --num_episodes 5` (env:
+`lerobot` had to be pip-installed for this -- see the environment note
+below) ran end-to-end for the first time -- no camera rejection, no
+PhysX divergence -- and then rejected **15/15** attempts as "never
+lifted": `max_cube_z` stayed at 0.02-0.041m against `LIFT_Z_THRESHOLD
+= 0.08m`. This is a genuinely new (or rather, newly-visible -- every
+earlier session got stuck upstream of this point) problem. Investigated
+today with a new script, `check_grasp_alignment.py`, logging
+approach/settle/descend/close every tick plus the gripper's actual close
+fraction and the tool-cube offset. Findings, in the order they were found
+(each one corrected the previous step's naive reading -- read in order if
+picking this back up, the wrong turns are as informative as the right
+ones):
+
+1. **First reading (WRONG): "the fingers land ~140mm above the cube."**
+   Measuring the `left_inner_finger`/`right_inner_finger` LINK's own
+   `prim_world_pose()` put them 129-151mm above the cube's centre at the
+   end of every close segment -- physically impossible for this finger's
+   real length. Root cause: a link's coordinate origin is at its PROXIMAL
+   joint (where it mounts to the knuckle), not its contact surface, and
+   the `Defeatured_2F_85_PAD_OPEN_fingertipsstep` mesh under it has NO
+   transform op of its own -- its real extent is baked into its vertex
+   positions, which `prim_world_pose()` (transform-only) cannot see.
+   `mesh_world_bbox_center()` (new, in `check_grasp_alignment.py`) reads
+   the mesh's actual points and transforms them to world space instead.
+   With that fix, the pad centroid sits +2.5 to +16.2mm above the cube's
+   centre at the end of close -- unremarkable, not the story.
+2. **Axis decomposition, done right: X is NOT the gripper's closing axis
+   -- Y is.** Across 4 fresh episodes, `left_dx`/`right_dx` were the SAME
+   sign and nearly the same magnitude every time (e.g. +16.6/+16.3,
+   -23.9/-25.0, -17.8/-19.0, +27.6/+27.2) -- a closing-axis error would
+   push one pad closer and the other farther, i.e. OPPOSITE signs, which
+   is instead what `dy` showed every time (-12.9/+14.9, -13.9/+9.8,
+   -9.8/+14.2, -7.0/+16.0). So X is a COMMON-MODE offset shared by both
+   fingers (the whole gripper reaching to the wrong place), not a
+   closing-axis/grip-symmetry problem.
+3. **The common-mode X offset (16-28mm) is large relative to the cube's
+   20mm half-width -- close to its edge, not its centre.** This matches,
+   in both mechanism and rough scale, a comment already sitting in
+   `scripted_pick_place.py` since 2026-09-16 (`GRASP_HEIGHT` targets the
+   cube's TOP FACE with zero clearance, and "20-40mm off-centre against a
+   40mm cube is enough to clip an edge instead of centring on top of it")
+   -- except that comment's own proposed mechanism (premature contact
+   during descent knocking the arm sideways) does NOT hold up: see next.
+4. **Timing correlation test: the contact hypothesis is REJECTED.**
+   Logged the left pad's real bbox height against the cube's actual top
+   face every 4 ticks through descend+close, specifically to test whether
+   the X drift's onset lines up with the pad's lowest point reaching the
+   cube's top face (which would confirm early contact). It does not: the
+   pad-vs-cube-top gap crosses zero smoothly (e.g. +3.4mm -> -0.5mm
+   between two adjacent samples) with NO discontinuity in `dx` at that
+   moment, and `dx` was already smoothly drifting tens of mm earlier, while
+   the pad was still 50-90mm above the cube -- clearly too far to touch
+   anything. The drift is not a contact event.
+5. **What it actually looks like: a smooth, monotonic, ~40mm drift over
+   the ENTIRE descend+close duration (roughly 60+ ticks), with the
+   commanded X/Y target completely FROZEN the whole time.** One traced
+   episode: `dx` = -10.7mm (tick 320, still descending) -> -7.2 -> -2.6 ->
+   +3.8 (tick 356) -> ... -> +32.8mm (tick 402, end of close) -- one
+   direction, never reversing, never plateauing, across both the
+   pure-vertical descend (target X/Y unchanged) AND the close segment
+   (target position ALSO frozen, only the gripper joint ramps). A target
+   that never moves but a tracked point that keeps drifting the entire
+   time it's held is exactly the shape `pivot_dwell_check.py` was
+   ORIGINALLY written to detect -- its own docstring's "DYNAMICS" row:
+   "gravity and the gripper's mass sagging against drive gains that are
+   too soft to hold a loaded pose." Ran it fresh today
+   (`pivot_dwell_check.py`, with gripper, post-mass-fix) to check, but its
+   own test design turned out not to be comparable: it commands its probe
+   target from a COLD START (tick 1) instead of arriving via a gradual
+   settle like `scripted_pick_place.py` does, so it reports a 480-488mm
+   initial error that mostly (but not cleanly monotonically -- there's an
+   odd hump at ticks 90-120 in the grasp-target case) converges by tick
+   180, which isn't the same "already-settled, then does it creep" question
+   this drift raises. Also noticed in passing: its own verdict-printing
+   logic has a sign bug -- it printed "the residual GROWS by -311.3mm...
+   that is dynamics" for a case that was actually SHRINKING (a negative
+   number), because it only checks `abs(growth) > tolerance` without
+   looking at the sign. Not fixed yet.
+
+**Next step, not yet done:** extend `check_grasp_alignment.py` itself
+(same measurement methodology already validated above, rather than
+`pivot_dwell_check.py`'s differently-shaped test) to hold the end-of-close
+target for several hundred EXTRA ticks with nothing else changing, and
+watch whether the common-mode `dx` keeps growing without bound, or
+eventually plateaus at some larger-but-finite value. That distinguishes
+"the drive gains are genuinely too soft to hold this loaded pose at all"
+(keeps growing -- fix per `pivot_dwell_check.py`'s own original
+prescription, tune wrist stiffness/damping, tooling for which already
+exists via `get_joint_drive_gains`/`set_joint_drive_gains` and
+`pivot_dwell_check.py --stiffness-scale`/`--damping-scale`) from "it settles
+somewhere past the cube's edge" (a targeting/waypoint problem --
+`GRASP_HEIGHT`'s zero-clearance top-face target, or `GRIPPER_TCP_OFFSET_M`'s
+2026-09-10 measurement, would be the next things to re-derive, this time
+against the pad mesh's own vertex bbox rather than a link origin or an
+assumed constant -- see finding 1 above for why the link origin lies).
+
+### Environment note: installing `lerobot` briefly broke `isaacsim`/`isaaclab`
+
+`collect_demos.py` needs `lerobot`, which was not installed anywhere on
+this machine. `pip install lerobot` into `env_isaaclab` pulled in
+`numpy==2.4.6` as a transitive dependency upgrade, which conflicts with
+`isaacsim-kernel==5.1.0.0` (`numpy==1.26.0` exact pin), `isaaclab`,
+`isaaclab_rl`, `isaaclab_tasks` (`numpy<2`), `numba`, and `cmeel-boost` --
+all installed in that same shared environment for the broader IsaacLab
+work, not just this project. Fixed by `pip install "numpy==1.26.0"`
+afterward (confirmed both `isaacsim` and `lerobot` import correctly at
+that pin; some other lerobot-transitive version conflicts remain
+unresolved but non-blocking -- `click`, `psutil`, `typing_extensions`,
+`packaging`, `rerun-sdk` all logged mismatches pip's resolver didn't
+fully reconcile). **If `env_isaaclab` starts behaving strangely on
+unrelated IsaacLab work, check `pip list | grep numpy` first** -- it
+should read 1.26.0, not 2.x.
+
+### Old (2026-09-16 and earlier) "next session" plan below this point
+
+Superseded by the above for the wrist-mount and reach/divergence
+questions specifically; kept for its own still-possibly-relevant detail
+on how the 2026-09-16 cube-position bug was found and fixed, and because
+the pivot_dwell_check.py methodology critique in "what's still open"
+above only applies to that specific test's cold-start design, not to the
+underlying dwell/pivot concept.
+
+#### 1. A genuine wrist-camera-mount result is in, and it is real this time: no mount works
 
 With reach no longer confounding the score, `check_cameras.py --sweep_wrist
 --wrist_samples 5` (all 18 direction x lateral candidates, 5 cube spawns
@@ -194,62 +399,43 @@ Every candidate's worst sample over 5 spawns was 0 px; means ranged
 0-588px. This is no longer a measurement artifact -- it is the mount
 genuinely failing to keep the cube in frame across `CUBE_X_RANGE` (0.35-
 0.55m) x `CUBE_Y_RANGE` (-0.20-0.20m), a 0.20 x 0.40m spawn area no single
-fixed eye-in-hand direction+offset covers from every point in it. Two
-things worth trying, in order of how much they change:
-  - Narrow `CUBE_X_RANGE`/`CUBE_Y_RANGE` and re-sweep -- if a mount starts
-    working at a smaller spread, the spawn range itself was the problem,
-    not the mount. Cheap to test, changes what domain randomization the
-    eventual policy gets.
-  - Widen the wrist camera's FOV/aperture instead of hunting further
-    orientations -- `check_cameras.py`'s own six candidates only sweep
-    direction and lateral offset, not focal length; a wider-angle lens
-    mounted at the current-best `(180, 0, 0)@0.08` position (588 mean px)
-    may be enough without touching the spawn distribution at all.
-Re-check **both** stages (`--sweep_wrist` and `--sweep_wrist --at_reset`)
-once a candidate looks promising -- a mount fine at one stage has
-previously been found buried in the arm's own geometry at the other.
+fixed eye-in-hand direction+offset covers from every point in it. (**2026-
+09-21: superseded -- see above. The actual root causes were missing scene
+lighting and too coarse a candidate grid, not the spawn range**, though
+the spawn range was independently narrowed anyway for the unrelated
+reach/divergence reasons above.)
 
-### 2. Chase the 5.26m contact-explosion event -- but re-measure it first
+#### 2. Chase the 5.26m contact-explosion event -- but re-measure it first
 
 The 12-episode with-gripper run that found this was itself run before the
 second cube-position bug above was fixed, so its cube-drift numbers
-(28-236mm) are suspect the same way the camera sweep's were. Re-run that
-12-episode with-gripper check first; if the 5.26m explosion still
-reproduces under the fixed measurement, it's real and worth a
-`reach_probe`-style per-tick trace (log cube position and tool position
-every tick, not just at the end) on a reproducing case -- likely this
-project's own already-partially-fixed contact-explosion shape (see the
-`convexDecomposition`/`maxDepenetrationVelocity` entries elsewhere in this
-file) recurring with the fingers now actually touching the cube (this
-session's diagnostics ran mostly `with_gripper=False`, so this failure
-mode has only been directly observed once).
+(28-236mm) are suspect the same way the camera sweep's were. (**2026-09-21:
+not yet specifically re-chased under today's fixes -- the closest thing
+today's session has to an answer is "what's new and still open" above,
+which is a smooth drift, not a single explosive event, but a genuine
+5+ metre single-tick launch has not been specifically searched for since
+the mass fix.**)
 
-### 3. Re-run pivot_dwell_check.py for a genuine settled-residual number
+#### 3. Re-run pivot_dwell_check.py for a genuine settled-residual number
 
 ```bash
 python3 pivot_dwell_check.py
 python3 pivot_dwell_check.py --no-gripper
 ```
 
-Its own prior numbers (hundreds of mm) were read before either
-cube-position fix existed. Expect tens of mm (the RMPflow tracking error
-this session actually measured directly was 2-39mm), not hundreds.
+(**2026-09-21: run, see "what's new and still open" above for why its
+cold-start test design didn't give a clean answer to the sustained-hold
+question it was needed for.**)
 
-### 4. Smoke-test before committing to a long collection run
+#### 4. Smoke-test before committing to a long collection run
 
 ```bash
 python3 collect_demos.py --num_episodes 5
 ```
 
-It has to complete without hitting the attempt cap. Worth noting:
-`grasp_succeeded`/`place_error_m` are scored against `get_cube_position()`,
-so any collection run made before 2026-09-16 with this scene may have
-accepted/rejected episodes based on the wrong cube position -- if you have
-an existing dataset collected before this fix, treat its accept/reject
-labels as suspect. Only once this smoke test passes is the 50-200 episode
-collection worth starting -- and only after (1) above gives the wrist
-camera an actual answer, since a collection run with a camera that cannot
-see the cube teaches nothing.
+(**2026-09-21: run. It completed end-to-end -- no camera rejection, no
+divergence -- for the first time, then rejected 15/15 as "never lifted".
+See "what's new and still open" above.**)
 
 
 ## Bring-up order
@@ -491,17 +677,17 @@ stubbed backends and synthetic episodes — but every claim that involves the
 simulator, a camera or a robot is untested. Ordered so each failure is cheap
 and interpretable.
 
-| # | what | needs | how you know it worked |
-|---|---|---|---|
-| 1 | Wrist camera mount | Isaac Sim | `check_cameras.py --sweep_wrist` picks a winner; pin it in `WRIST_CAMERA_FLANGE_ROT_EULER`, which currently reads `None` |
-| 2 | Base camera framing | a decision | `preflight framing` prints the ceiling; 30 px across is **not reachable** at the current workspace and resolution |
-| 3 | Is the residual frame, contact, or dynamics? | Isaac Sim | `pivot_dwell_check.py` — free-space drift means dynamics, grasp-only drift means contact |
-| 4 | Does the scripted expert grasp? | Isaac Sim | `collect_demos.py --num_episodes 5` completes without the attempt cap |
-| 5 | Demonstration collection | Isaac Sim | 50–200 episodes with the reject rate low and the gate quiet |
-| 6 | Euler axis order vs OpenVLA | an OpenVLA checkout | compare its dataloader against `EULER_SEQ`; the metamorphic check proves self-consistency, **not** agreement with OpenVLA |
-| 7 | Fine-tune | 2× RTX 3090 | training converges; `compute_norm_stats` runs without shape errors |
-| 8 | Serving + bridge | GPU host + ROS 2 | the policy client steps without timing out |
-| 9 | Real gripper driver | UR5e + Robotiq | gripper state logs `measured`, not `NOT MEASURED` |
+| # | what | needs | how you know it worked | status (2026-09-21) |
+|---|---|---|---|---|
+| 1 | Wrist camera mount | Isaac Sim | `check_cameras.py --sweep_wrist` picks a winner; pin it in `WRIST_CAMERA_FLANGE_ROT_EULER`, which currently reads `None` | **DONE.** `check_wrist_mount_raycast.py` validated `(180,0,0)@0.16, tilt=15` -- 0% near-black, `preflight_check()` passes. See "The next Isaac Sim session" above. |
+| 2 | Base camera framing | a decision | `preflight framing` prints the ceiling; 30 px across is **not reachable** at the current workspace and resolution | Still not reachable (ceiling now 23.8px, up from 20.5, after narrowing the spawn range for unrelated reasons) -- decision not yet made, still context-only for the wrist camera to carry approach. |
+| 3 | Is the residual frame, contact, or dynamics? | Isaac Sim | `pivot_dwell_check.py` — free-space drift means dynamics, grasp-only drift means contact | **Still open, and this is the current blocker.** Fresh evidence (`check_grasp_alignment.py`) rules out contact (no discontinuity when the pad reaches the cube) and points at DYNAMICS (smooth ~40mm drift over a fully-frozen held target) -- but `pivot_dwell_check.py`'s own cold-start test design couldn't confirm it cleanly. See "what's new and still open" above for the exact next step. |
+| 4 | Does the scripted expert grasp? | Isaac Sim | `collect_demos.py --num_episodes 5` completes without the attempt cap | Ran for the first time end-to-end (no camera/divergence rejection) -- and hit the attempt cap for a NEW reason, "never lifted" (0/15). This row and row 3 are now the same open question. |
+| 5 | Demonstration collection | Isaac Sim | 50–200 episodes with the reject rate low and the gate quiet | Blocked on row 3/4. |
+| 6 | Euler axis order vs OpenVLA | an OpenVLA checkout | compare its dataloader against `EULER_SEQ`; the metamorphic check proves self-consistency, **not** agreement with OpenVLA | Unchanged. |
+| 7 | Fine-tune | 2× RTX 3090 | training converges; `compute_norm_stats` runs without shape errors | Unchanged. |
+| 8 | Serving + bridge | GPU host + ROS 2 | the policy client steps without timing out | Unchanged. |
+| 9 | Real gripper driver | UR5e + Robotiq | gripper state logs `measured`, not `NOT MEASURED` | Unchanged. |
 
 Step 1 gates 4 and 5: openpi's UR5 contract feeds the policy both views, and
 the wrist view carries the fine manipulation signal, so collecting with it
@@ -509,7 +695,9 @@ mis-aimed wastes the run. Step 3 decides whether there is a dynamics problem
 at all — the code's own note says the residual came from the fingers
 contacting the table, which the frame fix addressed, while a later review
 suggested gravity and drive gains. Only a free-space hold separates them, and
-the answer changes whether there is work to do.
+the answer changes whether there is work to do. **2026-09-21: step 1 is now
+done, and step 3 is the live question -- see "The next Isaac Sim session"
+above for exactly where that investigation stands.**
 
 ## When something goes wrong
 

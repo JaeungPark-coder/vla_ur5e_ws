@@ -33,9 +33,13 @@ UR5E_ASSET_RELATIVE_PATH = "/Isaac/Robots/UniversalRobots/ur5e/ur5e.usd"
 # is no "tool0" prim (that's a ROS URDF-ism, not what this USD uses) -- the
 # real tool flange child Xform is wrist_3_link/flange. The asset also ships
 # an empty /World/ur5e/Gripper placeholder Xform plus a dangling
-# "robot_gripper_joint" fixed joint (body1 unset), presumably meant for
-# exactly this kind of attachment, but unused here -- see GRIPPER_PRIM_PATH
-# below for why.
+# "robot_gripper_joint" fixed joint (body1 unset), presumably meant for a
+# separately-attached gripper -- unused here because select_gripper_variant
+# below takes a different approach (a USD variant selection that welds the
+# gripper into the arm's own articulation) instead. (This comment used to
+# point at a GRIPPER_PRIM_PATH constant for "why" -- that belonged to an
+# earlier teleport-based attachment scheme and no longer exists; see
+# select_gripper_variant's own docstring for the actual reasoning.)
 ROBOT_PRIM_PATH = "/World/ur5e"
 TOOL_LINK_PRIM_PATH = "/World/ur5e/wrist_3_link/flange"
 
@@ -87,6 +91,201 @@ GRIPPER_OPEN_POS = 0.0     # radians -- ADJUST against your gripper's joint limi
 GRIPPER_CLOSED_POS = 0.80  # radians -- see MEASURED note above; hard limit is 0.8203
 
 WRIST_3_LINK_PRIM_PATH = f"{ROBOT_PRIM_PATH}/wrist_3_link"
+
+# pivot_dwell_check.py's own docstring names this gap directly: "there is no
+# stiffness, damping, mass or inertia set anywhere in this codebase." A
+# stiffness value raised by hand (in the Isaac Sim GUI, against the live
+# asset) is exactly the kind of change that gap makes invisible -- it isn't
+# in git, so nothing here can log it, compare it, or revert it. The helpers
+# below close that: rescale_gripper_mass_to_spec makes the gripper's mass an
+# explicit, code-authored value instead of an undocumented PhysX default,
+# and get/set_joint_drive_gains make the arm's drive gains readable and
+# settable in code (see pivot_dwell_check.py's --stiffness-scale/--damping-
+# scale).
+
+# Robotiq's own 2F-85 datasheet lists 0.925 kg total mass.
+# rescale_gripper_mass_to_spec uses this only as a target for the TOTAL --
+# see its docstring for why the per-link split is read from PhysX's own
+# auto-computed (collider-volume-based) proportions rather than guessed.
+GRIPPER_TOTAL_MASS_KG = 0.925
+
+# Wrist joints nearest the payload, per pivot_dwell_check.py's DYNAMICS
+# hypothesis (gravity + the gripper's mass sagging against gains too soft to
+# hold a loaded pose). UNVERIFIED against this asset's exact joint prim names
+# beyond what self.robot.dof_names already confirms elsewhere in this
+# codebase -- ADJUST if PrimRange traversal below finds none of these.
+ARM_JOINT_NAMES = (
+    "shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+    "wrist_1_joint", "wrist_2_joint", "wrist_3_joint",
+)
+
+
+# The 6 arm link names, needed only to disambiguate the ONE gripper link
+# name that collides with one of them -- see
+# _resolve_gripper_body_indices. Not ARM_JOINT_NAMES (joints, not links).
+ARM_LINK_NAMES = (
+    "base_link", "shoulder_link", "upper_arm_link", "forearm_link",
+    "wrist_1_link", "wrist_2_link", "wrist_3_link",
+)
+
+
+def _resolve_gripper_body_indices(body_names, expected_names, arm_link_names=ARM_LINK_NAMES):
+    """Map each of the gripper's own link names to its index in the
+    articulation's flat body list (Articulation.get_body_masses()'s column
+    order), handling the one gripper link name that collides with an arm
+    link's -- CONFIRMED (2026-09-21, direct inspection): both the arm and
+    the gripper have a link literally named "base_link" (the gripper's own
+    housing), and PhysX/the articulation view disambiguates by suffixing
+    the second occurrence it registers ("base_link_0"), not by full USD
+    path. Non-colliding names (every other gripper link -- knuckles,
+    fingers -- none of which share a name with an arm link) match exactly.
+    Raises rather than guessing if a name can't be resolved unambiguously --
+    silently assuming a name/order here is exactly how the even-split
+    mistake this replaces went unnoticed until an actual A/B run caught it.
+    """
+    import re
+    body_names = list(body_names)
+    indices = {}
+    used = set()
+    for name in expected_names:
+        if name not in arm_link_names:
+            if name not in body_names:
+                raise RuntimeError(f"gripper link {name!r} not found in articulation "
+                                    f"body_names {body_names} -- asset's gripper link naming "
+                                    f"may have changed.")
+            idx = body_names.index(name)
+            indices[name] = idx
+            used.add(idx)
+            continue
+        pattern = re.compile(rf"^{re.escape(name)}_\d+$")
+        candidates = [i for i, n in enumerate(body_names) if pattern.match(n) and i not in used]
+        if len(candidates) != 1:
+            raise RuntimeError(
+                f"expected exactly one suffixed duplicate of arm-colliding link name {name!r} "
+                f"for the gripper's own link (found {len(candidates)}) -- inspect body_names "
+                f"manually: {body_names}")
+        indices[name] = candidates[0]
+        used.add(candidates[0])
+    return indices
+
+
+def rescale_gripper_mass_to_spec(robot_prim, robot, total_mass_kg=GRIPPER_TOTAL_MASS_KG):
+    """Give the gripper links an explicit, code-authored mass that PRESERVES
+    PhysX's own auto-computed per-link proportions and only rescales the
+    total to match Robotiq's published 0.925 kg 2F-85 spec, instead of
+    guessing a distribution by hand.
+
+    CONFIRMED 2026-09-21 (direct inspection, this exact asset): with no
+    MassAPI authored at all (this codebase's actual state before this
+    function), PhysX's own density-from-collider-volume computation already
+    gives a realistic distribution -- base_link_0 (the gripper's housing)
+    at ~610g, each finger/knuckle at 13-39g, summing to ~847g total, only
+    ~8% under the real spec, NOT "arbitrarily wrong" the way an unverified
+    guess would be. This replaces an earlier attempt (set_gripper_mass_
+    properties, since removed) that split the total EVENLY across all 9
+    links instead of preserving this -- an actual A/B sweep run confirmed
+    that caused severe PhysX divergence (0 "Invalid PhysX transform" events
+    in baseline vs. 5513 with the even split enabled, reach-check distances
+    up to 5x10^11 mm), almost certainly because an even split hands small
+    links (knuckles, fingers) far more mass relative to the housing than
+    their real proportions, and a reduced-coordinate articulation solver is
+    sensitive to exactly that kind of adjacent-link mass-ratio mismatch.
+    This function only ever multiplies each link's already-stable
+    auto-computed mass by the same scalar, so the proportions that mattered
+    are untouched -- it corrects the total, nothing else.
+
+    Must run AFTER world.reset() + robot.initialize() (needs a live physics
+    view to read PhysX's own computed masses from -- unlike the collider
+    setup, this cannot happen before first Play). The result is authored
+    back into USD (UsdPhysics.MassAPI), not just written to the live
+    physics view, so it survives the Stop+Play cycle every
+    PickPlaceScene.reset() does; USD physics schema is only re-parsed at
+    Play time, so it takes effect starting with the NEXT reset(), which is
+    how every caller already uses this class.
+
+    Returns the number of links rescaled -- 0 means the same "wrong Gripper
+    prim tree" failure add_gripper_colliders already guards against.
+    """
+    stage = robot_prim.GetStage()
+    gripper_root = stage.GetPrimAtPath(f"{robot_prim.GetPath()}/Gripper")
+    if not gripper_root.IsValid():
+        raise RuntimeError(f"no Gripper prim under {robot_prim.GetPath()} -- call "
+                            "select_gripper_variant first")
+
+    link_prims = {prim.GetName(): prim for prim in Usd.PrimRange(gripper_root)
+                  if prim.HasAPI(UsdPhysics.RigidBodyAPI)}
+    if not link_prims:
+        return 0
+
+    body_names = robot._articulation_view.body_names
+    body_masses = np.asarray(robot._articulation_view.get_body_masses()[0])
+    name_to_index = _resolve_gripper_body_indices(body_names, tuple(link_prims))
+
+    auto_masses = {name: float(body_masses[idx]) for name, idx in name_to_index.items()}
+    auto_total = sum(auto_masses.values())
+    scale = total_mass_kg / auto_total
+
+    for name, prim in link_prims.items():
+        UsdPhysics.MassAPI.Apply(prim).CreateMassAttr(auto_masses[name] * scale)
+
+    print(f"rescale_gripper_mass_to_spec: auto-computed total was {auto_total * 1000:.1f}g, "
+          f"rescaled x{scale:.3f} to hit {total_mass_kg * 1000:.1f}g, proportions preserved "
+          f"({', '.join(f'{n}={auto_masses[n] * scale * 1000:.1f}g' for n in sorted(link_prims))})",
+          flush=True)
+    return len(link_prims)
+
+
+def _find_joint_prim(robot_prim, joint_name):
+    for prim in Usd.PrimRange(robot_prim):
+        if prim.GetName() == joint_name:
+            return prim
+    return None
+
+
+def get_joint_drive_gains(robot_prim, joint_names=ARM_JOINT_NAMES):
+    """Current (stiffness, damping) of each named joint's angular drive, read
+    straight off the USD prim -- so a gain changed by hand outside git (e.g.
+    directly in the Isaac Sim GUI) is visible here instead of staying
+    invisible to this codebase the way it was before this function existed.
+    Returns {joint_name: (stiffness, damping) or None (joint/drive not found)}.
+    """
+    gains = {}
+    for name in joint_names:
+        joint_prim = _find_joint_prim(robot_prim, name)
+        if joint_prim is None:
+            gains[name] = None
+            continue
+        drive = UsdPhysics.DriveAPI.Get(joint_prim, "angular")
+        stiffness_attr = drive.GetStiffnessAttr()
+        damping_attr = drive.GetDampingAttr()
+        if not stiffness_attr and not damping_attr:
+            gains[name] = None
+            continue
+        gains[name] = (
+            stiffness_attr.Get() if stiffness_attr else None,
+            damping_attr.Get() if damping_attr else None,
+        )
+    return gains
+
+
+def set_joint_drive_gains(robot_prim, stiffness=None, damping=None, joint_names=ARM_JOINT_NAMES):
+    """Explicitly set (stiffness, damping) on each named joint's angular
+    drive, in code, so a comparison run is reproducible and logged instead of
+    depending on whatever the GUI happens to currently hold. Either argument
+    left None leaves that gain alone. Returns the joint names actually found
+    and changed."""
+    changed = []
+    for name in joint_names:
+        joint_prim = _find_joint_prim(robot_prim, name)
+        if joint_prim is None:
+            continue
+        drive = UsdPhysics.DriveAPI.Apply(joint_prim, "angular")
+        if stiffness is not None:
+            drive.CreateStiffnessAttr(float(stiffness))
+        if damping is not None:
+            drive.CreateDampingAttr(float(damping))
+        changed.append(name)
+    return changed
 
 
 def select_gripper_variant(robot_prim, candidates=None):

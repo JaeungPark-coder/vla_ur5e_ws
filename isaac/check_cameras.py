@@ -20,12 +20,21 @@ rendered frame.
     python3 check_cameras.py
     python3 check_cameras.py --sweep_wrist
 
-Runs WITHOUT a gripper by default. The cameras are mounted on the arm, so
-the gripper changes nothing this script measures -- and it is currently
+Runs WITHOUT a gripper by default, mainly so a bare comparison against past
+reports (all taken without one) stays apples-to-apples -- the wrist camera
+IS mounted close enough to the fingers that gripper presence changes what
+it sees (see WRIST_CAMERA_DOWN_TILT_DEG), so "with" is not just a slower
+version of "without".
+
+STALE CLAIM REMOVED 2026-09-21: this used to say the gripper "is currently
 unstable in both attachment modes (in teleport mode its links diverge to
-world positions around 1e15 m, drowning the log; in fixed_joint mode it
-takes the app down during reset). Leaving it out keeps the camera question
-answerable while the gripper is still unresolved. --with_gripper includes it.
+world positions around 1e15 m ...; in fixed_joint mode it takes the app
+down during reset)". Both of those were the OLD, already-replaced
+attachment schemes (see isaac_sim_common.py's own history) -- the CURRENT
+one welds the gripper into the arm's own articulation via a USD variant
+selection, and --with_gripper sweeps of 50+ episodes on 2026-09-21 (both
+with and without an explicit gripper mass override) showed no such
+instability from the gripper's mere presence. --with_gripper includes it.
 
 Why the sweep rather than more algebra: the committed derivation is
 analytically correct as far as it goes -- a USD camera images along its own
@@ -57,7 +66,7 @@ simulation_app = SimulationApp({"headless": HEADLESS})
 # --- everything below must be imported AFTER SimulationApp() starts Kit ---
 from pick_place_scene import (  # noqa: E402
     PickPlaceScene, PLACE_TARGET_POSITION, WRIST_CAMERA_FLANGE_ROT_EULER,
-    WRIST_CAMERA_LATERAL_M, WRIST_CAMERA_FOCUS_M)
+    WRIST_CAMERA_LATERAL_M, WRIST_CAMERA_FOCUS_M, WRIST_CAMERA_DOWN_TILT_DEG)
 from scripted_pick_place import ScriptedPickPlace  # noqa: E402
 
 # The six axis-aligned directions a flange-mounted camera can face, as XYZ
@@ -82,6 +91,13 @@ WRIST_ROLL_CANDIDATES = [0.0, 90.0, 180.0, 270.0]
 # and displacing it along its own viewing axis drove it through the workpiece
 # and below the table.
 WRIST_LATERAL_CANDIDATES = [0.05, 0.08, 0.12]
+# Whether tilting the camera down (see pick_place_scene.WRIST_CAMERA_DOWN_
+# TILT_DEG) away from the pure approach axis clears the finger-occlusion
+# symptom at close standoff -- external literature suggests ~30 degrees, but
+# neither the magnitude nor the sign of "down" in this asset's flange frame
+# has been checked here, so both signs plus "off" are swept like every other
+# unproven mount parameter in this file.
+WRIST_DOWN_TILT_CANDIDATES = [0.0, 30.0, -30.0]
 
 # Kit's fastShutdown kills the process before Python flushes a block-buffered
 # stdout, so piping this script through `tee` silently loses every line it
@@ -162,18 +178,34 @@ def _drive_to_grasp(scene, obs):
     return obs
 
 
-def _render_wrist(scene, euler, lateral=None):
-    scene.set_wrist_camera_flange_rotation(euler, lateral_m=lateral)
+def _render_wrist(scene, euler, lateral=None, down_tilt=None):
+    scene.set_wrist_camera_flange_rotation(euler, lateral_m=lateral, down_tilt_deg=down_tilt)
     # render(), NOT step(): re-aiming a camera needs a fresh render pass, not
-    # more physics. Stepping here was actively harmful -- in the default
-    # "teleport" gripper mode the gripper is held on the flange only by
-    # PickPlaceScene.step_towards's per-tick re-sync, so every bare
-    # world.step() let it drop away from the arm and interpenetrate it,
-    # producing the "Invalid PhysX transform" / "Illegal BroadPhaseUpdateData"
-    # storm. World.render() refreshes the app (and so the annotators) with
-    # /app/player/playSimulations off, leaving the scene exactly where
-    # _drive_to_grasp left it. Two passes because the first one after an
-    # authoring change can still hand back the previous frame.
+    # more physics -- stepping here would let the arm drift further under
+    # whatever pose _drive_to_grasp left it holding, making candidates
+    # compared at slightly different scene states instead of the same one.
+    #
+    # STALE CLAIM REMOVED 2026-09-21: this comment used to say stepping here
+    # was actively harmful because a "teleport" gripper mode held the
+    # gripper on the flange only via PickPlaceScene.step_towards's per-tick
+    # re-sync, so a bare world.step() would let it fall away and
+    # interpenetrate the arm. CONFIRMED that mechanism cannot happen with
+    # the CURRENT gripper attachment (isaac_sim_common.select_gripper_
+    # variant welds the gripper into the arm's OWN articulation via a USD
+    # variant selection -- GripperController.sync_pose_to_flange is a
+    # documented no-op, kept only for call-site compatibility with the old
+    # scheme): there is no separate gripper prim left to fall off. The
+    # "teleport" and "fixed_joint" attachment modes this described were
+    # both replaced (see isaac_sim_common.py's own history on that), and
+    # this comment was never updated to match -- misleading enough that it
+    # produced a very reasonable but incorrect hypothesis for a genuine,
+    # unrelated divergence found by an actual gripper-mass A/B test on
+    # 2026-09-21 (a bare `grep world.step(` across this file confirms it
+    # never calls one outside PickPlaceScene.step_towards, both before and
+    # after that test). World.render() refreshes the app (and so the
+    # annotators) with /app/player/playSimulations off. Two passes because
+    # the first one after an authoring change can still hand back the
+    # previous frame.
     for _ in range(2):
         scene.world.render()
     return scene.get_observation()["wrist_rgb"]
@@ -218,7 +250,9 @@ def sweep_wrist(scene, out_dir, stage_name, at_grasp, n_samples):
             for _ in range(n_samples if at_grasp else 1):
                 if at_grasp:
                     _drive_to_grasp(scene, scene.reset())
-                last_frame = _render_wrist(scene, euler, lateral)
+                # tilt fixed at 0 for this pass -- it is swept separately,
+                # against the winning direction/lateral only, below.
+                last_frame = _render_wrist(scene, euler, lateral, down_tilt=0.0)
                 samples.append(_metrics(last_frame, scene))
             px_values = [m["cube_px"] for m in samples]
             mean_px = sum(px_values) / len(px_values)
@@ -275,9 +309,37 @@ def sweep_wrist(scene, out_dir, stage_name, at_grasp, n_samples):
             "sheets before trusting it -- the right panel shows the table filling the view from "
             "close up.")
 
-    # Now settle the roll about the winning viewing axis, on a fresh spawn --
-    # scene is otherwise left wherever the last-tested candidate's last
-    # sample happened to land, which is not representative of the winner.
+    # Whether tilting down off the pure approach axis helps at the winning
+    # direction/lateral -- see WRIST_DOWN_TILT_CANDIDATES for why this is a
+    # separate pass rather than folded into the direction/lateral grid above
+    # (that grid was already 18-wide before this; entangling an unvalidated
+    # third axis into it would have made every existing number here
+    # incomparable to past sweep reports for no real gain).
+    say(f"\ntilt sweep at the winning rot={tuple(int(v) for v in best_euler)} "
+        f"lateral={best_lateral:g}m:")
+    tilt_scored = []
+    for down_tilt in WRIST_DOWN_TILT_CANDIDATES:
+        samples = []
+        for _ in range(n_samples if at_grasp else 1):
+            if at_grasp:
+                _drive_to_grasp(scene, scene.reset())
+            frame = _render_wrist(scene, best_euler, best_lateral, down_tilt=down_tilt)
+            samples.append(_metrics(frame, scene))
+        px_values = [m["cube_px"] for m in samples]
+        mean_px = sum(px_values) / len(px_values)
+        min_px = min(px_values)
+        say(f"  tilt={down_tilt:>5.1f}deg  cube_px mean={mean_px:6.0f} min={min_px:5d}")
+        tilt_scored.append((min_px, mean_px, down_tilt))
+    tilt_scored.sort(key=lambda s: (-s[0], -s[1]))
+    best_tilt = tilt_scored[0][2]
+    if tilt_scored[0][0] <= best_min:
+        say(f"  tilt={best_tilt:g}deg does not clearly beat tilt=0 -- keep 0 unless a later "
+            f"finger-occlusion-specific check (close-standoff frames) shows otherwise.")
+
+    # Now settle the roll about the winning viewing axis (and tilt), on a
+    # fresh spawn -- scene is otherwise left wherever the last-tested
+    # candidate's last sample happened to land, which is not representative
+    # of the winner.
     if at_grasp:
         _drive_to_grasp(scene, scene.reset())
     roll_panels = []
@@ -285,7 +347,8 @@ def sweep_wrist(scene, out_dir, stage_name, at_grasp, n_samples):
         from scipy.spatial.transform import Rotation as Rot
         euler = (Rot.from_euler("xyz", best_euler, degrees=True)
                  * Rot.from_euler("z", roll, degrees=True)).as_euler("xyz", degrees=True)
-        roll_panels.append((f"roll {int(roll)}", _rgb(_render_wrist(scene, euler, best_lateral))))
+        roll_panels.append((f"roll {int(roll)}",
+                             _rgb(_render_wrist(scene, euler, best_lateral, down_tilt=best_tilt))))
     _contact_sheet(roll_panels, os.path.join(out_dir, f"wrist_rolls_{stage_name}.png"))
     say("Rolls of the winning direction are in the wrist_rolls sheet -- all see the same thing, "
         "so pick whichever looks upright.")
@@ -294,7 +357,8 @@ def sweep_wrist(scene, out_dir, stage_name, at_grasp, n_samples):
     say(f"    WRIST_CAMERA_FLANGE_ROT_EULER = "
         f"({best_euler[0]:.1f}, {best_euler[1]:.1f}, {best_euler[2]:.1f})")
     say(f"    WRIST_CAMERA_LATERAL_M = {best_lateral:g}")
-    return best_euler, best_lateral
+    say(f"    WRIST_CAMERA_DOWN_TILT_DEG = {best_tilt:g}")
+    return best_euler, best_lateral, best_tilt
 
 
 def run(out_dir, do_sweep, at_grasp, with_gripper, wrist_samples):

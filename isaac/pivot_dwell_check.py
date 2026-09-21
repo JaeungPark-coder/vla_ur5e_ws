@@ -61,6 +61,8 @@ from scipy.spatial.transform import Rotation as Rot  # noqa: E402
 
 from pick_place_scene import PickPlaceScene  # noqa: E402
 from scripted_pick_place import DOWNWARD_ROTVEC, GRASP_HEIGHT  # noqa: E402
+from isaac_sim_common import (  # noqa: E402
+    ROBOT_PRIM_PATH, get_joint_drive_gains, set_joint_drive_gains)
 
 # Tick counts the residual is sampled at. 60 and 120 are the two the original
 # observation used, so the numbers here are directly comparable to it.
@@ -126,15 +128,43 @@ def main():
     parser.add_argument("--free-height", type=float, default=0.35,
                         help="height above the table for the free-space hold, chosen "
                              "so nothing is within reach of the fingers")
+    parser.add_argument("--stiffness-scale", type=float, default=1.0,
+                        help="scale factor applied to every arm joint's drive stiffness before "
+                             "running the check (1.0 = leave whatever the asset/GUI currently "
+                             "has). Use this instead of hand-editing the asset in the GUI so a "
+                             "comparison run is reproducible and the before/after gains get "
+                             "logged -- e.g. --stiffness-scale 0.5 to test half of whatever was "
+                             "raised by hand, per this file's own DYNAMICS verdict.")
+    parser.add_argument("--damping-scale", type=float, default=1.0,
+                        help="scale factor applied to every arm joint's drive damping, same as "
+                             "--stiffness-scale -- raising stiffness alone without damping to "
+                             "match is a classic source of the exact contact blow-up this "
+                             "project has already hit (see b5e7fb0's 5.26m explosion)")
     args = parser.parse_args()
 
     with_gripper = not args.no_gripper
     scene = PickPlaceScene(with_gripper=with_gripper)
-    scene.reset()
 
     say("=" * 68)
     say(f"PIVOT / DWELL CHECK  ({'with' if with_gripper else 'WITHOUT'} gripper)")
     say("=" * 68)
+
+    if with_gripper and (args.stiffness_scale != 1.0 or args.damping_scale != 1.0):
+        robot_prim = scene.stage.GetPrimAtPath(ROBOT_PRIM_PATH)
+        before = get_joint_drive_gains(robot_prim)
+        say(f"\n  joint drive gains BEFORE scaling: {before}")
+        for name, gains in before.items():
+            if gains is None:
+                continue
+            stiffness, damping = gains
+            set_joint_drive_gains(
+                robot_prim, joint_names=(name,),
+                stiffness=(stiffness * args.stiffness_scale) if stiffness is not None else None,
+                damping=(damping * args.damping_scale) if damping is not None else None)
+        after = get_joint_drive_gains(robot_prim)
+        say(f"  joint drive gains AFTER scaling:  {after}")
+
+    scene.reset()
 
     free_pos = np.array([scene.cube_position[0], scene.cube_position[1], args.free_height])
     grasp_pos = scene.cube_position + np.array([0.0, 0.0, GRASP_HEIGHT])
