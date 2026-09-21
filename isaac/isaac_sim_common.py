@@ -22,7 +22,7 @@ has run).
 import os
 
 import numpy as np
-from pxr import Usd, UsdGeom, UsdPhysics, Gf
+from pxr import Usd, UsdGeom, UsdPhysics, UsdShade, Gf
 
 # ADJUST: relative path under the Isaac asset root for the UR5e USD. Same
 # asset potato_drill_ws/isaac/isaac_sim_common.py uses -- if that project's
@@ -91,6 +91,15 @@ GRIPPER_OPEN_POS = 0.0     # radians -- ADJUST against your gripper's joint limi
 GRIPPER_CLOSED_POS = 0.80  # radians -- see MEASURED note above; hard limit is 0.8203
 
 WRIST_3_LINK_PRIM_PATH = f"{ROBOT_PRIM_PATH}/wrist_3_link"
+
+# High-friction gripper-pad/cube contact material -- see
+# bind_grip_friction_material and GRIP_MATERIAL_PRIM_PATH further down this
+# file for the implementation and its 2026-09-19 empirical justification.
+# (2026-09-21: this session independently added a second, functionally
+# duplicate implementation here during a parallel investigation; removed
+# after the merge in favor of the one already wired into
+# add_gripper_colliders/add_shape, rather than keeping two material prims
+# that would silently overwrite each other's binding.)
 
 # pivot_dwell_check.py's own docstring names this gap directly: "there is no
 # stiffness, damping, mass or inertia set anywhere in this codebase." A
@@ -441,6 +450,7 @@ def add_gripper_colliders(robot_prim):
     PAD_LINK_MARKERS = ("left_inner_finger", "right_inner_finger")
     n_colliders = 0
     n_decomposed = 0
+    n_friction_bound = 0
     for prim in Usd.PrimRange(gripper_root):
         if prim.IsA(UsdGeom.Mesh):
             path = str(prim.GetPath())
@@ -449,15 +459,20 @@ def add_gripper_colliders(robot_prim):
             UsdPhysics.CollisionAPI.Apply(prim)
             mesh_collision = UsdPhysics.MeshCollisionAPI.Apply(prim)
             mesh_collision.CreateApproximationAttr(approximation)
-            if is_pad:
-                bind_grip_friction_material(stage, prim)
             n_colliders += 1
             n_decomposed += is_pad
+            # Only the pads themselves -- everything else (knuckles, outer
+            # fingers, base_link) never touches the object, same rationale
+            # as the convexDecomposition-vs-convexHull split above.
+            if is_pad:
+                bind_grip_friction_material(stage, prim)
+                n_friction_bound += 1
 
     print(f"add_gripper_colliders: un-instanced {un_instanced} prim(s), "
           f"added colliders to {n_colliders} mesh(es) "
           f"({n_decomposed} convexDecomposition on the grip pads, "
           f"{n_colliders - n_decomposed} convexHull elsewhere), "
+          f"bound high-friction material to {n_friction_bound} pad mesh(es), "
           f"capped max depenetration velocity on {n_pad_links} pad link(s)", flush=True)
     return n_colliders
 
@@ -663,6 +678,12 @@ def add_shape(stage, shape, prim_path, position, size=0.04, color=(0.8, 0.1, 0.1
     from pxr import PhysxSchema
     physx_rb = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
     physx_rb.CreateMaxDepenetrationVelocityAttr(0.5)
+    # Same shared material add_gripper_colliders binds to the grip pads --
+    # deliberately the SAME material object on both sides of the contact
+    # (not two separately-authored materials with matching numbers), so
+    # PhysX's friction-combine mode cannot dilute the result by pairing a
+    # bound side against an unbound default. See bind_grip_friction_material's
+    # own comment for why this was unset entirely before 2026-09-19/21.
     bind_grip_friction_material(stage, prim)
     return geom
 
