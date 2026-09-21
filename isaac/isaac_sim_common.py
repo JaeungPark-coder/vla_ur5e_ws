@@ -314,6 +314,50 @@ def select_gripper_variant(robot_prim, candidates=None):
         f"variant set. Available: {available}. Set GRIPPER_VARIANT_CANDIDATES to one of those.")
 
 
+GRIP_MATERIAL_PRIM_PATH = "/World/GripFrictionMaterial"
+
+
+def bind_grip_friction_material(stage, prim, static_friction=0.9, dynamic_friction=0.7,
+                                 restitution=0.0):
+    """Creates (once, reused after) and binds a high-friction UsdPhysics
+    Material -- CONFIRMED 2026-09-19 (find_grasp_frame.py): a grep of this
+    entire repo found zero PhysicsMaterial/MaterialAPI/friction lines
+    anywhere, on either the gripper pads or any pickable object, before
+    this. PhysX's own default material friction (0.5/0.5) sounds plausible
+    but the actual measured symptom matched near-zero friction far better
+    than a tracking problem: sweeping 18 well-aligned approach axis/distance
+    candidates (the tool0 tracking error at the grasp measured 1.6-41.8mm,
+    including several under 10mm -- far tighter than this project's
+    scripted approach normally achieves) still lifted the cube 0.0mm in
+    EVERY case. A grasp that cannot hold a light (50g) cube even when
+    centred to within a few mm is a grip-force problem, not an aim problem.
+    Bind this to both the gripper's pad meshes (add_gripper_colliders,
+    below) and every pickable object (add_shape) -- friction is a property
+    of the CONTACT (the lower of the two materials' effective friction, by
+    PhysX's default combine mode), so both sides need it or one low default
+    undoes the other's fix.
+    """
+    from pxr import UsdShade
+
+    material_prim = stage.GetPrimAtPath(GRIP_MATERIAL_PRIM_PATH)
+    if not material_prim.IsValid():
+        # UsdPhysics has no Material.Define -- CONFIRMED live: only
+        # MaterialAPI exists, a schema applied to an existing prim, the
+        # same way UsdShade represents a physics material (a UsdShade
+        # Material prim with UsdPhysics.MaterialAPI applied on top).
+        shade_material = UsdShade.Material.Define(stage, GRIP_MATERIAL_PRIM_PATH)
+        material_prim = shade_material.GetPrim()
+        material_api = UsdPhysics.MaterialAPI.Apply(material_prim)
+        material_api.CreateStaticFrictionAttr(static_friction)
+        material_api.CreateDynamicFrictionAttr(dynamic_friction)
+        material_api.CreateRestitutionAttr(restitution)
+
+    binding_api = UsdShade.MaterialBindingAPI.Apply(prim)
+    binding_api.Bind(UsdShade.Material(material_prim),
+                      bindingStrength=UsdShade.Tokens.weakerThanDescendants,
+                      materialPurpose="physics")
+
+
 def add_gripper_colliders(robot_prim):
     """The Robotiq_2F_85 variant this asset ships has NO collision geometry
     at all on any of its 9 links -- CONFIRMED 2026-09-11 (check_gripper_
@@ -405,6 +449,8 @@ def add_gripper_colliders(robot_prim):
             UsdPhysics.CollisionAPI.Apply(prim)
             mesh_collision = UsdPhysics.MeshCollisionAPI.Apply(prim)
             mesh_collision.CreateApproximationAttr(approximation)
+            if is_pad:
+                bind_grip_friction_material(stage, prim)
             n_colliders += 1
             n_decomposed += is_pad
 
@@ -447,7 +493,35 @@ class GripperController:
                     f"effect, or this gripper names its drive joint differently -- set "
                     f"GRIPPER_DRIVE_JOINT_NAME accordingly.")
             self._drive_joint_index = dof_names.index(self.drive_joint_name)
+            self._fix_drive_gains()
         return self._drive_joint_index
+
+    def _fix_drive_gains(self):
+        """CONFIRMED 2026-09-19 (diag_gripper_gains_mimic.py, scratchpad):
+        this asset ships finger_joint with kp=171.89, kd=0.0115 -- 1000x+
+        weaker than the arm's own joints (kp in the 2e5-6e5 range). Driven
+        from 0.0 to a 1.0 (fully-closed) target over the same 90-tick close
+        segment the arm uses, finger_joint converged to only 0.374 rad of
+        its 0.80 rad (GRIPPER_CLOSED_POS) target -- 47% closed, IN FREE
+        SPACE with nothing to contact -- before this fix. This, not
+        friction (bound separately, see bind_grip_friction_material, and
+        confirmed to make no difference on its own) or the mimic joints
+        (confirmed working correctly: all 5 follower joints track
+        finger_joint in near-perfect lockstep), is why closing on a cube
+        pushed it aside rather than gripping it: the fingers were still
+        most of the way open. Raised to the same order of magnitude as the
+        arm's own weaker joints (wrist_3_joint: kp=57300, kd=0.25) --
+        conservative relative to the shoulder/elbow joints (2e5-6e5) since
+        this only has to move a light, small pair of fingers, not a heavy
+        arm segment. Re-verify with diag_gripper_gains_mimic.py if this
+        gripper variant or asset version changes."""
+        controller = self.robot.get_articulation_controller()
+        kps, kds = controller.get_gains()
+        kps = np.array(kps, dtype=float)
+        kds = np.array(kds, dtype=float)
+        kps[self._drive_joint_index] = 20000.0
+        kds[self._drive_joint_index] = 500.0
+        controller.set_gains(kps=kps, kds=kds)
 
     def set_target(self, position):
         """position: 0.0 (fully open) .. 1.0 (fully closed), linearly mapped
@@ -589,6 +663,7 @@ def add_shape(stage, shape, prim_path, position, size=0.04, color=(0.8, 0.1, 0.1
     from pxr import PhysxSchema
     physx_rb = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
     physx_rb.CreateMaxDepenetrationVelocityAttr(0.5)
+    bind_grip_friction_material(stage, prim)
     return geom
 
 

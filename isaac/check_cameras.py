@@ -90,7 +90,34 @@ WRIST_ROLL_CANDIDATES = [0.0, 90.0, 180.0, 270.0]
 # the camera sat inside the UR5e's wrist_3_link (black at every orientation),
 # and displacing it along its own viewing axis drove it through the workpiece
 # and below the table.
-WRIST_LATERAL_CANDIDATES = [0.05, 0.08, 0.12]
+#
+# 0.14 added, then its hypothesis falsified, 2026-09-19 (a separate,
+# parallel session -- see README's merge note for 2026-09-21): NO MOUNT
+# WORKS (every candidate's worst sample over 5 spawns was 0 px) held even
+# after fixing the reach measurement. A back-of-envelope pinhole
+# calculation suggested this might be a framing problem rather than a
+# direction one -- at WRIST_CAMERA_HORIZONTAL_FOV_DEG=70 (half-angle
+# 35deg, tan=0.700) and the old 0.08m lateral offset, the frame covers
+# roughly +-56mm at the object plane, and the RMPflow tracking residual
+# actually measured at the grasp (17-55mm) exceeds that in the worst case
+# -- so a wider standoff (0.14m -> ~98mm half-width) should have swallowed
+# the residual with room to spare, IF the camera's effective distance to
+# the object scaled with lateral offset the way that estimate assumed. It
+# doesn't: a full re-sweep with 0.14m added came back NO MOUNT WORKS again
+# and did not even beat the existing best mean for the winning direction
+# (624px @0.08 vs 506px @0.14) -- the camera's real geometry (aimed at
+# WRIST_CAMERA_FOCUS_M along the tool axis, offset back by
+# WRIST_CAMERA_BACK_M) doesn't reduce to that simple pinhole picture, so
+# lateral offset alone was never the lever. CUBE_X_RANGE/CUBE_Y_RANGE in
+# pick_place_scene.py being wider than any fixed mount could cover -- this
+# function's own second stated hypothesis, below -- IS what NO MOUNT WORKS
+# was measuring: confirmed directly, see CUBE_X_RANGE's own comment.
+# Re-running the full 18-candidate grid at the narrowed range picked 0.12m
+# (paired with (-90,0,0), not (180,0,0)) as the best of all four laterals
+# by worst-case pixels in THAT session -- see README's merge note on why a
+# different, raycast-screened session-2 sweep landed on 0.16m/(180,0,0)
+# instead, and why the two have not yet been reconciled.
+WRIST_LATERAL_CANDIDATES = [0.05, 0.08, 0.12, 0.14]
 # Whether tilting the camera down (see pick_place_scene.WRIST_CAMERA_DOWN_
 # TILT_DEG) away from the pure approach axis clears the finger-occlusion
 # symptom at close standoff -- external literature suggests ~30 degrees, but
