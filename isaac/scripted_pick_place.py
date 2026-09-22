@@ -130,10 +130,28 @@ class ScriptedPickPlace:
 
     @staticmethod
     def _build_waypoints(start_tool_pos, cube_position, target_position, steps_per_segment):
+        # 2026-09-23 CONFIRMED (live run): at_cube and at_target used to add
+        # the SAME +GRASP_HEIGHT to two positions in different reference
+        # frames -- cube_position is the cube's CENTRE (z=CUBE_Z, half the
+        # cube's own height, resting on the table), but target_position
+        # (PLACE_TARGET_POSITION) is the TABLE surface (z=0.0), not a future
+        # cube centre. So at_target landed exactly CUBE_Z too low: the tool
+        # was commanded to the height that puts the cube's centre AT the
+        # table (z=0), i.e. buried CUBE_Z into it, for every place attempt.
+        # Invisible until now because no episode had ever reached place
+        # (grasp/lift always failed first) and place_error_m() only checks
+        # XY. Fix: add the SAME cube-centre-height offset (cube_position's
+        # own z, i.e. the cube's half-height above the table -- correct even
+        # per-object in the multi-object scene, since each object's spawn z
+        # already encodes its own resting half-height) to target_position
+        # too, so the cube's centre ends up at target_position's table
+        # height plus its own half-height, not AT that table height.
+        cube_centre_height_above_table = cube_position[2]
         above_cube = cube_position + np.array([0.0, 0.0, STANDOFF_HEIGHT])
         at_cube = cube_position + np.array([0.0, 0.0, GRASP_HEIGHT])
         above_target = target_position + np.array([0.0, 0.0, STANDOFF_HEIGHT])
-        at_target = target_position + np.array([0.0, 0.0, GRASP_HEIGHT])
+        at_target = target_position + np.array(
+            [0.0, 0.0, cube_centre_height_above_table + GRASP_HEIGHT])
 
         # (from_position, to_position, target_gripper, floor_ticks) -- the
         # actual tick count is derived per segment from the real distance
