@@ -70,7 +70,24 @@ def parse_command(instruction, object_vocabulary, destination_vocabulary=("targe
         max_tokens=200,
         messages=[{"role": "user", "content": prompt}],
     )
+    # 2026-09-23: the prompt above says "output ONLY a JSON object", but
+    # nothing stops the model from wrapping it in a ```json ... ``` fence
+    # anyway (a common instruction-following slip, not something this
+    # prompt can fully rule out) -- that used to fail json.loads and read
+    # as "LLM did not return valid JSON" even though it understood the task
+    # correctly, just formatted it. Also guard content[0] being a non-text
+    # block explicitly: no tools are passed to this call, so it should
+    # always be text, but an unguarded response.content[0].text would raise
+    # a bare AttributeError instead of the diagnosable error this module's
+    # own docstring promises ("not silently guessing... stopping and
+    # asking again" implies a caller can actually tell what went wrong).
+    if not response.content or not hasattr(response.content[0], "text"):
+        raise CommandParseError(
+            f"LLM response's first content block was not text: {response.content!r}")
     raw_text = response.content[0].text.strip()
+    if raw_text.startswith("```"):
+        raw_text = raw_text.split("\n", 1)[1] if "\n" in raw_text else raw_text[3:]
+        raw_text = raw_text.rsplit("```", 1)[0].strip()
 
     try:
         parsed = json.loads(raw_text)
