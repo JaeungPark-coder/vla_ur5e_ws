@@ -543,6 +543,61 @@ now-corrected height once (a) or (b) land, since the dwell's own original
 purpose (kill residual velocity before closing) doesn't require it to
 happen already-embedded in the object.
 
+### 2026-09-22, continued: the stiffness sweep, finally measured live
+
+A pasted analysis earlier today claimed specific friction/stick-slip
+experiment results against this project (2x stiffness, static friction
+0.9 -> 0.5/0.6, "stick-slip" degrading 3/4 episodes to 86-200mm, an
+IPC-GraspSim citation) -- checked against this repo and this session's
+own record, NONE of it had actually been run here: only the underlying
+tooling existed (`get_joint_drive_gains`/`set_joint_drive_gains`, the
+`--stiffness-scale` CLI flag, `bind_grip_friction_material`'s 0.9/0.7
+defaults already in code). Re-measured from scratch, live, seed=42 paired
+comparisons throughout, per the same request that caught the discrepancy:
+verify before building on it, exactly as this project's own culture
+already demands.
+
+**Hold-phase** (`--hold-ticks 300`, frozen target, static equilibrium
+offset only -- NOT comparable to a real lift, see this script's own
+docstring):
+  - 1x: 96.6, 98.9, 45.5, 178.9mm
+  - 2x: 151.4, 137.1, 161.2, 20.4mm -- 3/4 episodes WORSE, one
+    dramatically better. Both runs: `any non-finite joint state: no`,
+    so this is a real equilibrium shift, not incipient divergence.
+
+**Actual lift outcome** (`--hold-ticks 0`, the same `max_cube_z >=
+LIFT_Z_THRESHOLD` criterion `collect_demos.py` gates on):
+  - 1x: max_cube_z 0.0227, 0.0278, 0.0223, 0.0303m -- 0/4 lifted
+  - 2x (damping left at x1): 0.0317, 0.0322, 0.0386, 0.0340m -- 0/4
+    lifted, but improved in ALL 4 episodes -- the OPPOSITE direction
+    from what the hold-phase proxy predicted for 3 of those 4.
+  - 3x stiffness + 3x damping this time (scaled together, to hold the
+    damping ratio roughly constant rather than drift toward
+    underdamped): 0.0200, 0.0290, 0.0338, 0.0690m -- 0/4 lifted,
+    non-monotonic against 2x (below it in 3/4 episodes), but episode 4
+    jumped to 0.069m -- 86% of the 0.08m threshold, the closest any
+    tested setting has come today.
+
+**Two real lessons, not the ones the unverified report would have
+taught:** (1) the hold-phase proxy and the actual lift outcome pointed in
+OPPOSITE directions for the same 1x->2x change -- trust `--hold-ticks 0`,
+not the frozen-target proxy, exactly as this file's own docstring already
+warns. (2) Stiffness's effect on the real outcome is not linear even
+holding the damping ratio constant: a third point (3x) landed BELOW 2x in
+three episodes and produced the single best result of the day in the
+fourth. Extrapolating "how many x clears 0.08m" from two points would
+have been the same mistake this project has made before with a proxy
+metric.
+
+**Not yet done:** a 4th stiffness point to see whether the episode-4-style
+jump is reproducible or a one-off; a friction sweep now that stiffness
+alone is established as directionally real but insufficient (best case
+0.069m, still under threshold); and `wrist_3_joint`'s own still-unresolved
+stiffness-measurement discrepancy (`1000.08` via `get_joint_drive_gains`
+vs. a remote-session comment's `57300` via
+`ArticulationController.get_gains()`) matters here specifically, since it
+bears on what "x1" is actually a multiple of.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls
