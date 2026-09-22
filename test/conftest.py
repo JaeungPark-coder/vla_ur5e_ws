@@ -14,7 +14,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-for _subtree in ('src/vla_bridge', 'isaac', 'openvla_integration'):
+for _subtree in ('src/vla_bridge', 'isaac', 'openvla_integration', 'perception'):
     _path = str(REPO_ROOT / _subtree)
     if _path not in sys.path:
         sys.path.insert(0, _path)
