@@ -133,6 +133,14 @@ MAX_BLACK_FRAME_FRACTION = 0.02
 # red and was tuned against real renders under the scene's blue-ish ambient
 # light.
 COLOR_DOMINANCE_MARGIN = 40
+# Deliberately a looser, portable floor than isaac/pick_place_scene.py's
+# MIN_CUBE_PIXELS_IN_BASE_VIEW (>=~94, derived from THIS project's own
+# camera geometry -- "as visible as this camera can make it, not merely
+# visible"). This one has to work as a generic "is there any real signal at
+# all" check for whatever episodes land in raw_episodes/, independent of
+# which camera setup produced them -- not a duplicate left out of sync, a
+# deliberately different bar for a deliberately different job. See
+# isaac/collect_demos.py's own gate for the collection-time one.
 MIN_TARGET_PIXELS_PEAK = 50
 
 # Tolerances for the three encoding identities. float32 storage of values
@@ -158,6 +166,8 @@ CONVENTION_TOL_RAD = 1e-6
 
 MIN_STEPS_PER_EPISODE = 10
 MIN_EPISODE_PATH_LENGTH_M = 0.05
+MIN_END_OPEN_FRACTION = 0.5  # see _check_task_content -- how far back toward
+                              # open the gripper must recover by episode end
 
 
 def color_pixel_count(image, color_name, margin=COLOR_DOMINANCE_MARGIN):
@@ -248,6 +258,28 @@ def _check_frames(steps, problems):
     constant = sum(1 for img in images if img.size and int(img.max()) == int(img.min()))
     if constant > len(images) * MAX_BLACK_FRAME_FRACTION and constant != black:
         problems.append(f"{constant}/{len(images)} frames are a single flat colour")
+
+    # 2026-09-23 CONFIRMED (adversarial probe: an episode with byte-identical
+    # frames throughout but a normal-looking state/action trace passed every
+    # other check here). Neither check above catches this: each frame can be
+    # a perfectly ordinary, non-black, non-flat image and still be the exact
+    # SAME image every tick, which is exactly the failure mode this file's
+    # own reset() comment (pick_place_scene.py) already names as real --
+    # Replicator's annotators return an empty array until the first render,
+    # and any similar staleness (an annotator not re-triggering some tick)
+    # would show up as a frozen, not empty, frame. A frozen camera carries no
+    # temporal signal at all regardless of what it's frozen ON, and a model
+    # trained on it would learn to ignore vision entirely for that episode.
+    # Checked against frame 0 specifically (not "any two adjacent frames
+    # equal", which a genuinely still moment in an otherwise-normal episode
+    # could trigger) -- only every single frame matching the first is this
+    # failure mode.
+    if len(images) > 1 and all(
+            img.shape == images[0].shape and np.array_equal(img, images[0]) for img in images[1:]):
+        problems.append(
+            f"all {len(images)} frames are byte-identical to the first -- the camera never "
+            f"updated (a stale/frozen render, not a moving scene), even though state/action "
+            f"look like a normal episode")
 
 
 def _check_target_visible(steps, problems):
@@ -434,10 +466,30 @@ def _check_task_content(steps, problems):
             f"(need >= {MIN_EPISODE_PATH_LENGTH_M * 100:.0f}cm)")
 
     gripper = states[:, 7]
-    if float(gripper.max() - gripper.min()) < 1e-3:
+    gripper_range = float(gripper.max() - gripper.min())
+    if gripper_range < 1e-3:
         problems.append(
             f"the gripper never moves (constant at {gripper[0]:.4g}) -- no grasp was "
             f"attempted, so this episode cannot demonstrate picking anything up")
+    else:
+        # 2026-09-23 CONFIRMED (adversarial probe): an episode that closes
+        # the gripper and holds it closed through to the end -- no place/
+        # release phase at all -- passed every check above unchanged (the
+        # range check above only asks "did it move at all", satisfied by
+        # the single close). This project's task is pick-AND-place, so an
+        # episode that never releases again demonstrates only half of it.
+        # ADJUST: 0.5 (must recover at least halfway back to this episode's
+        # own observed-open value by the last step) is a starting point,
+        # not independently tuned -- tighten toward 1.0 if a real dataset
+        # still lets partial releases through, loosen if genuine full
+        # releases are being rejected for ending slightly short of open.
+        end_open_fraction = (float(gripper.max()) - float(gripper[-1])) / gripper_range
+        if end_open_fraction < MIN_END_OPEN_FRACTION:
+            problems.append(
+                f"the gripper closes (range {gripper_range:.3g}) but never meaningfully "
+                f"reopens -- ends at {end_open_fraction:.0%} of the way back to this "
+                f"episode's own open value, need >= {MIN_END_OPEN_FRACTION:.0%}. No place/"
+                f"release phase, so this episode demonstrates a grasp, not a pick-and-place")
 
 
 def validate_episode(steps):

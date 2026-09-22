@@ -30,9 +30,13 @@ def rng():
     return np.random.default_rng(3)
 
 
-def make_image():
+def make_image(step_idx=0):
+    """step_idx nudges the blob a little each call -- see
+    test_validate_dataset.py's own make_image docstring for why a good
+    episode's frames need to actually differ tick to tick."""
     image = np.full((256, 256, 3), (30, 30, 38), dtype=np.uint8)
-    image[100:114, 120:134] = (204, 25, 25)
+    row = 100 + (step_idx % 40)
+    image[row:row + 14, 120:134] = (204, 25, 25)
     return image
 
 
@@ -52,8 +56,11 @@ def build_episode(rng, seq, n=30):
         position = np.array([0.35 + 0.2 * t, -0.1 + 0.15 * t, 0.4 - 0.18 * t])
         next_position = np.array([0.35 + 0.2 * t_next, -0.1 + 0.15 * t_next,
                                   0.4 - 0.18 * t_next])
-        gripper = 0.0 if t < 0.6 else 0.8
-        next_gripper = 0.0 if t_next < 0.6 else 0.8
+        # closes at t=0.6, releases again at t=0.9 -- see
+        # test_validate_dataset.py's make_poses for why a good episode's
+        # gripper needs to actually reopen before the end.
+        gripper = 0.0 if t < 0.6 else (0.8 if t < 0.9 else 0.0)
+        next_gripper = 0.0 if t_next < 0.6 else (0.8 if t_next < 0.9 else 0.0)
 
         state = np.concatenate([position, rotations[i].as_euler(seq), [0.0], [gripper]])
         action = np.concatenate([
@@ -61,7 +68,7 @@ def build_episode(rng, seq, n=30):
             (rotations[i].inv() * rotations[i + 1]).as_euler(seq),
             [next_gripper]])
 
-        steps.append({'image': make_image(),
+        steps.append({'image': make_image(i),
                       'state': state.astype(np.float32),
                       'action': action.astype(np.float32),
                       'language_instruction': INSTRUCTION})

@@ -30,12 +30,17 @@ def rng():
     return np.random.default_rng(11)
 
 
-def make_image(with_target=True, black=False, blob=14):
+def make_image(step_idx=0, with_target=True, black=False, blob=14):
+    """step_idx nudges the blob a little each call so a real (non-frozen)
+    episode's frames actually differ tick to tick, the way a moving camera's
+    would -- validate_dataset.py's own frozen-frame check (2026-09-23) needs
+    that to be true of a genuinely good episode's fixture."""
     if black:
         return np.zeros((256, 256, 3), dtype=np.uint8)
     image = np.full((256, 256, 3), (30, 30, 38), dtype=np.uint8)
     if with_target:
-        image[100:100 + blob, 120:120 + blob] = (204, 25, 25)
+        row = 100 + (step_idx % 40)
+        image[row:row + blob, 120:120 + blob] = (204, 25, 25)
     return image
 
 
@@ -51,7 +56,11 @@ def make_poses(rng, n):
         positions.append(np.array([0.35 + 0.20 * t, -0.10 + 0.15 * t, 0.40 - 0.18 * t]))
         wobble = rng.normal(scale=np.radians(2.0), size=3)      # RMPflow tracking noise
         quats.append(Rot.from_rotvec(base_rotvec + wobble).as_quat())
-        grippers.append(0.0 if t < 0.6 else 0.80)               # closes to grasp
+        # closes to grasp at t=0.6, releases again at t=0.9 -- a full
+        # pick-AND-place, not just a pick (validate_dataset.py's own
+        # end-of-episode release check, 2026-09-23, needs a genuinely good
+        # episode to actually open the gripper again before it ends).
+        grippers.append(0.0 if t < 0.6 else (0.80 if t < 0.9 else 0.0))
     return positions, quats, grippers
 
 
@@ -78,7 +87,7 @@ def encode(positions, quats, grippers, rotation_delta='compose', inflate=1.0,
         action = np.concatenate([(positions[i + 1] - positions[i]) * inflate,
                                  delta_rpy, [next_gripper]])
 
-        steps.append({'image': image_fn(),
+        steps.append({'image': image_fn(i),
                       'state': state.astype(np.float32),
                       'action': action.astype(np.float32),
                       'language_instruction': INSTRUCTION})
@@ -142,9 +151,9 @@ def mutate(poses, **kwargs):
     ('7-dim state, missing the POS_EULER pad slot',
      lambda p: mutate(p, state_dim=7), 'StateEncoding.POS_EULER'),
     ('all frames black (near-clip plane left at 1.0 m)',
-     lambda p: mutate(p, image_fn=lambda: make_image(black=True)), 'near-clip'),
+     lambda p: mutate(p, image_fn=lambda step_idx: make_image(black=True)), 'near-clip'),
     ('well-formed frames the target never appears in',
-     lambda p: mutate(p, image_fn=lambda: make_image(with_target=False)), 'not visible'),
+     lambda p: mutate(p, image_fn=lambda step_idx: make_image(with_target=False)), 'not visible'),
     ('gripper never actuates, so no grasp was attempted',
      lambda p: mutate(p, freeze_gripper=True), 'never moves'),
     ('deltas inflated tenfold',
