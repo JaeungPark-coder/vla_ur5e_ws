@@ -521,6 +521,32 @@ class GripperController:
             self._fix_drive_gains()
         return self._drive_joint_index
 
+    def reapply_drive_gains(self):
+        """CONFIRMED 2026-09-23 (code-level, against this file's own
+        documented Stop+Play semantics -- see rescale_gripper_mass_to_spec's
+        docstring: "USD physics schema is only re-parsed at Play time"):
+        _fix_drive_gains only ran ONCE, ever, guarded by _resolve_joint_index's
+        `if self._drive_joint_index is None`, which is False from episode 2
+        onward (this same GripperController instance persists for the whole
+        multi-episode run -- PickPlaceScene.__init__ constructs it once, not
+        per reset()). But _fix_drive_gains writes ONLY to the live
+        controller.get_gains()/set_gains() view, never authoring back into
+        USD's DriveAPI the way set_joint_drive_gains does for the arm joints
+        -- and PickPlaceScene.reset()'s own comment confirms every episode's
+        world.reset() is a hard Stop+Play that invalidates the arm's physics
+        handles (robot.initialize() is redone every episode BECAUSE of this).
+        A live-view-only write made against the OLD handle does not survive
+        that. Net effect: finger_joint likely ran at the requested kp/kd for
+        episode 1 only, and reverted to the as-shipped 171.89/0.0115 (still
+        what USD's own DriveAPI holds, since nothing ever rewrote it) from
+        episode 2 on -- silently, since nothing re-checks it. Call this once
+        per episode, right after robot.initialize() and before the first
+        gripper command, to force the reapplication Stop+Play just undid.
+        Idempotent and cheap; safe to call even if _resolve_joint_index was
+        never reached yet this run."""
+        self._resolve_joint_index()
+        self._fix_drive_gains()
+
     def _fix_drive_gains(self):
         """CONFIRMED 2026-09-19 (diag_gripper_gains_mimic.py, scratchpad):
         this asset ships finger_joint with kp=171.89, kd=0.0115 -- 1000x+
@@ -609,6 +635,9 @@ class NullGripper:
 
     def get_normalized_position(self):
         return 0.0
+
+    def reapply_drive_gains(self):
+        pass
 
 
 def setup_rmpflow(robot_articulation):

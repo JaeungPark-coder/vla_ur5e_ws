@@ -258,6 +258,11 @@ BASE_FRAMING = camera_framing.framing_analysis(
 
 # The episode-level guard collect_demos.py enforces: the cube has to get about
 # as visible as this camera is capable of making it, not merely visible.
+# Deliberately stricter than openvla_integration/validate_dataset.py's own
+# MIN_TARGET_PIXELS_PEAK=50 -- that one is a generic, camera-agnostic floor
+# for a standalone post-hoc validator; this one is derived from this exact
+# camera's own geometry and enforced at collection time, before a
+# low-visibility episode can even reach the dataset.
 MIN_CUBE_PIXELS_IN_BASE_VIEW = max(
     MIN_CUBE_PIXELS_FLOOR, int(round(BASE_FRAMING.usable_peak_area_px)))
 
@@ -675,6 +680,14 @@ class PickPlaceScene:
         # registered via world.scene (see __init__'s comment) -- redo it
         # every episode, not just once at construction.
         self.robot.initialize()
+        # 2026-09-23: the same Stop+Play also silently undoes
+        # GripperController._fix_drive_gains -- it writes only to the live
+        # controller view that robot.initialize() just replaced, never to
+        # USD, so without this finger_joint reverted to the as-shipped
+        # 171.89/0.0115 (47% closure in free space) from episode 2 onward,
+        # every episode after the first. See reapply_drive_gains's own
+        # docstring for the full mechanism.
+        self.gripper.reapply_drive_gains()
 
         if self.cube_rigid_prim is None:
             # Only constructible once physics has Played at least once
