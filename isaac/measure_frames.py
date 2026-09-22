@@ -251,7 +251,7 @@ def measure_gripper_tcp(scene):
 
     tcps = np.array(tcps)
     drift = float(np.abs(tcps - tcps[0]).max()) * 1000.0
-    say(f"\n  --- verdict ---")
+    say("\n  --- verdict ---")
     say(f"    TCP varies by {drift:.2f} mm across joint configurations")
     if drift > 2.0:
         say("    NOT RIGID: the gripper is not moving with the wrist, so no fixed TCP exists. "

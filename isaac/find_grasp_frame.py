@@ -157,7 +157,7 @@ def run():
     print(f"  tool0 {best_axis} @ {best_distance:.2f} m lifted the cube {best_rise:.1f} mm.",
           flush=True)
     axis = np.array(AXIS_CANDIDATES[best_axis], dtype=float)
-    print(f"\n  Set in pick_place_scene.py:", flush=True)
+    print("\n  Set in pick_place_scene.py:", flush=True)
     print(f"    GRIPPER_APPROACH_AXIS_IN_TOOL0 = {axis.tolist()}", flush=True)
     print(f"    GRIPPER_TCP_OFFSET_M = {best_distance}", flush=True)
 

@@ -82,8 +82,7 @@ def main():
                         row.append("o")
                     else:
                         row.append(".")
-                print(f"  dx={0:>4} " + "".join(row) if False else
-                      f"  " + "".join(row), flush=True)
+                print("  " + "".join(row), flush=True)
             if not found_any:
                 print("  (no finger part found anywhere in this +/-150mm grid at this height)",
                       flush=True)

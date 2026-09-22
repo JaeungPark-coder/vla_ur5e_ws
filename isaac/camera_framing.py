@@ -310,7 +310,7 @@ def main():
           f"y={place[1]}, so {must_cover:.2f} m has to stay in frame.")
     print(f"    at {res_w} px wide that caps the cube at {ceiling:.1f} px across "
           f"({ceiling * ceiling:.0f} px2) --")
-    print(f"    no camera position or lens beats it, because both only move")
+    print("    no camera position or lens beats it, because both only move")
     print(f"    the swath width, and the swath cannot go below {must_cover:.2f} m.")
     print()
     if ceiling < args.target_span_px:
@@ -321,8 +321,8 @@ def main():
         print(f"      - shrink the workspace to about {needed_width:.2f} m of spread "
               f"(tighten CUBE_Y_RANGE / move PLACE_TARGET_POSITION closer), or")
         print(f"      - raise CAMERA_RESOLUTION to about {needed_res} px wide, or")
-        print(f"      - lean on the wrist camera for the approach and accept the")
-        print(f"        base view as context only.")
+        print("      - lean on the wrist camera for the approach and accept the")
+        print("        base view as context only.")
     else:
         print(f"    {args.target_span_px:.0f} px is reachable within that constraint.")
 
@@ -337,8 +337,8 @@ def main():
               f"(floor {floor} px2).")
         print(f"  Deriving it from the ceiling is the point: a flat {floor} px2 sits at "
               f"{100.0 * floor / analysis.expected_peak_area_px:.0f}% of the best case,")
-        print(f"  which catches a camera pointed at nothing but not one framing the "
-              f"task badly.")
+        print("  which catches a camera pointed at nothing but not one framing the "
+              "task badly.")
 
     # --- wrist camera ------------------------------------------------------
     lateral = scene["WRIST_CAMERA_LATERAL_M"]
@@ -360,7 +360,7 @@ def main():
     print(f"  at the grasp the cube sits about {grasp_distance:.3f} m away "
           f"-> {wrist_span:.0f} px across ({wrist_span * wrist_span:.0f} px2)")
     print(f"  that is {wrist_span / best:.1f}x the base camera's best case, which is")
-    print(f"  why the wrist view is the one that carries the fine detail.")
+    print("  why the wrist view is the one that carries the fine detail.")
 
     near_clip = scene.get("CAMERA_NEAR_CLIP_M")
     if near_clip is not None:

@@ -278,18 +278,38 @@ def main():
         say("=" * 68)
 
         if free_growth is not None and grasp_growth is not None:
-            free_drifts = abs(free_growth) > SETTLED_TOLERANCE_M
-            grasp_drifts = abs(grasp_growth) > SETTLED_TOLERANCE_M
-            if free_drifts:
+            # 2026-09-23: this used to be abs(growth) > SETTLED_TOLERANCE_M,
+            # which cannot tell "still GROWING" from "still SHRINKING (fast
+            # convergence not yet finished)" -- both have a large magnitude,
+            # only one is the dynamics/contact problem this verdict is
+            # supposed to diagnose. CONFIRMED wrong on a real run: it printed
+            # "the residual GROWS by -311.3mm... that is dynamics" for a
+            # case where growth was actually -311.3mm, i.e. SHRINKING.
+            # Split on sign instead: only a positive change past tolerance
+            # is "growing" in the sense this verdict means.
+            free_growing = free_growth > SETTLED_TOLERANCE_M
+            free_shrinking = free_growth < -SETTLED_TOLERANCE_M
+            grasp_growing = grasp_growth > SETTLED_TOLERANCE_M
+            grasp_shrinking = grasp_growth < -SETTLED_TOLERANCE_M
+            if free_growing:
                 say(f"  The residual grows by {free_growth * 1000:+.1f} mm in FREE SPACE,")
                 say("  where there is nothing to touch. That is dynamics, not contact:")
                 say("  tune the wrist drive stiffness/damping and set the gripper's")
                 say("  mass and inertia -- none of which this codebase sets today.")
-            elif grasp_drifts:
+            elif grasp_growing:
                 say(f"  Free space is settled ({free_growth * 1000:+.1f} mm) but the grasp")
                 say(f"  pose grows by {grasp_growth * 1000:+.1f} mm. That is contact, and it")
                 say("  means the frame correction in _grip_pose_to_tool0 is doing its job")
                 say("  in free space while the fingers still reach something at the grasp.")
+            elif free_shrinking or grasp_shrinking:
+                say(f"  Neither residual is GROWING (free {free_growth * 1000:+.1f} mm, "
+                    f"grasp {grasp_growth * 1000:+.1f} mm) -- but at least one is still "
+                    f"moving by more than {SETTLED_TOLERANCE_M * 1000:.1f} mm in this late "
+                    f"window, converging rather than settled. This is not the dynamics/")
+                say("  contact failure mode above -- it means the probe target was commanded")
+                say("  from too far away (a cold start) for this many ticks to fully settle;")
+                say("  the pivot-spread numbers below are measured before convergence and")
+                say("  may not be comparable to a run that did settle first.")
             else:
                 say("  Settled in both -- the growing residual is gone. Whatever remains")
                 say("  is a constant offset, which is what the pivot spread below measures.")
@@ -307,8 +327,8 @@ def main():
             say("  The mean offset is different -- a constant bias, which tracking")
             say("  error and a wrong GRIPPER_TCP_OFFSET_M both produce, and which")
             say("  rotating cannot separate.")
-            say(f"  These rolls span 180 degrees, so the tip traces a half circle of")
-            say(f"  radius equal to the error, making the spread about TWICE it --")
+            say("  These rolls span 180 degrees, so the tip traces a half circle of")
+            say("  radius equal to the error, making the spread about TWICE it --")
             say(f"  roughly {spread * 500:.1f} mm of transform error here. A pure")
             say("  transform error averages out of the mean offset entirely, so the")
             say("  two numbers measure different faults and do not overlap.")
