@@ -493,9 +493,19 @@ class GripperController:
     write several indices.
     """
 
-    def __init__(self, robot_articulation, drive_joint_name=GRIPPER_DRIVE_JOINT_NAME):
+    def __init__(self, robot_articulation, drive_joint_name=GRIPPER_DRIVE_JOINT_NAME,
+                 finger_kp=None, finger_kd=None):
+        """finger_kp/finger_kd: override the baseline finger_joint gains
+        below (both live-controller/radian units, same as the 20000/500
+        default -- see _fix_drive_gains). None (default) keeps the
+        as-shipped-fixed baseline. For a stiffness/damping sweep that holds
+        the damping ratio constant relative to that baseline (rather than
+        drifting under- or over-damped -- see the 2026-09-23 session's
+        derivation), scale as finger_kp=20000*a, finger_kd=500*sqrt(a)."""
         self.robot = robot_articulation
         self.drive_joint_name = drive_joint_name
+        self.finger_kp = finger_kp
+        self.finger_kd = finger_kd
         self._drive_joint_index = None
 
     def _resolve_joint_index(self):
@@ -529,13 +539,25 @@ class GripperController:
         conservative relative to the shoulder/elbow joints (2e5-6e5) since
         this only has to move a light, small pair of fingers, not a heavy
         arm segment. Re-verify with diag_gripper_gains_mimic.py if this
-        gripper variant or asset version changes."""
+        gripper variant or asset version changes.
+
+        2026-09-23: this 20000/500 baseline has never itself been swept --
+        every stiffness/damping investigation to date (pivot_dwell_check.py,
+        check_grasp_alignment.py's --stiffness-scale) only ever touched
+        ARM_JOINT_NAMES/WRIST_JOINT_NAMES, never finger_joint. It is also
+        well above the stiffness range (>=2000) a Robotiq-85 IsaacLab report
+        (isaac-sim/IsaacLab#3385) links to closing-induced end-effector
+        rotation from amplified left/right contact-force asymmetry -- a
+        plausible contributor to this project's own close-phase common-mode
+        dx drift, untested. finger_kp/finger_kd (constructor args) let a
+        caller override this baseline for exactly that sweep, without
+        touching the 20000/500 default any other caller still gets."""
         controller = self.robot.get_articulation_controller()
         kps, kds = controller.get_gains()
         kps = np.array(kps, dtype=float)
         kds = np.array(kds, dtype=float)
-        kps[self._drive_joint_index] = 20000.0
-        kds[self._drive_joint_index] = 500.0
+        kps[self._drive_joint_index] = self.finger_kp if self.finger_kp is not None else 20000.0
+        kds[self._drive_joint_index] = self.finger_kd if self.finger_kd is not None else 500.0
         controller.set_gains(kps=kps, kds=kds)
 
     def set_target(self, position):

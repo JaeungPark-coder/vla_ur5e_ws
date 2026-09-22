@@ -71,6 +71,21 @@ found earlier today (hence the NaN/Inf check on every tick, same as
 check_rmpflow_stability.py). --seed fixes the cube-spawn sequence so
 different stiffness runs are directly paired against the SAME spawns,
 not different random ones.
+
+2026-09-23: --finger-kp/--finger-kd sweep the GRIPPER's own finger_joint
+drive (GripperController's as-shipped-fixed 20000/500 baseline, in live-
+controller/radian units -- see its docstring), independent of the wrist
+sweep above, which never touched it. Motivated by isaac-sim/IsaacLab#3385
+(a Robotiq-85 report of closing-induced end-effector rotation from
+amplified left/right contact-force asymmetry at stiffness>=2000 -- this
+project's baseline is 10x that) and by this file's own 2026-09-21 finding
+that dx worsens specifically in the LATTER part of closing, i.e. while the
+pads are actually squeezing -- exactly when a stiff finger drive would
+amplify a small contact-force asymmetry into a common-mode push. Hold the
+damping ratio constant while sweeping (finger_kd = 500*sqrt(finger_kp/20000)
+-- linear kd scaling changes the ratio instead, see the session that
+derived this) so a change in dx is attributable to stiffness, not an
+incidental over/under-damping shift.
 """
 import argparse
 import os
@@ -192,9 +207,12 @@ def report_pose_detail(scene, label):
 
 
 def run(episodes, hold_ticks, seed, stiffness_scale, damping_scale, joint_choice,
-        static_friction, dynamic_friction):
-    scene = PickPlaceScene(with_gripper=True)
+        static_friction, dynamic_friction, finger_kp, finger_kd):
+    scene = PickPlaceScene(with_gripper=True, finger_kp=finger_kp, finger_kd=finger_kd)
     say(f"GRIPPER_OPEN_POS={GRIPPER_OPEN_POS} GRIPPER_CLOSED_POS={GRIPPER_CLOSED_POS} rad")
+    say(f"finger_joint drive gains: kp={finger_kp if finger_kp is not None else 20000.0:g} "
+        f"kd={finger_kd if finger_kd is not None else 500.0:g} (None args = as-shipped-fixed "
+        f"baseline; resolved lazily on first gripper command, not yet applied here)")
 
     # Fixed seed: different --stiffness-scale runs need the SAME cube-spawn
     # sequence to be paired comparisons rather than different random draws
@@ -379,7 +397,8 @@ def run(episodes, hold_ticks, seed, stiffness_scale, damping_scale, joint_choice
 
     say(f"\n=== SUMMARY (stiffness x{stiffness_scale:g}, damping x{damping_scale:g}, "
         f"joints={joint_choice}, static_friction={static_friction}, "
-        f"dynamic_friction={dynamic_friction}, seed={seed}) ===")
+        f"dynamic_friction={dynamic_friction}, finger_kp={finger_kp}, finger_kd={finger_kd}, "
+        f"seed={seed}) ===")
     say(f"  any non-finite joint state: {'YES -- UNSTABLE' if any_nonfinite else 'no'}")
     for ep_num, plateau in hold_plateaus:
         say(f"  episode {ep_num}: hold-plateau |d| = "
@@ -418,10 +437,21 @@ def main():
     parser.add_argument("--dynamic-friction", type=float, default=None,
                         help="same as --static-friction but for dynamic friction "
                              "(isaac_sim_common default 0.7)")
+    parser.add_argument("--finger-kp", type=float, default=None,
+                        help="override GripperController's as-shipped-fixed finger_joint "
+                             "stiffness (baseline 20000.0, live-controller/radian units). "
+                             "None leaves the baseline in place. Pair with --finger-kd to hold "
+                             "the damping ratio constant -- see this file's own module "
+                             "docstring for the sqrt-scaling relationship, and pass both or "
+                             "neither, since one without the other lets the ratio drift.")
+    parser.add_argument("--finger-kd", type=float, default=None,
+                        help="override GripperController's as-shipped-fixed finger_joint "
+                             "damping (baseline 500.0). See --finger-kp.")
     args = parser.parse_args()
     try:
         run(args.episodes, args.hold_ticks, args.seed, args.stiffness_scale,
-            args.damping_scale, args.joints, args.static_friction, args.dynamic_friction)
+            args.damping_scale, args.joints, args.static_friction, args.dynamic_friction,
+            args.finger_kp, args.finger_kd)
     except BaseException:
         import traceback
         say("\n=== FAILED ===")

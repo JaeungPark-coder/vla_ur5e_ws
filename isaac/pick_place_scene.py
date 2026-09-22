@@ -319,10 +319,14 @@ def _look_at_quat(eye, target, up=(0.0, 0.0, 1.0)):
 
 
 class PickPlaceScene:
-    def __init__(self, with_gripper=True):
+    def __init__(self, with_gripper=True, finger_kp=None, finger_kd=None):
         """with_gripper=False builds the scene with no gripper (NullGripper).
         Only for measurements that do not involve grasping -- see
-        check_cameras.py."""
+        check_cameras.py.
+
+        finger_kp/finger_kd: passed straight through to GripperController --
+        see its own docstring. None (default) keeps the as-shipped-fixed
+        20000/500 baseline; ignored when with_gripper=False."""
         assets_root = get_assets_root_path()
         if assets_root is None:
             raise RuntimeError("Could not resolve Isaac Sim assets root -- check Nucleus connection.")
@@ -416,7 +420,7 @@ class PickPlaceScene:
         # variant selected above), so the controller just drives one of its
         # joints -- nothing to attach, nothing to keep in sync.
         if with_gripper:
-            self.gripper = GripperController(self.robot)
+            self.gripper = GripperController(self.robot, finger_kp=finger_kp, finger_kd=finger_kd)
             print(f"robot articulation joints: {list(self.robot.dof_names)}", flush=True)
         else:
             # No gripper at all -- see NullGripper. Only for measurements that
