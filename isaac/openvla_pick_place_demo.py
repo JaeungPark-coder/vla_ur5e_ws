@@ -49,14 +49,19 @@ HEADLESS = os.environ.get("ISAAC_OPENVLA_DEMO_HEADLESS", "0") != "0"
 simulation_app = SimulationApp({"headless": HEADLESS})
 
 # --- everything below must be imported AFTER SimulationApp() starts Kit ---
-from pick_place_scene import PickPlaceScene, PLACE_TARGET_POSITION  # noqa: E402
+from pick_place_scene import PickPlaceScene, PLACE_TARGET_POSITION, LIFT_Z_THRESHOLD  # noqa: E402
 
 # Same values hybrid_pick_place_demo.py / residual_rl_train_env.py use, kept
 # consistent across all three pipelines so "success" means the same thing
 # everywhere in the comparison.
 SUCCESS_XY_TOLERANCE_M = 0.03
 HOLDING_GRIPPER_THRESHOLD = 0.5
-LIFTED_Z_THRESHOLD = 0.03
+# 2026-09-23: this used to redeclare 0.03 locally -- a stray duplicate of
+# what turned out to be the WRONG value (see residual_rl_train_env.py's own
+# 2026-09-23 fix; the right one, isaac/pick_place_scene.LIFT_Z_THRESHOLD, is
+# 0.08). Now imported directly instead of copied, so this file can't drift
+# from it again.
+LIFTED_Z_THRESHOLD = LIFT_Z_THRESHOLD
 
 
 class OpenVLAPolicy:

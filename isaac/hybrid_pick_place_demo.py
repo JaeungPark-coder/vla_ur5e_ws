@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "perception")) 
 
 from pick_place_scene import (  # noqa: E402
     PickPlaceScene, BASE_CAMERA_HORIZONTAL_FOV_DEG, CAMERA_RESOLUTION, PLACE_TARGET_POSITION, CUBE_Z,
+    LIFT_Z_THRESHOLD,
 )
 from scripted_pick_place import ScriptedPickPlace  # noqa: E402
 import camera_projection  # noqa: E402
@@ -80,14 +81,27 @@ def run_trial(scene, detector, instruction, n_objects=3):
     localization_error_mm = 1000.0 * float(np.linalg.norm(target_position[:2] - ground_truth_position[:2]))
     print(f"localization error vs ground truth: {localization_error_mm:.1f}mm")
 
-    policy = ScriptedPickPlace(obs["tool_pos"], target_position, PLACE_TARGET_POSITION)
+    # 2026-09-23: max_object_z tracked here (was not, before) -- this loop
+    # used to score success on final XY error alone, which a shove-to-
+    # target counts as a "pick and place" identically to a real grasp. This
+    # project's own documented failure mode ("fingers close off-centre, cube
+    # shoved sideways") is exactly a push, and pushing the object CLOSE to
+    # the target is easier than actually placing it there, so a fair 3-way
+    # comparison against vla_policy_client.py/openvla_pick_place_demo.py
+    # (both of which require an actual lift past LIFT_Z_THRESHOLD before
+    # counting a success) needs the same requirement here.
+    object_prim_path = objects[target_description]["prim_path"]
+    max_object_z = -np.inf
     for target_pos, target_rotvec, target_gripper in policy.generate_frames():
         scene.step_towards(target_pos, target_rotvec, target_gripper)
+        max_object_z = max(max_object_z, float(scene.get_object_position(object_prim_path)[2]))
 
-    final_position = scene.get_object_position(objects[target_description]["prim_path"])
+    final_position = scene.get_object_position(object_prim_path)
     placed_xy_error_mm = 1000.0 * float(np.linalg.norm(final_position[:2] - PLACE_TARGET_POSITION[:2]))
-    success = placed_xy_error_mm <= SUCCESS_XY_TOLERANCE_M * 1000.0
-    print(f"final placement error: {placed_xy_error_mm:.1f}mm -- {'SUCCESS' if success else 'FAILURE'}")
+    lifted = max_object_z > LIFT_Z_THRESHOLD
+    success = lifted and placed_xy_error_mm <= SUCCESS_XY_TOLERANCE_M * 1000.0
+    print(f"max object height: {max_object_z * 1000:.1f}mm (lifted={'yes' if lifted else 'no'}), "
+          f"final placement error: {placed_xy_error_mm:.1f}mm -- {'SUCCESS' if success else 'FAILURE'}")
     return success, policy.total_frames(), placed_xy_error_mm, localization_error_mm
 
 
