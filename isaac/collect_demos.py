@@ -175,17 +175,28 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
               f"{n_logged} frames, cube spawned at {np.round(scene.cube_position, 3)}, "
               f"max_cube_z={max_cube_z:.3f}m, peak_cube_px={peak_cube_px}")
 
-        # Stop after the first completed episode if the cube was never
-        # actually visible. A dataset the cube never appears in trains a
-        # policy that cannot possibly find it, and that is exactly how the
-        # first 100-episode run was lost -- 21,000 well-formed frames,
-        # zero of them showing the cube.
-        if n_success == 1 and peak_cube_px < MIN_CUBE_PIXELS_IN_BASE_VIEW:
+        # Stop the moment a SAVED episode's cube was never actually visible.
+        # A dataset the cube never appears in trains a policy that cannot
+        # possibly find it, and that is exactly how the first 100-episode
+        # run was lost -- 21,000 well-formed frames, zero of them showing
+        # the cube. 2026-09-23: this used to only check when n_success==1
+        # (the very first success), which catches a broken-from-the-start
+        # setup but not a mid-run regression (camera mount drift, a lighting
+        # change, anything that degrades framing after episode 1 already
+        # passed) -- the scripted expert drives off GROUND-TRUTH cube_
+        # position, not vision, so a later episode can still lift+place
+        # correctly (get saved) with the cube barely visible in its
+        # recorded frames, and nothing would catch it. Checked on every
+        # SAVED episode now, not gated by n_success -- rejected episodes
+        # aren't saved either way, so checking those would only cost time
+        # for no dataset-quality benefit.
+        if lifted and placed and peak_cube_px < MIN_CUBE_PIXELS_IN_BASE_VIEW:
             raise RuntimeError(
-                f"the cube peaked at {peak_cube_px} pixels in the base camera across a whole "
-                f"episode (need >= {MIN_CUBE_PIXELS_IN_BASE_VIEW}). The task is not visible in "
-                f"the observations, so no amount of data will help. Run check_cameras.py and fix "
-                f"the framing before collecting.")
+                f"episode {n_success} (attempt {attempted}) was saved but the cube peaked at "
+                f"only {peak_cube_px} pixels in the base camera across the whole episode (need "
+                f">= {MIN_CUBE_PIXELS_IN_BASE_VIEW}). The task is not visible in the "
+                f"observations, so no amount of data will help. Run check_cameras.py and fix "
+                f"the framing before collecting more.")
 
     success_rate = n_success / attempted
     print(f"\ncollected {n_success} successful episodes from {attempted} attempts "
