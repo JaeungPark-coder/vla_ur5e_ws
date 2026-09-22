@@ -401,16 +401,9 @@ What that surfaced, file by file:
   wrist-camera FOV coverage) -- resolved to their INTERSECTION,
   `(0.42, 0.48) x (-0.10, 0.10)`, on the reasoning that either session's
   own justification for narrowing still holds inside the smaller box.
-  `WRIST_CAMERA_LATERAL_M`/`WRIST_CAMERA_FLANGE_ROT_EULER` are a genuine,
-  UNRESOLVED disagreement: this session's measurement (with the dome
-  light already in place) says `(180, 0, 0)` at `0.16m`; the remote
-  session's own measurement (also with the dome light already in place,
-  per its own writeup above) says `(-90, 0, 0)` at `0.12m`. Kept this
-  session's value as the live default (with the remote's fully documented
-  inline as an open disagreement, not discarded) purely because it's what
-  this session could re-verify most recently -- **not because it's been
-  shown correct**. Re-measuring both under identical, post-merge
-  conditions is next-session work, listed below.
+  `WRIST_CAMERA_LATERAL_M`/`WRIST_CAMERA_FLANGE_ROT_EULER` were a genuine
+  disagreement at merge time -- **RESOLVED 2026-09-22**, see that item in
+  the numbered list below for the decisive A/B test.
 - **`check_cameras.py` -- 1 conflict, resolved by union.** Both sessions
   extended the same `WRIST_LATERAL_CANDIDATES` sweep list independently;
   kept the remote's candidate values (with its own history comment) and
@@ -426,34 +419,157 @@ What that surfaced, file by file:
   with a note that it's superseded for the specific numbers but not
   wrong -- it's real, corroborating work, not a discarded draft.
 
-**New open items the merge itself created (deferred to next session, not
-solved here):**
-1. Reconcile the two friction-material implementations before popping the
-   stash (pick one binding path, delete the other, re-point
-   `check_grasp_alignment.py` at whichever survives).
-2. `wrist_3_joint` stiffness: this session measured `(1000.08, 0.0043)`
-   via `get_joint_drive_gains` (PhysX `UsdPhysics.DriveAPI` directly); a
-   remote-session code comment claims `kp=57300` via
-   `ArticulationController.get_gains()`. These may be reading different
-   things (authored USD drive params vs. the live solver-side value) --
-   not yet checked which, or whether they actually disagree once units
-   are equalized.
-3. Which axis is the gripper's true closing axis: this session's
-   mesh-vertex-based measurement says X is a common-mode offset (both
-   pads move the same way) and Y is where the small left/right asymmetry
-   actually shows up; a remote-session hypothesis instead treats the
-   offset as being on "the gripper's closing axis" without specifying
-   which axis that is under this session's coordinate convention. Needs a
-   fresh, explicitly axis-labelled re-check against the merged code
-   before trusting either framing.
-4. Wrist mount: re-run this session's `check_wrist_mount_raycast.py`
-   sweep AND the remote session's own sweep methodology, under the same
-   merged lighting/cube-range/mass-fix conditions, before trusting either
-   of `(180,0,0)@0.16` or `(-90,0,0)@0.12` over the other.
-5. Whether a friction-stable, geometrically-good static hold (this
-   session's grasp-alignment finding) actually translates into a
-   successful dynamic lift is still completely open -- the merge didn't
-   touch this question either way.
+**New open items the merge itself created:**
+1. **RESOLVED 2026-09-22.** Reconciled the two friction-material
+   implementations (this session's `get_or_create_friction_material`/
+   `bind_physics_material` vs. the remote's already-integrated
+   `bind_grip_friction_material`) by deleting this session's duplicate and
+   standardizing on the remote's, which was already wired into
+   `add_gripper_colliders`/`add_shape` and carries a documented empirical
+   basis. `check_grasp_alignment.py` re-pointed at `GRIP_MATERIAL_PRIM_PATH`.
+   Also fixed a second, related merge fallout while in there: this file's
+   hardcoded 4-segment waypoint slice (`approach/settle/descend/close`)
+   was stale against `scripted_pick_place.py`'s now-5-segment layout
+   (`approach/settle/descend/settle/close`, from the remote's 2026-09-19
+   `SETTLE_TICKS` fix) -- updated to match.
+2. **Still open.** `wrist_3_joint` stiffness: this session measured
+   `(1000.08, 0.0043)` via `get_joint_drive_gains` (PhysX
+   `UsdPhysics.DriveAPI` directly); a remote-session code comment claims
+   `kp=57300` via `ArticulationController.get_gains()`. These may be
+   reading different things (authored USD drive params vs. the live
+   solver-side value) -- not yet checked which, or whether they actually
+   disagree once units are equalized. Not tested 2026-09-22 (session ran
+   out of scope before reaching this item) -- still next-session work.
+3. **RESOLVED 2026-09-22, and it turned out not to be a real
+   contradiction.** Re-examined this session's own 2026-09-21 tick data
+   (`left_dx`/`right_dx` per-pad vs. `dy` per-pad): averaging the two
+   pads' `dy` per episode (+1.0, -2.05, +2.2, +4.5mm) reproduces almost
+   exactly the remote session's own single-point measurement of "Y within
+   +-5mm" -- because the remote session only ever tracked ONE point (the
+   formula-based grip-point, effectively the average of both pads), a
+   symmetric left/right closing-axis deviation cancels out of that
+   average and becomes invisible. The remote's X residual range (-8 to
+   +26mm) likewise matches this session's per-pad common-mode `dx`
+   magnitude (16-28mm) closely. **Conclusion: both sessions measured the
+   same underlying drift correctly, just at different resolutions** --
+   X really is the dominant, common-mode positioning error (what the
+   remote saw), and Y really is where the smaller true closing-axis
+   asymmetry lives (what this session's per-pad decomposition saw). Not
+   a disagreement to adjudicate, just two granularities of one dataset.
+4. **RESOLVED 2026-09-22 by a direct paired A/B test** (`ab_wrist_mount.py`,
+   new script, 8 identical cube spawns rendered under both candidates in
+   the same run). `(-90,0,0)@0.12` (remote/2026-09-19) beat
+   `(180,0,0)@0.16` (this session/2026-09-21) decisively: worst-case
+   198px vs. 0px, over an identical spawn sequence. `pick_place_scene.py`
+   updated to the winner; `WRIST_CAMERA_DOWN_TILT_DEG` reset from 15 to 0
+   in the same change since 15 was tuned only for the losing mount and
+   was never measured against the winner (both the remote's original
+   validation and today's A/B test used tilt=0 throughout) -- re-sweeping
+   tilt specifically for the new mount is unstarted follow-up work, not
+   assumed to be optimal at 0.
+5. **Still open, and now has a strong new lead -- see the new section
+   directly below.** Whether a friction-stable, geometrically-good static
+   hold actually translates into a successful dynamic lift.
+
+### 2026-09-22: fully-merged baseline still fails, and a strong new lead why
+
+With everything above reconciled (both sessions' fixes combined, plus
+today's mount A/B), `check_grasp_alignment.py --episodes 5 --hold-ticks 0`
+was re-run as the actual outcome test -- the first time 2026-09-19's three
+fixes (settle2, friction, gripper kp) and 2026-09-21's four fixes (mass,
+cube range, lighting, wrist mount) have ever run together. **0/5 lifted**,
+`max_cube_z` 0.022-0.033m against `LIFT_Z_THRESHOLD=0.08m` -- directly
+answering this session's opening question (does 2026-09-19's work, applied
+on top of the current merged state, solve the live blocker): no, not on
+its own, and not combined with everything from 2026-09-21 either. This
+matches 2026-09-19's own commit message, which already said as much before
+any of 2026-09-21's fixes existed -- still true now that they do.
+
+**But the fresh per-tick trace surfaced something neither session had
+seen before, because it could only appear once both sessions' fixes
+coexisted:** during `settle2` (the remote's 2026-09-19 addition -- a
+90-tick dwell between descend and close, added to kill residual velocity
+before closing), the LEFT pad's own mesh bbox (not the formula-based grip
+point) sits 30-39mm BELOW the cube's top face in every one of the 5 fresh
+episodes (range across episodes: -2mm to -39mm) -- i.e. the still-OPEN
+gripper pad is pressing down into the cube for the entire 90-tick dwell,
+well before closing ever starts. As the `close` segment then runs and the
+fingers actually close, the overlap steadily shrinks (-39mm -> -29mm in
+the traced episode) -- consistent with the Robotiq 2F-85's real four-bar
+linkage geometry, where an OPEN pad's tip hangs measurably lower than a
+CLOSED one's.
+
+**Likely mechanism:** `GRASP_HEIGHT=0.02m` targets the cube's top face
+with zero clearance (known since 2026-09-16), and `GRIPPER_TCP_OFFSET_M
+=0.12m` was calibrated against the CLOSED-pad geometry (this session's own
+earlier finding 1, above, found the pad centroid only +2.5 to +16.2mm off
+at END of close -- i.e. well-calibrated for that state). But the descend
+and settle2 segments hold the gripper at that same zero-clearance target
+while the fingers are still OPEN, and an open pad's true lowest point
+sits lower than the closed-pad calibration assumes -- driving the real
+pad tens of mm into the cube during a 90-tick STATIC hold, before the
+fingers ever start closing. This is a plausible, previously-invisible
+root cause: an open, static, deeply-embedded pad dwelling in a cube for
+90 ticks would very plausibly push, tip, or otherwise displace it before
+closing has any real object left to grip cleanly -- consistent with the
+persistent ~10-30mm common-mode `dx` drift documented above, and with
+`max_cube_z` barely lifting off its resting height rather than the cube
+simply falling out of an otherwise-good grip.
+
+**Why neither session could have found this alone:** 2026-09-19 had no
+per-pad mesh measurement (only the formula-based grip point, which can't
+see pad/cube interpenetration at all) and its trace predates the settle2
+segment it was itself adding, so there was no 90-tick static dwell for it
+to observe yet. 2026-09-21's own earlier axis analysis (finding 4,
+"contact hypothesis REJECTED", above) checked whether `dx` drift onset
+lined up with contact -- but that trace also predates settle2 (this
+session's own pre-merge code only had ONE settle segment, before descend),
+so there was likewise no sustained open-pad dwell in contact for it to
+have seen. The dwell-in-contact phenomenon is a genuine interaction
+effect between the two sessions' fixes, only visible after both were
+merged and re-measured together.
+
+**Not yet done:** this is a lead, not a confirmed fix. Candidate next
+steps, none attempted yet: (a) re-measure `GRIPPER_TCP_OFFSET_M`
+specifically against the OPEN-pad mesh bbox (this session's finding 1
+methodology, `mesh_world_bbox_center`, re-run with the gripper at
+`GRIPPER_OPEN_POS` instead of closed) to get the actual open-state
+offset error directly rather than inferring it from the overlap depth;
+(b) give the descend/settle2 target extra Z clearance (approximately the
+open-state offset error) and only complete the final descent as part of
+the close segment itself, so the open pad never has to dwell inside the
+cube; (c) shorten or remove `settle2`'s dwell specifically at the
+now-corrected height once (a) or (b) land, since the dwell's own original
+purpose (kill residual velocity before closing) doesn't require it to
+happen already-embedded in the object.
+
+### Operational note: `check_cameras.py` is unsafe to import from
+
+**CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls
+`SimulationApp(...)` at module level (line ~64), unconditionally --
+not guarded by `if __name__ == "__main__":`. A new script
+(`ab_wrist_mount.py`, written today for the wrist-mount A/B test above)
+imported `_render_wrist`/`_metrics`/`_drive_to_grasp` from it after
+already calling its own `SimulationApp(...)`, which silently tried to
+start a SECOND Kit instance in the same process. This corrupted Kit's own
+native app registry and crashed identically 3 times in a row (`libomni.
+kit.app.plugin` -> a `std::unordered_map::operator[]` segfault inside
+`_app.cpython-*.so`), each crash slowly symbolicated by the crash
+reporter (~14s/frame via `addr2line`) before the process actually died.
+Fixed by reimplementing those three helpers directly in
+`ab_wrist_mount.py` instead of importing them. **Any future script that
+wants check_cameras.py's helper functions must copy them, not import
+them, until check_cameras.py's own `SimulationApp(...)` call is moved
+under an `if __name__ == "__main__":` guard** (not done here -- out of
+scope for this session, and every existing caller only ever runs it as
+`__main__`, so it wasn't broken until something else tried to import it).
+A second, separate gotcha found in the same incident: killing a Kit
+process with `kill -9` (rather than letting it exit normally through
+`simulation_app.close()`) can leave `/dev/shm/sem.carbonite-sharedmemory`
+behind, and the NEXT Kit launch on the machine will crash on startup
+trying to use it -- `rm -f /dev/shm/sem.carbonite-sharedmemory
+/dev/shm/*RStringInternals*` before retrying fixed it both times this
+happened today.
 
 ### Environment note: installing `lerobot` briefly broke `isaacsim`/`isaaclab`
 

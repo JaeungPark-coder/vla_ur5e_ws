@@ -125,44 +125,29 @@ MAX_DARK_FRACTION = 0.30
 # WRIST_CAMERA_FOCUS_M along the tool axis, rather than pointing straight
 # down that axis, keeps the target centred despite the lateral offset.
 #
-# UNRESOLVED as of the 2026-09-21 merge -- two parallel sessions reached
-# two different answers and disagree on which direction is even right (see
-# WRIST_CAMERA_FLANGE_ROT_EULER's own comment for the paired direction
-# conflict, and README's merge note for the full story). Defaulting to
-# Session A's value below because it reported a clean, complete pass
-# (0% near-black, every sample nonzero) where Session B's own comment
-# explicitly says its result is NOT fully validated -- but the two
-# session's underlying methodologies differ enough (cheap raycast
-# pre-screen over 294 candidates vs. full-render over a fixed 18) that
-# this is a lean, not a settled answer. Re-run BOTH validation scripts
-# against the current (merged) CUBE_X_RANGE/CUBE_Y_RANGE and current
-# scene lighting before trusting either number for a real collection run.
+# RESOLVED 2026-09-22 by a direct, paired A/B test (ab_wrist_mount.py,
+# 8 identical cube spawns, both candidates rendered against the SAME
+# fully-merged code state: current mass fix, cube range, friction,
+# gripper stiffness fix, and dome light all in place -- the two sessions
+# below had never actually been compared against each other under
+# identical conditions before this). Session B's (-90,0,0)@0.12 won
+# decisively, ranked by worst-case per this project's own established
+# rule (a reliably-mediocre mount beats an occasionally-excellent one,
+# since collect_demos.py's preflight has to survive whatever spawn it
+# gets, not the best case):
 #
-# Session A (2026-09-21, check_wrist_mount_raycast.py's two-stage search:
-# a cheap FOV-cone + PhysX-raycast screen over a 294-candidate grid across
-# 5 fresh grasp poses, narrowed to 10 survivors, THEN rendered for real):
-# 0.16 was the largest lateral tested and the winner -- worst-case 351
-# cube px, mean 555, across 3 fresh render samples, 0% near-black. Only
-# tested up to 0.16 -- re-run with wider LATERAL_CANDIDATES if a
-# still-larger offset might do better.
+#   A: (180,0,0)@0.16   worst=  0px  mean= 463px  max=1424px  dark=0.3%
+#   B: (-90,0,0)@0.12    worst=198px  mean= 417px  max= 636px  dark=0.0%
 #
-# Session B (2026-09-19, the FULL 18-candidate `--sweep_wrist
-# --wrist_samples 5` comparison at that session's own narrowed
-# CUBE_X_RANGE/CUBE_Y_RANGE): 0.12m, paired with
-# WRIST_CAMERA_FLANGE_ROT_EULER=(-90,0,0), was the best-ranked candidate
-# of all 18 by worst-case pixels (134px worst, 206px mean) -- ranked by
-# worst-case specifically because an earlier single-sample sweep's "clear
-# winners" each turned out to be one lucky spawn (see check_cameras.py's
-# WRIST_SAMPLES history). This superseded an EARLIER, premature choice of
-# 0.08m: an 8-sample spot-check of just the (180,0,0)@0.08 candidate alone
-# (not compared against the other 17) had looked clean (588-760px), but
-# the properly controlled comparison across all candidates scored that
-# same candidate at min=0 in its own 5 samples -- a reminder that a
-# candidate has to be judged against the full sweep, not a spot-check in
-# isolation. NOT fully validated by Session B's own admission: 134px
-# worst-case is still under check_cameras.py's own 200px confidence bar
-# (NO MOUNT WORKS still fires), just the least-bad of 18.
-WRIST_CAMERA_LATERAL_M = 0.16
+# A hit 0 cube px on 2 of 8 samples and swung as high as 1424 -- high
+# variance, unreliable. B never dropped below 198px and stayed in a tight
+# 198-636px band. This matches Session B's own original 2026-09-19 report
+# (134-219px worst-case across two of its own runs) far better than
+# Session A's claimed 351px worst-case (2026-09-21) did -- Session A's
+# number likely reflected too few render samples (3) for how much this
+# mount's score varies spawn to spawn, exactly the failure mode
+# check_cameras.py's own multi-sample fix exists to catch.
+WRIST_CAMERA_LATERAL_M = 0.12
 WRIST_CAMERA_FOCUS_M = 0.12
 # How far BACK along the approach axis the camera sits, i.e. behind the
 # gripper looking forward over it, the way a real eye-in-hand bracket is
@@ -178,64 +163,34 @@ WRIST_CAMERA_BACK_M = 0.12
 WRIST_CAMERA_HORIZONTAL_FOV_DEG = 70.0
 WRIST_CAMERA_FOCAL_LENGTH_MM = 24.0
 
-# VALIDATED 2026-09-21 (same check_wrist_mount_raycast.py run as
-# WRIST_CAMERA_LATERAL_M's winner -- see that constant's comment): 15
-# degrees down. History worth keeping, because it shows why this needed a
-# real search rather than a plausible-sounding external number: an earlier
-# attempt set this to 30 (citing an external comparison of frontal vs.
-# ~30-degree-down eye-in-hand mounts), and the one direct measurement taken
-# of THAT value made things WORSE, not better (39% near-black at tilt=0 vs.
-# 60% at tilt=30, both against the OLD rot=(0,0,0)/lateral=0.12 mount, and
-# without the fill light below -- see WRIST_CAMERA_FLANGE_ROT_EULER and
-# _setup_cameras' fillDomeLight comment). It later turned out most of that
-# near-black reading was a missing scene light, not the mount at all; 15
-# degrees down only won once BOTH the light was fixed and the search moved
-# from a single hand-picked sample to a real geometry-then-render sweep.
-WRIST_CAMERA_DOWN_TILT_DEG = 15.0
+# RESET to 0 on the 2026-09-22 mount switch (see WRIST_CAMERA_LATERAL_M):
+# 15 degrees down was tuned specifically for the (180,0,0)@0.16 mount that
+# lost the 2026-09-22 A/B test, and was never measured against the
+# (-90,0,0)@0.12 mount that won it -- both Session B's original validation
+# and today's A/B test itself used tilt=0 throughout (check_cameras.py's
+# own sweep_wrist fixes tilt at 0 for the direction/lateral pass by
+# design, tuning it only afterward against whichever direction/lateral
+# wins -- that follow-up tilt sweep hasn't been re-run for this mount
+# yet). Carrying the old tilt value over untested would have been exactly
+# the "externally-plausible number, never measured on this asset" mistake
+# this constant's history already warns against once (see below) --
+# 0 is not a final answer either, just the only value actually validated
+# for the current mount so far.
+WRIST_CAMERA_DOWN_TILT_DEG = 0.0
 
 # Which way the camera looks, as XYZ Euler degrees taking the FLANGE frame to
 # the tool's approach direction.
 #
-# UNRESOLVED as of the 2026-09-21 merge, paired with WRIST_CAMERA_LATERAL_M
-# above -- see that constant's comment for the general shape of the
-# disagreement (two parallel sessions, two different answers, defaulting
-# to Session A below because its own pass was clean where Session B's own
-# comment admits it wasn't). The specific wrinkle here: Session B's own
-# 18-candidate data has (180, 0, 0) -- Session A's eventual winner --
-# ALSO in it, and reports it hit 0px on at least one of its 5 samples at
-# Session B's conditions (that session's narrower CUBE_Y_RANGE, no fill
-# light yet, lateral swept only up to 0.14 and not paired with any
-# down-tilt). Whether that's because Session A's later fixes (fill light,
-# the reach/mass stability work, a wider lateral+tilt search) are what
-# actually made (180,0,0) work, or because the two sessions' scoring
-# somehow disagrees on the same candidate, is exactly what re-running both
-# validation scripts against the merged state (see WRIST_CAMERA_LATERAL_M)
-# would settle -- not yet done.
-#
-# Session A (2026-09-21, check_wrist_mount_raycast.py's two-stage search:
-# 294 (direction, lateral, tilt) candidates screened by FOV-cone membership
-# + an unoccluded PhysX raycast to the cube's centre across 5 fresh grasp
-# poses -- no rendering, so cheap enough to cover that many -- then the top
-# 10 survivors actually rendered, 3 fresh grasp samples each): (180, 0, 0)
-# @ lateral=0.16, tilt=15 was the winner -- worst-case 351 cube px, mean
-# 555, 0% near-black across all 3 render samples. Two things had to be
-# fixed FIRST for this search to mean anything: the reach/tracking
-# instability that made every earlier attempt's grasp poses unreliable
-# (see CUBE_X_RANGE/CUBE_Y_RANGE's comment and rescale_gripper_mass_to_
-# spec), and the scene having no fill light at all (see _setup_cameras'
-# fillDomeLight comment) -- every candidate this same search geometrically
-# verified as "cube in FOV, unoccluded" still rendered 57-84% near-black
-# before that light existed.
-#
-# Session B (2026-09-19): best of 18 candidates (all 6 WRIST_DIRECTION_
-# CANDIDATES x all 4 WRIST_LATERAL_CANDIDATES) by worst-case pixels, in a
-# single controlled `--sweep_wrist --wrist_samples 5` run at that
-# session's own narrowed CUBE_X_RANGE/CUBE_Y_RANGE: (-90, 0, 0)@0.12m
-# scored 134px worst-case / 206px mean, the only candidate whose worst
-# sample topped 100px. NOT fully validated by Session B's own admission:
-# check_cameras.py's own sweep still printed NO MOUNT WORKS there, since
-# 134px is under its 200px confidence bar -- this is the least-bad of 18,
-# not a confirmed winner.
+# RESOLVED 2026-09-22 -- see WRIST_CAMERA_LATERAL_M's comment for the
+# decisive paired A/B test (ab_wrist_mount.py) that settled this alongside
+# the lateral offset: Session B's (-90, 0, 0) beat Session A's (180, 0, 0)
+# worst-case 198px to 0px over the same 8 cube spawns. Session A's mount
+# is not being kept as a documented runner-up in code anymore -- see git
+# history (the 2026-09-21 merge commit) for its own full reasoning and
+# raycast-search methodology if it's ever worth revisiting (e.g. if a
+# wider LATERAL_CANDIDATES sweep is run someday, since Session A's search
+# covered a much finer grid than Session B's fixed 18 candidates and might
+# still find something better than either of today's two options).
 #
 # Older history, for why this took so long to pin down at all: the
 # placeholder here was (0.0, 0.0, 0.0) for most of this project's life,
@@ -251,7 +206,7 @@ WRIST_CAMERA_DOWN_TILT_DEG = 15.0
 # (fixed 2026-09-16, see isaac_sim_common.py's set_rigid_body_translation/
 # SingleRigidPrim history) and then, once THAT was fixed and reach was
 # solid, at the spawn area being wider than any fixed mount could cover.
-WRIST_CAMERA_FLANGE_ROT_EULER = (180.0, 0.0, 0.0)
+WRIST_CAMERA_FLANGE_ROT_EULER = (-90.0, 0.0, 0.0)
 BASE_CAMERA_POSITION = (0.9, 0.0, 0.5)
 # What the base camera looks at: between the cube spawn area (CUBE_X_RANGE x
 # CUBE_Y_RANGE at CUBE_Z) and the place target, so both are in frame.
