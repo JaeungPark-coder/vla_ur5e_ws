@@ -18,14 +18,78 @@ Requires the `anthropic` package (`pip install anthropic`) and an
 """
 import json
 import os
+import re
 
 MODEL = "claude-sonnet-5"  # ADJUST to whatever Claude model you have API access to
+
+# Matches a ```-fenced block anywhere in the text (optionally tagged, e.g.
+# ```json), not just at the very start -- see _extract_json_text.
+_FENCE_RE = re.compile(r"```(?:\w*)\s*\n?(.*?)```", re.DOTALL)
 
 
 class CommandParseError(RuntimeError):
     """Raised when the LLM's response isn't valid JSON, or names an object/
     destination outside the given vocabulary -- callers should treat this as
     "couldn't understand the command," not retry blindly."""
+
+
+def _extract_json_text(raw_text):
+    """Best-effort recovery of a JSON object from an LLM response that may
+    not be pure JSON, despite the prompt asking for exactly that.
+
+    2026-09-23: an earlier version of this only stripped a ``` fence when it
+    was the very FIRST thing in the response (raw_text.startswith('```')) --
+    the single most common real deviation, a leading sentence before the
+    fence ("Sure! Here's the JSON:\\n```json\\n{...}"), was not a fence at
+    the start of the string at all and fell straight through to the
+    json.loads failure path. Tries, in order: (1) the whole response as-is
+    (the common case, and the fastest path when the model complies exactly);
+    (2) a ```-fenced block anywhere in the response, tagged or not; (3) the
+    first balanced {...} object anywhere in the response, respecting quoted
+    strings and escapes so a brace inside a string value can't desync the
+    match. Returns the extracted text, or the original raw_text unchanged if
+    none of the above found anything more specific -- either way, the
+    caller's own json.loads is still what actually validates it; this never
+    silently invents or fixes JSON, only locates it."""
+    stripped = raw_text.strip()
+    try:
+        json.loads(stripped)
+        return stripped  # already valid JSON, nothing to extract
+    except json.JSONDecodeError:
+        pass
+
+    fence_match = _FENCE_RE.search(raw_text)
+    if fence_match:
+        candidate = fence_match.group(1).strip()
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass  # fall through to the brace scan below
+
+    start = raw_text.find("{")
+    if start == -1:
+        return stripped
+    depth, in_string, escape = 0, False, False
+    for i in range(start, len(raw_text)):
+        ch = raw_text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return raw_text[start:i + 1]
+    return stripped  # never balanced -- let json.loads report the real error
 
 
 def _build_prompt(instruction, object_vocabulary, destination_vocabulary):
@@ -70,27 +134,20 @@ def parse_command(instruction, object_vocabulary, destination_vocabulary=("targe
         max_tokens=200,
         messages=[{"role": "user", "content": prompt}],
     )
-    # 2026-09-23: the prompt above says "output ONLY a JSON object", but
-    # nothing stops the model from wrapping it in a ```json ... ``` fence
-    # anyway (a common instruction-following slip, not something this
-    # prompt can fully rule out) -- that used to fail json.loads and read
-    # as "LLM did not return valid JSON" even though it understood the task
-    # correctly, just formatted it. Also guard content[0] being a non-text
-    # block explicitly: no tools are passed to this call, so it should
-    # always be text, but an unguarded response.content[0].text would raise
-    # a bare AttributeError instead of the diagnosable error this module's
-    # own docstring promises ("not silently guessing... stopping and
-    # asking again" implies a caller can actually tell what went wrong).
+    # Guard content[0] being a non-text block explicitly: no tools are
+    # passed to this call, so it should always be text, but an unguarded
+    # response.content[0].text would raise a bare AttributeError instead of
+    # the diagnosable error this module's own docstring promises ("not
+    # silently guessing... stopping and asking again" implies a caller can
+    # actually tell what went wrong).
     if not response.content or not hasattr(response.content[0], "text"):
         raise CommandParseError(
             f"LLM response's first content block was not text: {response.content!r}")
     raw_text = response.content[0].text.strip()
-    if raw_text.startswith("```"):
-        raw_text = raw_text.split("\n", 1)[1] if "\n" in raw_text else raw_text[3:]
-        raw_text = raw_text.rsplit("```", 1)[0].strip()
+    json_text = _extract_json_text(raw_text)
 
     try:
-        parsed = json.loads(raw_text)
+        parsed = json.loads(json_text)
     except json.JSONDecodeError as exc:
         raise CommandParseError(f"LLM did not return valid JSON: {raw_text!r}") from exc
 
