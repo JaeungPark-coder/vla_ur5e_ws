@@ -73,17 +73,42 @@ class VLAPolicyClient(Node):
         self.declare_parameter('policy_host', 'localhost')
         self.declare_parameter('policy_port', 8000)
         self.declare_parameter('prompt', 'pick up the cube and place it in the target zone')
-        self.declare_parameter('control_hz', 10.0)
+        # 2026-09-23: was 10.0. collect_demos.py records at CONTROL_HZ=60.0
+        # (isaac/scripted_pick_place.py) and the model learns per-tick joint
+        # DELTAS at that rate (openpi_integration/train_config_snippet.py's
+        # DeltaActions mask); this node re-queries and applies only
+        # action_chunk[0] once per control tick (see _run_step below), so
+        # serving at 10Hz replayed those deltas ~6x too slowly. Matching the
+        # recording rate here only fixes the arithmetic, not whether a real
+        # UR5e + a policy.infer() round-trip can actually keep to 60Hz --
+        # confirm that live before trusting it; if it can't, the fix is
+        # re-recording demonstrations at a rate serving can sustain, not
+        # loosening this back down.
+        self.declare_parameter('control_hz', 60.0)
         # ADJUST: real-hardware camera topics -- match your actual camera driver's topic names.
         self.declare_parameter('base_image_topic', '/camera/base/image_raw')
         self.declare_parameter('wrist_image_topic', '/camera/wrist/image_raw')
-        # 'none' (default): robot_interface.py's placeholder relay, gripper
-        # state reported as NOT MEASURED. 'robotiq_socket': a real Robotiq
-        # over the UR controller's Socket ADI interface (port
+        # 2026-09-23: was 'none'. Only consulted when robot_backend='rtde'
+        # (the isaac_sim backend always reads the simulated joint state
+        # instead, unaffected by this default either way) -- but on real
+        # hardware, 'none' means robot_interface.py's placeholder relay,
+        # gripper state reported as NOT MEASURED, so this node feeds the
+        # policy the value it just commanded instead of what the gripper
+        # actually did (a grasp that failed to close then looks identical
+        # to one that worked -- see the runtime warning a few hundred lines
+        # down, which already flagged this; this just makes the default
+        # match the warning instead of contradicting it). 'robotiq_socket':
+        # a real Robotiq over the UR controller's Socket ADI interface (port
         # gripper_socket_port at robot_ip) -- see robotiq_socket_gripper.py.
-        # Only consulted when robot_backend='rtde'; the isaac_sim backend
-        # always reads the simulated joint state instead.
-        self.declare_parameter('gripper_driver', 'none')
+        # Nothing in this project has run against real hardware yet (every
+        # rtde-path file's own docstring says so), so there is no working
+        # real-hardware launch this default change can break; it only means
+        # the FIRST real launch fails loudly at startup (if no Robotiq is
+        # actually reachable at robot_ip:gripper_socket_port) instead of
+        # silently collecting unmeasured-gripper data. Pass --gripper_driver
+        # none explicitly if you deliberately want the old placeholder
+        # relay (e.g. bring-up with the gripper not yet wired).
+        self.declare_parameter('gripper_driver', 'robotiq_socket')
         self.declare_parameter('gripper_socket_port', 63352)
         self.declare_parameter('max_steps', 300)  # safety cap -- stop after this many control ticks regardless of task completion
         # Residual RL (see isaac/residual_rl_train_env.py / train_residual_policy.py,
@@ -106,7 +131,20 @@ class VLAPolicyClient(Node):
         self.declare_parameter('n_trials', 20)
         self.declare_parameter('success_xy_tolerance_m', 0.03)  # matches hybrid_pick_place_demo.py / residual_rl_train_env.py
         self.declare_parameter('holding_gripper_threshold', 0.5)  # matches residual_rl_train_env.py
-        self.declare_parameter('lifted_z_threshold', 0.03)  # matches residual_rl_train_env.py
+        # 2026-09-23: was 0.03 ("matches residual_rl_train_env.py" -- true,
+        # but residual_rl_train_env.py's own 0.03 was itself a stray
+        # duplicate of isaac/pick_place_scene.py's LIFT_Z_THRESHOLD, now
+        # fixed to import that instead of redeclaring it). LIFT_Z_THRESHOLD
+        # is 0.08 -- this file cannot import it directly (it must run with
+        # no Isaac Sim on the real robot, and pick_place_scene.py pulls in
+        # isaacsim at import time), so the value is copied here by hand.
+        # Keep this in sync with pick_place_scene.LIFT_Z_THRESHOLD if that
+        # ever changes -- nothing enforces the two matching automatically.
+        # Without this, an episode collect_demos.py would reject as "never
+        # lifted" (1-3cm) was instead being logged SUCCESS by eval_mode's
+        # results_csv, defeating the three-pipeline comparison this csv
+        # schema exists for (see the class docstring above).
+        self.declare_parameter('lifted_z_threshold', 0.08)
         self.declare_parameter('eval_target_position', [0.45, 0.30, 0.0])  # must match isaac/pick_place_scene.py's PLACE_TARGET_POSITION
         self.declare_parameter('results_csv_path', 'vla_eval_results.csv')
 

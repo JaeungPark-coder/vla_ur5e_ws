@@ -35,13 +35,19 @@ HEADLESS = os.environ.get("ISAAC_RESIDUAL_ENV_HEADLESS", "1") != "0"
 simulation_app = SimulationApp({"headless": HEADLESS})
 
 # --- everything below must be imported AFTER SimulationApp() starts Kit ---
-from pick_place_scene import PickPlaceScene, PLACE_TARGET_POSITION  # noqa: E402
+from pick_place_scene import PickPlaceScene, PLACE_TARGET_POSITION, LIFT_Z_THRESHOLD  # noqa: E402
 
 OBS_DIM = 14   # joints(6) + gripper(1) + pi0's own proposed action(7) -- see module docstring in ../README.md Phase 4 on why NOT cube/target position
 ACTION_DIM = 6  # residual correction on the 6 arm joints only -- gripper stays under pi0's direct control
 
 SUCCESS_XY_TOLERANCE_M = 0.03  # cube-to-target planar distance counted as "placed"
 HOLDING_GRIPPER_THRESHOLD = 0.5  # gripper value above this counts as "closed enough to be holding the cube"
+# 2026-09-23: this used to duplicate LIFT_Z_THRESHOLD as a bare 0.03 literal
+# (see the "is_holding" check below) -- one third of a three-way split with
+# collect_demos.py's 0.08 and vla_policy_client.py's own 0.03 default,
+# silently scoring "closed and 1cm up" as a hold during RL training against
+# a data-collection gate that requires 6cm. Now imported from
+# pick_place_scene.py, the single source of truth, instead of redeclared.
 
 
 class IsaacResidualEnv(gym.Env):
@@ -124,7 +130,7 @@ class IsaacResidualEnv(gym.Env):
         on the residual's own magnitude so corrections stay "residual"
         rather than a second policy fighting pi0's own action."""
         cube_pos = self.scene.get_cube_position()
-        is_holding = target_gripper >= HOLDING_GRIPPER_THRESHOLD and cube_pos[2] > 0.03  # closed AND lifted off the table
+        is_holding = target_gripper >= HOLDING_GRIPPER_THRESHOLD and cube_pos[2] > LIFT_Z_THRESHOLD  # closed AND lifted off the table
 
         xy_dist_to_target = float(np.linalg.norm(cube_pos[:2] - PLACE_TARGET_POSITION[:2]))
         reward = 0.0
