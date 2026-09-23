@@ -968,6 +968,48 @@ false SUCCESS at either trial boundary, and the "waiting for camera
 images" guard visibly engages for the ticks right after a reset before
 each new trial's data is fresh.
 
+### 2026-09-23, B-1's --stiffness-scale sweep: confirms the alignment offset, but NOT the lift itself
+
+Ran `pivot_dwell_check.py --stiffness-scale 3 --damping-scale 1.7320508`
+(sqrt(3), to hold the damping ratio constant while scaling stiffness --
+this file's own argparse help already warns that raising stiffness alone
+is "a classic source of the exact contact blow-up this project has
+already hit"). Result: the static per-axis offset the previous entry
+found (free space dx=-4.7/dy=-3.2/dz=-5.7mm, grasp pose
+dx=+24.1/dy=+6.4/dz=+26.8mm) **collapses to near-zero** at 3x stiffness --
+free space dx=-0.1/dy=-0.3/dz=-0.0mm, grasp pose dx=-0.5/dy=-0.1/dz=-0.4mm.
+A 48-67x reduction at the grasp pose, well beyond the ~3x a naive
+error-proportional-to-1/stiffness P-control model predicts. Confirms the
+offset is stiffness-limited steady-state error, not a fixed geometric bug
+-- B-1's alignment question is resolved.
+
+**But this does not fix the actual grasp-lift problem.** Immediately
+tested whether the same damping-matched 3x stiffness improves real
+grasp-and-lift outcomes: `check_grasp_alignment.py --episodes 5
+--hold-ticks 0 --seed 42 --stiffness-scale 3 --damping-scale 1.7320508`.
+Result: max_cube_z = 20.0 / 46.0 / 25.4 / 25.3 / 38.8mm -- still **5/5
+lifted=no**, barely different from the unscaled baseline measured earlier
+today (22.7 / 39.2 / 23.2 / 28.4 / 39.9mm). The earlier 2026-09-22
+stiffness sweep's 0/4-at-every-setting result was NOT an artifact of
+unmatched damping -- properly damping-matched stiffness still doesn't
+close the ~34mm gap to `LIFT_Z_THRESHOLD=0.08m`.
+
+The two questions this project has been treating as related turn out to
+be separable: **holding a commanded pose accurately** (B-1, now solved by
+stiffness) and **actually lifting the cube** (A-1, still 0% regardless).
+Whatever limits the lift is not the same steady-state positioning error
+pivot_dwell_check measures -- it's something specific to the
+close-and-lift dynamics (finger contact/friction during closing, grip
+centering during the CLOSE motion rather than a static hold, or genuinely
+needing gravity compensation once the cube's weight is added as an actual
+payload once grasped, which `pivot_dwell_check.py` never tests -- it
+holds a pose with nothing in the gripper). The gravity-compensation /
+effort-control path (get_generalized_gravity_forces() +
+hand-computed PD + Jacobian-based payload compensation, researched this
+session but not yet implemented) is still the next candidate specifically
+for the closed-gripper/lifting case -- not for the alignment problem this
+sweep just closed.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls
