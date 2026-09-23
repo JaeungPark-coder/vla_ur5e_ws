@@ -106,7 +106,8 @@ from scripted_pick_place import ScriptedPickPlace, GRASP_HEIGHT  # noqa: E402
 from isaac_sim_common import (  # noqa: E402
     GRIPPER_OPEN_POS, GRIPPER_CLOSED_POS, prim_world_pose, ROBOT_PRIM_PATH,
     ARM_JOINT_NAMES, get_joint_drive_gains, set_joint_drive_gains,
-    GRIP_MATERIAL_PRIM_PATH)
+    GRIP_MATERIAL_PRIM_PATH, GRIPPER_DRIVE_JOINT_NAME, set_joint_max_force,
+    zero_follower_joint_drives)
 
 # The last 2 of ARM_JOINT_NAMES -- closest to the tool, so a gripper-tip
 # reaction force most directly loads these (smallest inertia, most easily
@@ -207,7 +208,8 @@ def report_pose_detail(scene, label):
 
 
 def run(episodes, hold_ticks, seed, stiffness_scale, damping_scale, joint_choice,
-        static_friction, dynamic_friction, finger_kp, finger_kd):
+        static_friction, dynamic_friction, finger_kp, finger_kd,
+        finger_effort_limit, zero_follower_pd):
     scene = PickPlaceScene(with_gripper=True, finger_kp=finger_kp, finger_kd=finger_kd)
     say(f"GRIPPER_OPEN_POS={GRIPPER_OPEN_POS} GRIPPER_CLOSED_POS={GRIPPER_CLOSED_POS} rad")
     say(f"finger_joint drive gains: kp={finger_kp if finger_kp is not None else 20000.0:g} "
@@ -258,6 +260,27 @@ def run(episodes, hold_ticks, seed, stiffness_scale, damping_scale, joint_choice
                 robot_prim, joint_names=(name,),
                 stiffness=(stiffness * stiffness_scale) if stiffness is not None else None,
                 damping=(damping * damping_scale) if damping is not None else None)
+
+    # 2026-09-24: --finger-effort-limit/--zero-follower-pd, added straight
+    # from the IsaacLab FRANKA_ROBOTIQ_GRIPPER_CFG comparison (same
+    # Robotiq_2F_85 asset, effort_limit_sim=1650 on finger_joint and
+    # stiffness=damping=0 on the passive/follower joints, vs this project's
+    # unset effort limit and as-shipped follower gains) -- see the README's
+    # 2026-09-24 section for the full comparison. Authored into USD via the
+    # same DriveAPI calls set_joint_drive_gains already uses for the wrist
+    # joints above, so (unlike finger_joint's own kp/kd, see
+    # reapply_drive_gains) these should survive every episode's Stop+Play
+    # without needing to be reapplied -- confirm that assumption live too.
+    if finger_effort_limit is not None or zero_follower_pd:
+        robot_prim = scene.stage.GetPrimAtPath(ROBOT_PRIM_PATH)
+        if finger_effort_limit is not None:
+            changed = set_joint_max_force(robot_prim, finger_effort_limit,
+                                           joint_names=(GRIPPER_DRIVE_JOINT_NAME,))
+            say(f"finger_joint max_force set to {finger_effort_limit:g} (changed: {changed})")
+        if zero_follower_pd:
+            follower_names = zero_follower_joint_drives(robot_prim)
+            say(f"follower/passive joint PD zeroed on: {follower_names} "
+                f"({'WARNING: none found -- check resolve_gripper_follower_joint_names' if not follower_names else 'OK'})")
         after = get_joint_drive_gains(robot_prim, joint_names=joint_names)
         say(f"  after:  {after}")
 
@@ -398,6 +421,7 @@ def run(episodes, hold_ticks, seed, stiffness_scale, damping_scale, joint_choice
     say(f"\n=== SUMMARY (stiffness x{stiffness_scale:g}, damping x{damping_scale:g}, "
         f"joints={joint_choice}, static_friction={static_friction}, "
         f"dynamic_friction={dynamic_friction}, finger_kp={finger_kp}, finger_kd={finger_kd}, "
+        f"finger_effort_limit={finger_effort_limit}, zero_follower_pd={zero_follower_pd}, "
         f"seed={seed}) ===")
     say(f"  any non-finite joint state: {'YES -- UNSTABLE' if any_nonfinite else 'no'}")
     for ep_num, plateau in hold_plateaus:
@@ -447,11 +471,25 @@ def main():
     parser.add_argument("--finger-kd", type=float, default=None,
                         help="override GripperController's as-shipped-fixed finger_joint "
                              "damping (baseline 500.0). See --finger-kp.")
+    parser.add_argument("--finger-effort-limit", type=float, default=None,
+                        help="set finger_joint's drive max_force (Nm) -- unset by default in "
+                             "this project (no cap at all). IsaacLab's own reference Robotiq "
+                             "config uses 1650 alongside its much lower kp=17/kd=0.02; try that "
+                             "pairing (--finger-kp 17 --finger-kd 0.02 --finger-effort-limit "
+                             "1650) as a single, cheap first experiment against this project's "
+                             "20000/500/unlimited baseline.")
+    parser.add_argument("--zero-follower-pd", action="store_true",
+                        help="zero stiffness/damping on the gripper's mimic-constrained "
+                             "follower joints (auto-resolved, see "
+                             "isaac_sim_common.resolve_gripper_follower_joint_names), matching "
+                             "IsaacLab's reference config's \"set PD to zero for passive joints "
+                             "in close-loop gripper\". Off by default (this project's followers "
+                             "have always kept their as-shipped 171.89/0.0115 drive).")
     args = parser.parse_args()
     try:
         run(args.episodes, args.hold_ticks, args.seed, args.stiffness_scale,
             args.damping_scale, args.joints, args.static_friction, args.dynamic_friction,
-            args.finger_kp, args.finger_kd)
+            args.finger_kp, args.finger_kd, args.finger_effort_limit, args.zero_follower_pd)
     except BaseException:
         import traceback
         say("\n=== FAILED ===")

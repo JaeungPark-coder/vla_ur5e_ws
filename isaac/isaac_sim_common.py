@@ -297,6 +297,71 @@ def set_joint_drive_gains(robot_prim, stiffness=None, damping=None, joint_names=
     return changed
 
 
+def set_joint_max_force(robot_prim, max_force, joint_names=(GRIPPER_DRIVE_JOINT_NAME,)):
+    """Sets each named joint's angular drive max_force (effort limit, Nm) --
+    `UsdPhysics.DriveAPI`'s own `maxForce` attribute, same Apply/Create
+    pattern as set_joint_drive_gains's stiffness/damping and the same core
+    USD Physics schema (not a PhysX-specific extension), so this should
+    behave the same way. 2026-09-24: added specifically because this
+    project's finger_joint has never had an effort limit set at all (grep
+    confirmed, before this function existed) while IsaacLab's own reference
+    Robotiq config (franka.py's FRANKA_ROBOTIQ_GRIPPER_CFG) sets
+    effort_limit_sim=1650 on the same joint alongside its much lower
+    kp=17/kd=0.02 -- an unlimited-force drive at this project's kp=20000
+    can, in principle, command far more squeeze force than any real
+    finger_joint actuator could produce. UNVERIFIED against a live run.
+    Returns the joint names actually found and changed."""
+    changed = []
+    for name in joint_names:
+        joint_prim = _find_joint_prim(robot_prim, name)
+        if joint_prim is None:
+            continue
+        drive = UsdPhysics.DriveAPI.Apply(joint_prim, "angular")
+        drive.CreateMaxForceAttr(float(max_force))
+        changed.append(name)
+    return changed
+
+
+def resolve_gripper_follower_joint_names(robot_prim, drive_joint_name=GRIPPER_DRIVE_JOINT_NAME):
+    """Every joint prim under the Gripper subtree except `drive_joint_name`
+    itself -- the mimic-constrained followers (inner_finger_joint x2,
+    knuckle joints, etc. on a stock Robotiq 2F-85) that _fix_drive_gains
+    never touches, so they still carry the as-shipped 171.89/0.0115 drive.
+    Discovered by walking the tree and checking UsdPhysics.Joint (the base
+    type every joint schema -- Revolute/Prismatic/Fixed -- derives from),
+    not a hardcoded name list: this project's actual asset is a bare UR5e +
+    Robotiq_2F_85 variant, not IsaacLab's Franka+Robotiq combination its
+    joint-name patterns (".*_inner_finger_joint" etc.) come from, and this
+    project's own joint names were never confirmed against that convention
+    -- a wrong hardcoded guess would silently match nothing, which is worse
+    than no fix at all. UNVERIFIED against a live run (in particular:
+    whether UsdPhysics.Joint is the right base-type check for however this
+    asset's mimic joints are actually typed)."""
+    stage = robot_prim.GetStage()
+    gripper_root = stage.GetPrimAtPath(f"{robot_prim.GetPath()}/Gripper")
+    if not gripper_root.IsValid():
+        return []
+    return [prim.GetName() for prim in Usd.PrimRange(gripper_root)
+            if prim.IsA(UsdPhysics.Joint) and prim.GetName() != drive_joint_name]
+
+
+def zero_follower_joint_drives(robot_prim, joint_names=None):
+    """Sets stiffness=damping=0 on the gripper's follower/knuckle joints
+    (see resolve_gripper_follower_joint_names) -- IsaacLab's own reference
+    Robotiq config does exactly this ("set PD to zero for passive joints in
+    close-loop gripper", franka.py's gripper_passive actuator group), on
+    the reasoning that a mimic/gear constraint already forces these joints'
+    positions to track finger_joint, so a live PD drive on top of that
+    constraint has nothing useful left to do and can only fight the
+    constraint solver. joint_names=None (default) auto-resolves via
+    resolve_gripper_follower_joint_names; pass an explicit list to skip
+    that if it ever mis-resolves. UNVERIFIED against a live run. Returns
+    the joint names actually found and changed."""
+    if joint_names is None:
+        joint_names = resolve_gripper_follower_joint_names(robot_prim)
+    return set_joint_drive_gains(robot_prim, stiffness=0.0, damping=0.0, joint_names=joint_names)
+
+
 def select_gripper_variant(robot_prim, candidates=None):
     """Turn on the arm asset's built-in gripper by selecting a variant.
 
