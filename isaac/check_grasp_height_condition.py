@@ -34,6 +34,14 @@ CORNERS = {
     "at_cube corner (xmax,ymax)": [CUBE_X_RANGE[1], CUBE_Y_RANGE[1], GRASP_Z],
     "at_cube centre": [np.mean(CUBE_X_RANGE), np.mean(CUBE_Y_RANGE), GRASP_Z],
     "at_target": [PLACE_TARGET_POSITION[0], PLACE_TARGET_POSITION[1], GRASP_Z],
+    # The gate's own CONFIRMED wind-up case (feasibility_gate.py's docstring,
+    # also test_feasibility_gate.py's "CONFIRMED BAD") -- rejected by
+    # workspace_ok() on height alone, so its condition number/manipulability
+    # was never actually computed until now. Checking it directly resolves
+    # the asymmetry the 2026-09-23 write-up flagged: is the z=20-40mm range
+    # safe because it's never near-singular (so Z_MIN_M can be lowered), or
+    # was the original wind-up itself never a manipulability problem at all?
+    "CONFIRMED BAD wind-up case (elbow->162deg)": [0.4618, 0.0636, 0.0222],
 }
 
 Z_SWEEP = [0.02, 0.04, 0.06, 0.08, 0.10, 0.12, 0.14]
