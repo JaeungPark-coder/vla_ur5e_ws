@@ -598,6 +598,174 @@ vs. a remote-session comment's `57300` via
 `ArticulationController.get_gains()`) matters here specifically, since it
 bears on what "x1" is actually a multiple of.
 
+### 2026-09-23: the wrist_3_joint unit mismatch above is resolved, and a paired human+model review of the rest of the codebase found nine more real bugs
+
+**The `1000.08` vs `57300` discrepancy two sections up is a units mismatch,
+not two different numbers competing to be true.** `get_joint_drive_gains`
+reads `UsdPhysics.DriveAPI` off the USD prim (degree-based, per Isaac
+Sim's own Articulation Controller docs: "Angular units are expressed in
+radians while angles in USD are expressed in degrees and will be adjusted
+accordingly by the articulation controller"); the `57300` figure came from
+`ArticulationController.get_gains()` (radian-based, live PhysX view).
+`57300 / 1000.08 = 57.2954`, `180/pi = 57.2958` -- agrees to 4 significant
+figures. `get_joint_drive_gains`/`set_joint_drive_gains` (both used by the
+wrist sweep above) read AND write through the same USD-degree API
+consistently, so the sweep's own 1x/2x/3x results are unaffected by this --
+nothing to re-measure there. What this resolves is only the cross-
+comparison: `GripperController._fix_drive_gains`'s `kp=20000` (below) is in
+the OTHER (radian, live-controller) unit space, so comparing it to the
+wrist joints' USD-degree numbers needs the 57.3x conversion, not a raw
+read.
+
+**Then a session-long paired review (a pasted external analysis
+cross-checked line-by-line against this actual repo, not trusted at face
+value) found real bugs across the parts of this project nobody had
+re-read since they were written -- worth recording in one place since
+several of these were invisible without directly executing code, not
+just reading it:**
+
+1. **`GripperController._fix_drive_gains` only ever ran ONCE per process,
+   guarded by `_resolve_joint_index`'s `if self._drive_joint_index is
+   None` -- true only for episode 1**, since this controller instance
+   persists for the whole multi-episode run. It writes only to the live
+   `controller.get_gains()`/`set_gains()` view, never authoring back into
+   USD (unlike the wrist joints' `set_joint_drive_gains`) -- and this
+   project's own `rescale_gripper_mass_to_spec` docstring already
+   establishes why that matters: "USD physics schema is only re-parsed at
+   Play time", which is exactly why mass has to be authored into USD to
+   survive a reset. Every episode's `world.reset()` is a hard Stop+Play
+   that invalidates the arm's physics handles (`robot.initialize()` is
+   redone every episode BECAUSE of this) -- so `finger_joint` most likely
+   ran at its intended `kp=20000/kd=500` for episode 1 only, and silently
+   reverted to the as-shipped `171.89/0.0115` (47% closure in free space)
+   from episode 2 on, in every multi-episode run since the 2026-09-19 fix
+   landed. The "98.75%" closure figure that fix's own verification cites
+   came from a single-episode diagnostic (`diag_gripper_gains_mimic.py`),
+   which could not have exposed this. Fixed: `GripperController.
+   reapply_drive_gains()`, called from `PickPlaceScene.reset()` right
+   after `robot.initialize()`, every episode.
+2. **The scripted expert's place waypoint drove the cube CUBE_Z (2cm) into
+   the table.** `at_cube` and `at_target` both added `+GRASP_HEIGHT`, but
+   to positions in different reference frames: `cube_position` is the
+   cube's CENTRE (resting on the table), `target_position`
+   (`PLACE_TARGET_POSITION`) is the TABLE SURFACE. Invisible until now
+   because no episode has ever reached the place phase, and
+   `place_error_m()` only checks XY. Fixed by deriving the same
+   cube-centre-height offset from `cube_position`'s own z (correct
+   per-object in the multi-object scene too).
+3. **Two `validate_dataset.py` blind spots**, found by constructing
+   adversarial episodes and feeding them straight to `validate_episode`:
+   all frames byte-identical to the first (a frozen/stale camera with a
+   perfectly normal-looking state/action trace) passed cleanly, and so did
+   a gripper that closes and never reopens (no place/release phase, so
+   "gripper moved at all" was satisfied by the one close). Both fixed. The
+   existing `good_episode`/`correct_episode` test fixtures turned out to
+   already have exactly these two defects -- fixed the fixtures too,
+   rather than loosen the new checks to fit them.
+4. **`collect_demos.py`'s cube-visibility gate only fired on `n_success ==
+   1`** -- catches a broken-from-the-start camera but not a mid-run
+   regression, since the scripted expert drives off ground-truth
+   `cube_position`, not vision, so a later episode can lift+place
+   correctly (get saved) with the cube barely visible in its own recorded
+   frames. Now checked on every SAVED episode.
+5. **`params.yaml` was silently reverting the control_hz/gripper_driver/
+   lifted_z_threshold fixes below** (item 6) **back to their old values at
+   launch.** `ros2 launch` loads `parameters=[params_file, ...]`, which
+   overrides `vla_policy_client.py`'s own `declare_parameter` defaults --
+   so fixing the Python defaults alone was a no-op for anyone launching
+   via `vla_bridge.launch.py`, the path this README documents. Fixed in
+   the yaml too.
+6. **Three train/serve mismatches**, found by cross-referencing constants
+   across files: (a) `LIFT_Z_THRESHOLD` (0.08, what `collect_demos.py`
+   gates a saved demo on) was duplicated as a stray `0.03` in
+   `residual_rl_train_env.py`, `openvla_pick_place_demo.py`, and
+   `vla_policy_client.py`'s `lifted_z_threshold` default -- the last of
+   which is the flag `eval_mode` writes to `results_csv` as "success", so
+   a 1-3cm lift `collect_demos.py` would reject was being logged SUCCESS
+   there. All three now import `LIFT_Z_THRESHOLD` or copy it with a
+   sync-manually comment, instead of redeclaring it independently. (b)
+   `control_hz` defaulted to 10.0 while demonstrations are recorded at
+   `CONTROL_HZ=60.0` and only `action_chunk[0]` is applied per control
+   tick (re-inferring every tick) -- serving at 10Hz replayed 60Hz-sized
+   deltas roughly 6x too slowly. Raised to 60.0; whether a real UR5e can
+   sustain a `policy.infer()` round trip at 60Hz is still unverified. (c)
+   `gripper_driver` defaulted to `'none'` (unmeasured gripper, command
+   echoed back as observation) for the real-hardware path, contradicting
+   the node's own runtime warning that this is a train/serve mismatch --
+   changed the default to `'robotiq_socket'`.
+7. **`hybrid_pick_place_demo.py` had no lift check at all** -- success was
+   final XY placement error alone, so shoving the object to within 30mm of
+   the target counted identically to an actual grasp-lift-place. Since all
+   three pipelines share one `results_csv` schema specifically for a
+   direct comparison, this made hybrid structurally easier to "win" for a
+   reason unrelated to task performance. Added `max_object_z` tracking and
+   required it past `LIFT_Z_THRESHOLD`, matching the other two pipelines.
+8. **`camera_projection.py`'s forward axis was +Z; USD cameras image along
+   local -Z; the hybrid pipeline's every single trial returned "camera ray
+   never crosses the table plane" as a result.** Reproduced directly
+   against this project's real `BASE_CAMERA_POSITION`/`BASE_CAMERA_AIM_
+   POINT` and the actual rotation matrix `_look_at_quat` would build for
+   it: `ray_world`'s z came out positive (pointing up and away from the
+   table) when it needed to be negative, so `pixel_to_table_position`
+   returned `None` for every pixel -- indistinguishable in the logs from a
+   rare, correctly-handled edge case, but actually 100% of runs,
+   independent of every grasp/lift issue elsewhere in this project. Not
+   caught by the module's own round-trip smoke test because projection and
+   its inverse always agree with EACH OTHER under whatever convention
+   either uses, by construction. Fixed (`pixel_to_camera_ray`'s z to -1.0,
+   `project_point_to_pixel`'s depth to `-direction_cam[2]`), and added two
+   smoke tests that duplicate `_look_at_quat`'s math (can't import
+   `pick_place_scene.py` directly -- needs Isaac Sim at import time) to
+   catch a repeat.
+9. **`llm_command_parser.py`'s JSON extraction only stripped a fence at
+   the very START of the response** -- the two most common real
+   deviations (a leading sentence before a fenced block, and a leading
+   sentence with no fence at all, neither starting with a fence) still
+   failed. Replaced with try-whole-response, then a fence found anywhere
+   via regex, then a quote/escape-aware balanced-`{...}` scan as a last
+   resort. Added this
+   module's first test coverage (`test_llm_command_parser.py`) since it
+   had none.
+
+**Confirmed fine, no fix needed:** the cube's collider (native
+`UsdGeom.Cube`, an exact analytic box, not a mesh needing convexHull/SDF
+approximation at all); the two different pixel-visibility thresholds
+between `collect_demos.py` and `validate_dataset.py` (deliberately
+different jobs -- one geometry-derived and collection-time, one a
+portable post-hoc floor); `EULER_SEQ='xyz'` (checked directly against
+OpenVLA's own `prismatic/vla/datasets/rlds/oxe/utils/droid_utils.py`,
+which uses `tfg.rotation_matrix_3d.from_euler`, `R = R_z R_y R_x` -- scipy
+`as_euler('xyz')` agrees to 0.000000000deg, `'zyx'` would have disagreed by
+up to 145deg).
+
+**Still open, deliberately not fixed without a decision or a live run:**
+OpenVLA's base-camera view puts the cube at ~14px across, which 224x224
+resizing shrinks under one ViT patch -- narrowing the workspace, raising
+`CAMERA_RESOLUTION`, or adding the wrist camera to the OpenVLA collector
+(favoured: already exists, already used by pi0, and would make the
+pi0-vs-OpenVLA comparison itself more apples-to-apples) are the three
+options, unpicked. `feasibility_gate.py`'s own `workspace_ok` (pure numpy,
+run directly, no Isaac Sim needed) rejects the grasp AND place waypoints
+outright -- `at_cube`/`at_target` sit at z=40mm across the whole cube
+spawn range, all under `Z_MIN_M=0.08`, the same height regime as the
+gate's own CONFIRMED failing case (elbow wind-up at z=22mm). Whether that
+means the height genuinely needs raising (a pedestal under the cube) or
+`Z_MIN_M` was just an untested-but-safe guess needs `check()`'s
+condition-number/manipulability numbers, which need the live Lula solver
+-- next session's task, not resolved here.
+
+**None of the nine fixes above have been run against a live Isaac Sim
+session** -- every one was found and fixed by reading code, cross-
+referencing constants, or running the pure-numpy/pure-Python pieces
+directly (`workspace_ok`, `camera_projection.py`, `_extract_json_text`,
+etc.) outside Isaac Sim. `py_compile` and `pytest test/ -q` (130 passed,
+up from 121) are clean throughout, which rules out syntax and regression
+against the existing suite, not correctness against the simulator. The
+next Isaac Sim session's first job is re-running the finger-gain sweep
+(now that fix 1 makes it mean what it's supposed to across episodes,
+which the original 2026-09-22 sweep numbers above may not have) and
+checking whether each of these actually holds up live.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls
