@@ -766,6 +766,99 @@ next Isaac Sim session's first job is re-running the finger-gain sweep
 which the original 2026-09-22 sweep numbers above may not have) and
 checking whether each of these actually holds up live.
 
+### 2026-09-23, continued: E-4 and B-1 measured live, F-3 found broken a second time, and eval_mode hits a new blocker before its own fix can even be exercised
+
+Picked up the "next session" list from the section above, in the order it
+gave: E-4's condition number, B-1's finger sweep, then F-3/F-4 live.
+
+**E-4 resolved -- `Z_MIN_M=0.08` is not guarding a real singularity here.**
+Added `check_grasp_height_condition.py`, which runs `check()`'s own
+IK+Jacobian math directly (bypassing `workspace_ok()`'s height cutoff) at
+the real `at_cube`/`at_target` corners and a z-sweep from 20mm to 140mm at
+the cube-spawn centre. Result: `condition_number` is flat at 6.9-8.5 and
+`manipulability` at 0.048-0.078 across the *entire* range, including
+z=20mm -- nowhere near `CONDITION_SOFT=17`. This xy/z region is not
+near-singular by this measure, so `Z_MIN_M=0.08` looks like an
+untested-but-safe guess rather than something this task's own geometry
+needs. Caveat: the gate's own CONFIRMED bad case (elbow wound to 162deg)
+was *also* never run through this IK/Jacobian check -- `test_feasibility_gate.py`
+rejects it on the height check alone, before IK -- so this doesn't
+retroactively explain that incident, which came from `check_singularity.py`
+driving RMPflow directly (dynamic tracking behavior this static check may
+not capture). Didn't lower `Z_MIN_M` on this alone; the scripted lift
+already drives through z=40mm every episode, so watch for wind-up there
+before trusting this number over the original incident.
+
+**B-1 reconfirmed live: the gain-reapplication fix holds, still 0/5
+lifted, and a new alignment clue.** Ran `check_grasp_alignment.py
+--episodes 5 --hold-ticks 0 --seed 42` at baseline (stiffness/damping x1).
+max_cube_z per episode: 22.7 / 39.2 / 23.2 / 28.4 / 39.9mm -- no
+episode-1-only advantage and no monotonic decay, which is what fix 1
+(reapply drive gains every episode) was supposed to produce and does. No
+non-finite joint state either. Still 0/5 past the 80mm threshold. New in
+this run's diagnostics: at the end of the close segment, *both* fingertip
+mesh bboxes read the same-direction ~+16 to +17mm X offset from the cube
+centre (left: dx=+16.9mm, right: dx=+17.3mm) -- not a left/right asymmetry,
+the whole gripper is closing off-centre in X, consistently. Worth checking
+against the wrist-camera alignment tooling before the next sweep.
+
+**F-3 was broken again -- same bug, different commit.** Re-grepped
+`hybrid_pick_place_demo.py` after pulling the "nine bugs" round and found
+`policy = ScriptedPickPlace(...)` missing *again*: the commit that added
+the lift check (item 7 above, tracking `max_object_z`) rewrote this same
+block and dropped the assignment a second time while keeping the
+now-orphaned `policy.generate_frames()` call below it. Re-added it (commit
+`eecb4c5`), with a comment explaining why it keeps disappearing -- the
+constructor's `target_position` parameter (the place destination) and this
+function's own `target_position` local (the perceived pick location) share
+a name, and whoever's editing this block reads that collision as "already
+wired" and doesn't notice `policy` itself never got assigned.
+
+**F-4's own fix is still unverified live -- eval_mode hits a bigger
+blocker first.** Set up ROS2 for real: this machine already has ROS2 Iron
+installed system-wide (not Humble/Jazzy, which is all Isaac Sim 5.1 bundles
+internally), and the two do not mix -- a system-Iron `ros2` CLI joining the
+graph crashed the Isaac-Sim-side bridge process outright (segfault inside
+`librmw_dds_common` deserializing `ParticipantEntitiesInfo`, a cross-FastDDS-version
+wire mismatch in ROS2's own internal graph-discovery topic, not this
+project's code). Worked around it by running `vla_policy_client.py` itself
+under Isaac Sim's bundled Humble `rclpy` too (Isaac Sim's kit python is
+3.11; system Iron is built for 3.10, so the two were never binary-compatible
+anyway) -- `source setup_python_env.sh` plus `ROS_DISTRO=humble`,
+`AMENT_PREFIX_PATH=<isaac-sim>/exts/isaacsim.ros2.bridge/humble`,
+`LD_LIBRARY_PATH+=.../humble/lib`, `PYTHONPATH+=.../humble/rclpy`, run with
+`<isaac-sim>/kit/python/bin/python3` directly (no `SimulationApp` needed on
+the client side). `cv_bridge` isn't in Isaac Sim's bundled humble libs at
+all; `pip install cv_bridge` (a pure-Python wheel, no compiled bindings)
+into Isaac Sim's own `python.sh` environment fixes that on the bridge
+side. With both sides on the same distro, real cross-process ROS2 messaging
+was confirmed working (`/vla/joint_state`, images via `cv_bridge`, all
+real data). Tested with `openpi`/the LLM stack deliberately left out of
+scope -- `vla_policy_client.py`'s `WebsocketClientPolicy` import is local to
+`__init__`, not module-level, so a throwaway stub package (hold-still
+action, cycles the gripper) standing in for `openpi_client` drives the
+real, unmodified control loop without needing a checkpoint or a server.
+
+That got an eval run going -- and immediately found something more
+fundamental than the caching bug F-4 fixes: **`pick_place_scene_bridge.py`'s
+Kit app cleanly shuts itself down** ("Simulation App Shutting Down", no
+crash, no traceback) the moment it processes the first `/vla/eval/reset`
+while a ROS2 client is attached. Reproduced twice, in the same spot both
+times: bridge runs fine solo for 12+ minutes, client connects, trial 1
+completes normally (max_steps reached, logged FAILURE), client publishes
+the reset, bridge calls `scene.reset()`, app exits. Other scripts
+(`check_grasp_alignment.py`, `sweep_gripper_axis.py`) call `scene.reset()`
+repeatedly all the time with no issue, so it isn't `reset()` itself --
+something specific to resetting while `enable_extension("isaacsim.ros2.bridge")`
+is loaded and a client is connected, in headless mode. Root cause not
+found. This blocks eval_mode from completing even one reset, which means
+F-4's cache-clearing fix (still believed correct by code review -- the
+mechanism it targets is real and the fix is a straightforward instance of
+the existing "wait for fresh data" guard) has **not** been exercised
+against a live trial boundary yet. Next Isaac Sim session: chase this
+shutdown before anything else eval_mode-related, since nothing past it is
+reachable.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls
