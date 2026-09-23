@@ -62,7 +62,7 @@ def main():
         env.close()
 
     print(f"done -- final model saved to {os.path.join(MODELS_DIR, 'residual_policy_final.zip')}")
-    print("set vla_policy_client's use_residual_policy:=true and rl_model_path to that file to use it.")
+    print("set vla_policy_client's use_residual_policy:=true and residual_model_path to that file to use it.")
 
 
 if __name__ == "__main__":

@@ -370,6 +370,13 @@ class VLAPolicyClient(Node):
         self._eval_reset_pub.publish(Empty())
         self._step_count = 0
         self._was_holding = False
+        # Reused as the "not ready yet" gate: without this, _run_step keeps
+        # scoring against the previous trial's stale cache while the bridge
+        # is synchronously blocked inside scene.reset(), which can log a
+        # false SUCCESS before this trial has done anything.
+        self._base_image = None
+        self._wrist_image = None
+        self._latest_cube_position = None
 
 
 def main():
