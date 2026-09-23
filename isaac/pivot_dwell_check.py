@@ -200,7 +200,6 @@ def main():
         gate = None
         try:
             from feasibility_gate import FeasibilityGate
-            from isaac_sim_common import ROBOT_PRIM_PATH
             gate = FeasibilityGate(ROBOT_PRIM_PATH)
         except Exception as exc:  # noqa: BLE001 -- the check is a nicety, not the point
             say(f"  (feasibility gate unavailable: {exc})")
