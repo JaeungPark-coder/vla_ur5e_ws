@@ -90,6 +90,16 @@ def run_trial(scene, detector, instruction, n_objects=3):
     # comparison against vla_policy_client.py/openvla_pick_place_demo.py
     # (both of which require an actual lift past LIFT_Z_THRESHOLD before
     # counting a success) needs the same requirement here.
+    # cube_position=target_position (the perceived pick location), NOT this
+    # function's own target_position local -- ScriptedPickPlace's own
+    # target_position parameter means the PLACE destination, and the name
+    # collision with this function's variable of the same name for the
+    # perceived pick location is what dropped this assignment in the first
+    # place (twice now -- see git history).
+    policy = ScriptedPickPlace(
+        start_tool_pos=obs["tool_pos"], cube_position=target_position,
+        target_position=PLACE_TARGET_POSITION)
+
     object_prim_path = objects[target_description]["prim_path"]
     max_object_z = -np.inf
     for target_pos, target_rotvec, target_gripper in policy.generate_frames():
