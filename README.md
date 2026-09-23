@@ -1094,6 +1094,76 @@ this -- not squeeze-shove -- is the natural next thing to chase, since it
 undermines the reliability of every 3x-stiffness conclusion above it,
 including today's B-1 resolution itself.
 
+### 2026-09-24: verified an external gripper-tuning comparison against the real IsaacLab source, added the tooling it recommends, laptop-only
+
+**Yesterday's "squeeze-shove" hypothesis (the close-phase dz growth
+2026-09-23 pinned to closure crossing ~60-80%) now has a specific,
+externally-sourced candidate cause, checked against the primary source
+rather than trusted from a pasted summary.** A comparison against
+IsaacLab's own reference Robotiq 2F-85 config claimed this project's
+`finger_joint` stiffness (20000) is ~1176x IsaacLab's (17). Verified by
+fetching `franka.py` directly from `github.com/isaac-sim/IsaacLab` (main)
+rather than trusting the claim: `FRANKA_ROBOTIQ_GRIPPER_CFG`'s
+`gripper_drive` actuator is exactly `stiffness=17, damping=0.02,
+effort_limit_sim=1650`; `gripper_finger` (the inner finger joints) is
+`stiffness=0.2, damping=0.001, effort_limit_sim=50`; `gripper_passive`
+(the knuckle/follower joints) is `stiffness=0.0, damping=0.0,
+effort_limit_sim=1.0`, with the source comment `"set PD to zero for
+passive joints in close-loop gripper"` -- confirmed to the exact number
+and the exact comment text, not approximately. This project's own
+`finger_joint` has no effort limit set at all (grep-confirmed) and the 5
+follower joints have kept their as-shipped `171.89/0.0115` drive the
+whole time -- `_fix_drive_gains` only ever touches `finger_joint` itself.
+IsaacLab's own config also sets `disable_gravity=True` on this asset (a
+real caveat: the reference isn't fighting the gripper's own weight the
+way this project's does), but the squeeze force itself is `k*delta_theta`
+regardless of gravity, so the stiffness comparison is still apples to
+apples for "how hard does an over-commanded closing target push."
+
+**Added the tooling to test this, not the change itself** -- consistent
+with how `--finger-kp`/`--finger-kd` were added 2026-09-22 rather than
+silently changing the 20000/500 baseline default:
+- `isaac_sim_common.set_joint_max_force` -- effort limit via the same
+  `UsdPhysics.DriveAPI` pattern `set_joint_drive_gains` already uses.
+- `isaac_sim_common.resolve_gripper_follower_joint_names` /
+  `zero_follower_joint_drives` -- discovers the gripper's non-drive
+  joints by walking the `Gripper` subtree and checking
+  `UsdPhysics.Joint`, rather than hardcoding IsaacLab's
+  Franka+Robotiq joint-name patterns (`.*_inner_finger_joint` etc.)
+  against this project's different asset (a bare UR5e + `Robotiq_2F_85`
+  variant, not Franka+Robotiq) -- a wrong hardcoded guess would silently
+  match nothing, so this discovers the real names instead and
+  loud-warns if it still comes back empty.
+- `check_grasp_alignment.py --finger-effort-limit`/`--zero-follower-pd`,
+  alongside the existing `--finger-kp`/`--finger-kd`. IsaacLab's exact
+  pairing is one command away: `--finger-kp 17 --finger-kd 0.02
+  --finger-effort-limit 1650 --zero-follower-pd`.
+
+**Deliberately not added in the same pass: `armature` and
+`solver_position_iteration_count`.** The same external comparison
+(referencing IsaacLab's `FRANKA_PANDA_CFG` armature and the lift task's
+solver iteration counts) argues these matter for the unrelated 3x-stiffness
+30% Y-side divergence above -- a real, separate lead worth chasing -- but
+their exact PhysX schema attribute names were not confirmed against a
+live run or a second primary source the way the gripper gains above were,
+and a wrong guess on an unfamiliar API is more likely to silently no-op
+than the well-established `DriveAPI` calls above (which fail loud via
+`AttributeError` if wrong). Left as a next-session code addition rather
+than risk that.
+
+**None of this has been run against Isaac Sim yet** -- same posture as
+2026-09-23's nine-bug round: the IsaacLab numbers were confirmed by
+fetching the actual source file, and the new tooling's own Python is
+`py_compile`/`pytest`/`ruff` clean (131 passed, 0 F821/F823), but whether
+`--finger-kp 17 --finger-kd 0.02 --finger-effort-limit 1650
+--zero-follower-pd` actually reduces the close-phase dz growth is
+untested. **Next Isaac Sim session priority, in order:** (1) the 3x-stiffness
+30% Y-side divergence flagged at the end of 2026-09-23 -- still first,
+since it undermines any conclusion drawn at 3x stiffness including
+squeeze-reaction measurements; (2) this session's IsaacLab-reference
+gripper pairing, cheap to try immediately after, directly targeting the
+squeeze-reaction mechanism the divergence chase doesn't touch.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls
