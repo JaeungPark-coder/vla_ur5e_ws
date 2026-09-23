@@ -1010,6 +1010,90 @@ session but not yet implemented) is still the next candidate specifically
 for the closed-gripper/lifting case -- not for the alignment problem this
 sweep just closed.
 
+### 2026-09-23, continued again: close/lift dynamics, gravity comp researched but not yet needed, and a new 30%-rate divergence at 3x stiffness
+
+**Gravity compensation researched (not implemented -- the data below
+argues against reaching for it yet).** PhysX joints are one control mode
+at a time -- position OR effort, never "add torque on top of the PD
+drive" -- so real gravity compensation means switching the arm's joints
+to effort control entirely and computing
+`tau = kp*(q_des-q) + kd*(-qdot) + G(q)` by hand every tick.
+`SingleArticulation.get_generalized_gravity_forces()` (same family as
+`get_coriolis_and_centrifugal_forces()`/`get_mass_matrices()`) already
+computes `G(q)` from the loaded USD/mass data, no manual UR5e dynamics
+derivation needed. Two pitfalls documented by others hitting this exact
+problem: damping must NOT be driven fully to 0 in effort mode (an NVIDIA
+forum UR16e report found this "recommended" setting unstable in
+practice, ~10 damping needed); and `get_generalized_gravity_forces()`
+only knows the robot's own mass, not a grasped payload's -- an IsaacLab
+discussion thread reports `set_external_force_and_torque()` as a
+workaround that "had no effect while picking." `feasibility_gate.py`'s
+existing `_numerical_jacobian` would extend to a payload term
+(`tau_payload = J^T . F_gravity_cube`) if this becomes necessary.
+
+**Friction confirmed bound correctly (not the problem).** Added
+`check_close_lift_dynamics.py`, which reads `GRIP_MATERIAL_PRIM_PATH`
+directly: static=0.9, dynamic=0.7, shared between the pads and the cube
+as designed. No friction fix needed.
+
+**Close-and-lift dynamics, logged tick-by-tick through close AND lift
+(check_grasp_alignment.py's own log stops at end-of-close and never
+looks at lift) -- 3 episodes, 3 different failure shapes:**
+gripper closes to 97.6% with no resistance and barely rises (2.7cm);
+gripper stalls at 60.1% (real contact) and rises the most (4.6cm) but
+then slips back down with 212mm of sideways drift during lift; gripper
+closes to 97.1% with no resistance and gets shoved 80mm sideways instead
+of lifting. Real contact happened in only 1 of 3, and even that one
+didn't survive the lift -- separate problems, not one.
+
+**Cross-referencing against check_grasp_alignment.py's existing per-tick
+dz log refines (not replaces) the squeeze-reaction mechanism this project
+documented back on 2026-09-21.** At 3x stiffness, the pre-close
+`settle2` phase converges to dz=19.6-19.9mm (right at the 20mm
+`GRASP_HEIGHT` target) and sits completely flat there -- ruling out
+"needs more `SETTLE_TICKS`" as the next lever; that convergence is
+already done before close even starts. But partway through the CLOSE
+motion itself -- specifically once closure crosses roughly 60-80% toward
+the commanded 100% -- dz grows sharply again, +10 to +20mm in the last
+20-40% of closing, in episodes where the fingers keep being driven
+toward full closure without a firm early stop (dz stays flat all through
+close in the one episode that DID stall early at 60%). Same mechanism
+2026-09-21 named ("closure% is the real independent variable, not tick"),
+now pinned down more precisely: 3x stiffness fixed the STATIC steady-state
+part of the problem but not this ACTIVE squeeze-reaction part, which is a
+transient contact force, not a steady load -- consistent with why gravity
+compensation (aimed at steady loads) isn't obviously the right next tool
+for this half of the problem either.
+
+**New finding, arguably higher priority than the squeeze-reaction
+question above: 3x stiffness diverges outright in 30% of episodes, and it
+correlates with which side of the workspace the cube spawns on.** One of
+the 3 episodes above never got near the cube at all -- `dz` stuck at
+163mm through the whole close segment (should be ~20mm), with 100mm+
+swings in `dx` during descend that never damped out. Not a fluke: ran 10
+more seeded episodes at the same 3x stiffness / damping-matched setting
+and counted 3/10 with the identical signature (dz stuck at 163-168mm,
+cube never leaves spawn height). Laid out each episode's cube-spawn Y
+against outcome: **all 3 divergent episodes spawned at negative Y; all 6
+convergent episodes with clearly-negative or positive Y split 0
+divergent-at-negative / 6 convergent-at-positive**, with the one
+near-zero-Y episode (y=-0.0099) the sole exception that still converged.
+Six-episode-long streak of positive-Y episodes with zero divergences
+against 3-of-4 negative-Y episodes diverging is a real workspace-side
+asymmetry, not noise -- something about 3x stiffness behaves differently
+on one side of the robot's reach (candidate causes not yet checked:
+RMPflow picking a different elbow-up/elbow-down configuration depending
+on target sign, or joint-limit-avoidance terms that aren't symmetric).
+This means roughly 30% of today's "still 0/N lifted" statistics at 3x
+stiffness are contaminated by a failure that has nothing to do with
+squeeze-reaction or grip force -- the arm just never got there. Not yet
+determined whether this divergence is new at 3x stiffness or was already
+present at baseline and simply never sampled (no baseline run has been
+checked against this specific signature). Next Isaac Sim session:
+this -- not squeeze-shove -- is the natural next thing to chase, since it
+undermines the reliability of every 3x-stiffness conclusion above it,
+including today's B-1 resolution itself.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls
