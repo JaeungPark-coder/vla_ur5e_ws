@@ -121,10 +121,21 @@ def main():
             if bridge.latest_joint_target is not None:
                 # scene.robot is a SingleArticulation (unbatched) -- see
                 # pick_place_scene.py -- so targets go through apply_action(),
-                # not a vectorized set_joint_position_targets().
+                # not a vectorized set_joint_position_targets(). joint_indices
+                # must be explicit: this articulation is 12-DOF (6 arm +
+                # gripper; scene.robot.num_dof was 12 from tick 1, confirmed
+                # live, never changed mid-session), and a joint_positions
+                # array shorter than that with joint_indices=None (the
+                # default) requires it to match ALL dofs -- ValueError:
+                # shape mismatch, (1,6) into (1,12). CONFIRMED 2026-09-23
+                # live via a real eval_mode run (this is what silently ended
+                # every eval_mode session so far, not scene.reset() or the
+                # ROS2 bridge extension as first suspected).
                 from isaacsim.core.utils.types import ArticulationAction
                 scene.robot.apply_action(
-                    ArticulationAction(joint_positions=np.asarray(bridge.latest_joint_target[:6], dtype=float))
+                    ArticulationAction(
+                        joint_positions=np.asarray(bridge.latest_joint_target[:6], dtype=float),
+                        joint_indices=np.arange(6))
                 )
             scene.gripper.set_target(bridge.latest_gripper_target)
             scene.world.step(render=True)
@@ -133,6 +144,16 @@ def main():
             bridge.publish_cube_position(scene)
     except KeyboardInterrupt:
         pass
+    except BaseException:
+        # 2026-09-23: this used to be an unhandled exception that Kit
+        # swallowed without a trace in headless mode (--installSignalHandlers=0,
+        # --no-window), so every eval_mode session that hit the apply_action
+        # shape-mismatch bug just above looked like a silent, crash-free
+        # shutdown -- see the joint_indices fix's comment for what it
+        # actually was. Print it instead of letting that happen again.
+        import traceback
+        print("pick_place_scene_bridge.py: unhandled exception, shutting down:\n"
+              + traceback.format_exc(), flush=True)
     finally:
         bridge.destroy_node()
         rclpy.shutdown()

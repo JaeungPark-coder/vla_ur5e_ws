@@ -786,10 +786,20 @@ class PickPlaceScene:
         out here so residual_rl_train_env.py doesn't have to duplicate it.
         Also re-syncs the gripper to the flange afterward, same as
         step_towards -- it's a top-level, not USD-parented prim that only
-        stays attached via this per-tick teleport."""
+        stays attached via this per-tick teleport.
+
+        joint_indices=np.arange(6) is required, not optional: this
+        articulation is 12-DOF (6 arm + gripper) once the gripper variant is
+        selected, and ArticulationAction's default (joint_indices=None)
+        means "joint_positions must cover every dof" -- passing a 6-length
+        array without it raises ValueError: shape mismatch, (1,6) into
+        (1,12). CONFIRMED 2026-09-23: this exact bug, same unindexed
+        pattern, silently ended every pick_place_scene_bridge.py eval_mode
+        session so far (see that file's identical fix)."""
         from isaacsim.core.utils.types import ArticulationAction
         self.robot.apply_action(
-            ArticulationAction(joint_positions=np.asarray(joint_positions, dtype=float)[:6]))
+            ArticulationAction(joint_positions=np.asarray(joint_positions, dtype=float)[:6],
+                                joint_indices=np.arange(6)))
         self.gripper.set_target(gripper_target)
         self.world.step(render=True)
         self._sync_gripper_to_flange()

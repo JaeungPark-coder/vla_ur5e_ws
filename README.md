@@ -922,6 +922,52 @@ higher) and see if the static offset shrinks -- if it's stiffness-limited
 steady-state sag, more stiffness should shrink it; if it doesn't move, that
 argument is wrong too and something else is going on.
 
+### 2026-09-23, F-4 finally resolved: the eval_mode "silent shutdown" was never about reset at all
+
+Instrumented `pick_place_scene_bridge.py`'s main loop with an actual
+exception handler (it had none -- an unhandled exception just vanished
+into Kit's headless shutdown, `--installSignalHandlers=0`/`--no-window`,
+with no trace) and reproduced with `--n_trials 1`, which never publishes
+`/vla/eval/reset` at all. Same silent-looking death. Reset was never the
+cause -- it was coincidental timing in the earlier runs, not causation.
+
+The real exception: `ValueError: shape mismatch: value array of shape
+(1,6) could not be broadcast to indexing result of shape (1,12)`, in
+`scene.robot.apply_action(ArticulationAction(joint_positions=<6 values>))`
+at `pick_place_scene_bridge.py`'s inline joint-target handler. Confirmed
+via a live `scene.robot.num_dof` log that the articulation is 12-DOF (6
+arm + gripper) from the very first tick, not something that changes
+mid-session. `ArticulationAction`'s `joint_indices` defaults to `None`,
+which means "joint_positions must cover every dof" -- passing 6 values
+against a 12-dof articulation without it is wrong regardless of what
+triggers the actual raise (still not fully explained -- roughly 80 ticks
+ran without incident before it happened once; some Isaac-Sim-internal
+articulation-view state, not this project's code, decides exactly when).
+Not a GPU/CUDA issue: checked directly, no CUDA/memory errors anywhere
+near the crash, GPU sat at ~400MB/16GB the whole time, and the traceback
+itself is pure CPU-side numpy indexing
+(`isaacsim.core.utils.numpy.tensor.assign`).
+
+Fixed by passing `joint_indices=np.arange(6)` explicitly, in **both**
+places this exact unindexed pattern existed:
+`pick_place_scene_bridge.py`'s inline handler and
+`pick_place_scene.py`'s `apply_joint_targets()` (used by
+`residual_rl_train_env.py`) -- the second one had just been luckier so
+far, not correct, and would have hit the identical crash under the same
+articulation-view condition.
+
+**Verified live end-to-end after the fix:** a real 3-trial `eval_mode` run
+(bridge + `vla_policy_client.py`, both on Isaac Sim's bundled Humble
+`rclpy` per the ROS2 setup two sections up, `openpi` stubbed out) now
+completes all 3 trials across 2 real resets with zero crashes -- CSV shows
+`1,False,80,-1.0 / 2,False,80,-1.0 / 3,False,80,-1.0` (FAILUREs are
+expected and correct: the stub policy holds still and toggles the
+gripper, it was never going to lift the cube). This is also the first
+live confirmation that **F-4's original cache-clearing fix works**: no
+false SUCCESS at either trial boundary, and the "waiting for camera
+images" guard visibly engages for the ticks right after a reset before
+each new trial's data is fresh.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls
