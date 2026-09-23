@@ -133,6 +133,22 @@ def hold(scene, grip_pos, rotvec, ticks, gripper=0.0):
     return errors
 
 
+def hold_xyz(scene, grip_pos, rotvec, ticks, gripper=0.0):
+    """Same as hold(), but keeps the signed per-axis error (grip_point -
+    grip_pos) instead of collapsing it to a norm -- a norm cannot tell a
+    static per-axis offset (constant sign/magnitude regardless of spawn)
+    apart from isotropic dynamics drift, which is exactly the distinction
+    the 2026-09-23 fingertip-offset finding (+16 to +17mm X on both
+    fingertips, spawn-independent) needs to settle: frame mismatch vs
+    gravity sag."""
+    errors_xyz = {}
+    for tick in range(1, min(ticks, max(DWELL_SAMPLES)) + 1):
+        scene.step_towards(grip_pos, rotvec, gripper)
+        if tick in DWELL_SAMPLES:
+            errors_xyz[tick] = (scene.grip_point_world() - grip_pos).astype(float)
+    return errors_xyz
+
+
 def report_dwell(label, errors):
     say(f"\n  {label}")
     say("    " + "  ".join(f"{t:>5}" for t in sorted(errors)))
@@ -145,6 +161,18 @@ def report_dwell(label, errors):
     growth = errors[max(late)] - errors[min(late)]
     say(f"    growth from tick {min(late)} to {max(late)}: {growth * 1000:+.1f} mm")
     return growth
+
+
+def report_dwell_xyz(label, errors_xyz):
+    say(f"\n  {label} (signed per-axis error, mm)")
+    for t in sorted(errors_xyz):
+        dx, dy, dz = errors_xyz[t] * 1000
+        say(f"    tick {t:>4}: dx={dx:+6.1f}  dy={dy:+6.1f}  dz={dz:+6.1f}")
+    late = [t for t in errors_xyz if t >= 60]
+    if len(late) >= 2:
+        d0, d1 = errors_xyz[min(late)] * 1000, errors_xyz[max(late)] * 1000
+        say(f"    growth tick {min(late)}->{max(late)}: "
+            f"dx={d1[0] - d0[0]:+.1f}  dy={d1[1] - d0[1]:+.1f}  dz={d1[2] - d0[2]:+.1f}")
 
 
 def main():
@@ -220,17 +248,21 @@ def main():
         ok, reason = reachable(free_pos, DOWNWARD_ROTVEC)
         say(f"  free-space target {np.round(free_pos, 3)} reachable: {ok} ({reason})")
         settle_to(scene, free_pos, DOWNWARD_ROTVEC)
+        free_xyz = hold_xyz(scene, free_pos, DOWNWARD_ROTVEC, max(DWELL_SAMPLES))
         free_growth = report_dwell(
             "free space -- nothing within reach of the fingers",
-            hold(scene, free_pos, DOWNWARD_ROTVEC, max(DWELL_SAMPLES)))
+            {t: float(np.linalg.norm(e)) for t, e in free_xyz.items()})
+        report_dwell_xyz("free space", free_xyz)
 
         scene.reset()
         ok, reason = reachable(grasp_pos, DOWNWARD_ROTVEC)
         say(f"\n  grasp target {np.round(grasp_pos, 3)} reachable: {ok} ({reason})")
         settle_to(scene, grasp_pos, DOWNWARD_ROTVEC)
+        grasp_xyz = hold_xyz(scene, grasp_pos, DOWNWARD_ROTVEC, max(DWELL_SAMPLES))
         grasp_growth = report_dwell(
             "at the grasp -- the fingers are at the table",
-            hold(scene, grasp_pos, DOWNWARD_ROTVEC, max(DWELL_SAMPLES)))
+            {t: float(np.linalg.norm(e)) for t, e in grasp_xyz.items()})
+        report_dwell_xyz("at the grasp", grasp_xyz)
 
         # --- 2. is the tool centre point right ----------------------------
         say("\n" + "-" * 68)

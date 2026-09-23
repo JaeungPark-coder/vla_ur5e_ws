@@ -859,6 +859,69 @@ against a live trial boundary yet. Next Isaac Sim session: chase this
 shutdown before anything else eval_mode-related, since nothing past it is
 reachable.
 
+### 2026-09-23, continued again: E-4's asymmetry resolved, F-3 static-analysis-proofed, B-1's frame-mismatch hypothesis ruled out live
+
+**E-4 fully resolved.** Ran `check_grasp_height_condition.py` a third time,
+this time against the gate's own CONFIRMED wind-up pose itself
+([0.4618, 0.0636, 0.0222]): condition_number=7.7, manipulability=0.0574 --
+indistinguishable from every other pose in the 6.9-8.5 range already
+measured. The asymmetry from the write-up above is gone: the original
+wind-up was never a manipulability problem, so `Z_MIN_M`'s rationale needs
+to come from RMPflow's dynamic tracking behavior, not kinematic
+conditioning, which this class of check cannot see at all.
+
+**F-3's failure mode is now structurally prevented, and it caught a second,
+independent bug immediately.** Two separate commits had each independently
+deleted `hybrid_pick_place_demo.py`'s `policy = ScriptedPickPlace(...)`
+line while editing the same block for an unrelated reason -- a pattern that
+code review alone was 0-for-2 against. Ran `ruff check --select F821,F823`
+(undefined-name / used-before-assignment, pure AST, no imports or Isaac Sim
+needed) across the whole repo: F821 was clean (confirming F-3 itself is
+fixed), but it found a live F823 in `pivot_dwell_check.py` -- a
+`from isaac_sim_common import ROBOT_PRIM_PATH` inside `main()`, duplicating
+the same name already imported at module level, which makes Python treat
+every use of that name *anywhere in `main()`* as the local one, including
+an earlier use before the local import line ever runs. `UnboundLocalError`,
+but only when `--stiffness-scale`/`--damping-scale` is passed with the
+gripper on -- exactly how the next finger sweep would call it. Fixed
+(removed the redundant local import) and added `test_static_analysis.py`
+so `pytest test/` catches this class of bug going forward without needing
+Isaac Sim.
+
+**B-1's new fingertip-offset clue: not dynamics, and NOT a frame mismatch
+either -- still open.** Extended `pivot_dwell_check.py`'s `hold()` with a
+per-axis variant (`hold_xyz`/`report_dwell_xyz`) to see the signed
+grip-point error instead of just its norm. Result: **free space** holds a
+constant dx=-4.7 dy=-3.2 dz=-5.7mm from tick 1 through tick 180 (zero
+growth); **at the grasp pose**, a constant dx=+24.1 dy=+6.4 dz=+26.8mm,
+also zero growth. Two things this rules out cleanly:
+
+- Not gravity sag *growing over the hold* -- both are flat from the first
+  sample.
+- Not a base-frame mismatch between RMPflow's internal kinematics and the
+  world/USD frame everything else (cube position, grip targets) is
+  expressed in -- added `check_rmpflow_base_frame.py`, which reads
+  `rmpflow.get_end_effector_pose(q0)` and compares it directly against the
+  flange prim's actual `prim_world_pose()` at the same joint state (the
+  position half of a comparison `reset()`'s wrist-camera setup already does
+  for rotation only, at `r_flange_to_tool0`, but never checked for
+  position). They agree to **0.0mm**. RMPflow's FK is not lying about where
+  the arm actually is.
+
+What's left, and not yet tested: `settle_to()` runs 360 ticks *before*
+`hold()`'s tick-1 sample, so a gravity/stiffness steady-state sag that
+fully develops during that settle phase would look identical to a static
+offset in this test -- "no growth after tick 1" does not distinguish "no
+sag" from "sag that already finished." The offset's sign and magnitude
+also scale with reach/height (small and negative in free space at 0.35m,
+large and positive at the ~0.04m grasp pose), which is what load-dependent
+steady-state P-control error looks like, not what a fixed coordinate
+transform error looks like (that would be closer to constant regardless of
+target). Next check: rerun `pivot_dwell_check.py --stiffness-scale 3` (or
+higher) and see if the static offset shrinks -- if it's stiffness-limited
+steady-state sag, more stiffness should shrink it; if it doesn't move, that
+argument is wrong too and something else is going on.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls
