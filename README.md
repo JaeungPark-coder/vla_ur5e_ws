@@ -1164,6 +1164,72 @@ squeeze-reaction measurements; (2) this session's IsaacLab-reference
 gripper pairing, cheap to try immediately after, directly targeting the
 squeeze-reaction mechanism the divergence chase doesn't touch.
 
+### 2026-09-25: the armature idea above is retracted, and a specific, code-confirmed root cause for the squeeze problem replaces it -- priority order revised
+
+**Retracted: `armature`/`solver_position_iteration_count` as a fix for the
+30% Y-side divergence.** The reasoning above (an explicit-integration
+stability limit roughly `k*dt^2/I`, armature raising the effective `I`)
+assumes the arm's joint drives compute an explicit force from gains and
+state at the START of the timestep. Checked directly against PhysX's own
+docs (`nvidia-omniverse.github.io/PhysX/physx/5.6.0/docs/Articulations.html`,
+fetched, not assumed): **articulation drives are implicit** -- "the
+position and velocity constraints imposed by the drive... are with
+respect to the end of the time step, and not... an explicit, constant-
+during-time-step drive force." An explicit-integration stability argument
+does not apply to an implicit solve. (One nuance: the specific supporting
+citation used alongside this -- "armature is an IsaacLab remedy
+specifically for explicit actuators, per IsaacLab#2497" -- did not hold up
+under its own re-check of that issue, which discusses ImplicitActuator
+documentation confusion but never mentions armature at all; the core
+PhysX-implicit-drives fact above is independently confirmed regardless,
+this citation specifically just isn't.) Good news buried in the
+retraction: deferring armature/solver-iteration tooling 2026-09-24 for
+"API uncertainty" turned out to also dodge a wrong mechanism, not just an
+uncertain API -- worth remembering as a habit, not just a one-off save.
+
+**Specific, code-confirmed mechanism for the squeeze/shove problem
+(blocker 1 above), upgrading follower-joint PD from "worth trying" to
+leading hypothesis:** `GripperController.set_target` (isaac_sim_common.py)
+commands `ArticulationAction(joint_positions=[target],
+joint_indices=[idx])` -- confirmed by reading it again, `idx` is
+`finger_joint`'s own index ONLY. The 5 follower/knuckle joints' own drive
+targets are never touched by any code in this project, ever -- they keep
+pulling toward whatever target the USD asset shipped with, while the
+mimic constraint drags their POSITION along with finger_joint regardless.
+A mimic constraint enforces relative position, not that the follower's
+own PD drive goes idle -- a live drive still generates torque against
+whatever its own unmoved target says, and that torque adds into the
+linkage's overall equilibrium. This reframes 2026-09-19's own finding
+(free-space closure stuck at 47% of target, "fixed" by raising finger_joint
+kp 116x) as likely: the follower drives were never a non-issue as their
+own lockstep-tracking confirmation implied (lockstep proves relative
+position, not that their drive torque is zero) -- kp=20000 didn't remove
+their resistance, it overpowered it, and it overpowers it just as hard
+once contact starts (matching IsaacLab's own reference config, which sets
+the follower/passive joints' PD to exactly zero: "set PD to zero for
+passive joints in close-loop gripper"). A quick self-consistency check: a
+single-opposing-spring model (`theta = theta_target * k_drive /
+(k_drive + n*k_follower)`) fit to the one 47%-at-kp=171.89 data point
+(giving n=1.14) predicts 99.0% closure at kp=20000 -- close to the
+measured 98.75%, out of sample. Not proof (two data points, illustrative
+only), but consistent with a real opposing torque of about this
+magnitude, and no other candidate of this size has been identified.
+
+**Revised priority: try this BEFORE chasing the 30% Y-divergence, not
+after.** No new code needed -- `--finger-kp`/`--zero-follower-pd` already
+exist (this file's own previous section). Cheapest decisive test: free
+space (no cube), 2x2 grid of {follower PD as-shipped, zeroed} x
+{finger_kp 171.89 (as-shipped), 17 (IsaacLab reference)}, read steady-
+state closure fraction. Predicted if this hypothesis is right: zeroing
+follower PD alone gets as-shipped kp=171.89 to ~100% closure (no 116x
+finger-kp hike needed at all), and kp=17 with zeroed follower PD also
+reaches full closure, just slower. If true, this may also make the whole
+30% Y-divergence investigation moot: a soft, correctly-behaving parallel
+gripper self-centers on what it grips, so the ~16mm alignment offset that
+motivated sweeping arm stiffness up to 3x (and produced the divergence)
+might not need correcting via arm stiffness at all once the gripper
+itself stops fighting its own follower joints.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls
