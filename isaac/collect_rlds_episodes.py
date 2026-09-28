@@ -36,8 +36,21 @@ HEADLESS = os.environ.get("ISAAC_RLDS_COLLECT_HEADLESS", "1") != "0"
 simulation_app = SimulationApp({"headless": HEADLESS})
 
 # --- everything below must be imported AFTER SimulationApp() starts Kit ---
-from pick_place_scene import PickPlaceScene, LIFT_Z_THRESHOLD, PLACE_TARGET_POSITION  # noqa: E402
+from pick_place_scene import (  # noqa: E402
+    PickPlaceScene, LIFT_Z_THRESHOLD, PLACE_TARGET_POSITION, ROBOT_PRIM_PATH)
 from scripted_pick_place import ScriptedPickPlace  # noqa: E402
+from isaac_sim_common import (  # noqa: E402
+    GRIPPER_DRIVE_JOINT_NAME, set_joint_max_force, zero_follower_joint_drives)
+
+# 2026-09-28: see collect_demos.py's matching constants -- same first-ever
+# successful grasp-lift config (IsaacLab's FRANKA_ROBOTIQ_GRIPPER_CFG
+# reference gains), wired in here too since PickPlaceScene(finger_kp=None,
+# finger_kd=None) resolves to this project's own broken 20000/500/no-limit
+# default (GripperController._fix_drive_gains), which has never produced a
+# successful lift.
+GRIPPER_FINGER_KP = 17.0
+GRIPPER_FINGER_KD = 0.02
+GRIPPER_FINGER_EFFORT_LIMIT = 1650.0
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "openvla_integration", "raw_episodes")
 
@@ -165,7 +178,22 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    scene = PickPlaceScene()
+    scene = PickPlaceScene(finger_kp=GRIPPER_FINGER_KP, finger_kd=GRIPPER_FINGER_KD)
+
+    # CONFIRMED 2026-09-28, load-bearing -- see collect_demos.py's matching
+    # comment: must run before the first spawn_random_objects() call below,
+    # not after, since set_joint_max_force on finger_joint's prim reverts its
+    # LIVE controller gain as a side effect, and spawn_random_objects's own
+    # world.reset()+reapply_drive_gains() (just added -- see pick_place_scene.py)
+    # is what restores it, every attempt.
+    robot_prim = scene.stage.GetPrimAtPath(ROBOT_PRIM_PATH)
+    set_joint_max_force(robot_prim, GRIPPER_FINGER_EFFORT_LIMIT, joint_names=(GRIPPER_DRIVE_JOINT_NAME,))
+    follower_names = zero_follower_joint_drives(robot_prim)
+    if not follower_names:
+        raise RuntimeError(
+            "zero_follower_joint_drives found no follower/passive gripper joints to zero -- "
+            "check resolve_gripper_follower_joint_names, the grasp fix depends on this.")
+
     rng = np.random.default_rng()
 
     n_saved = 0

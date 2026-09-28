@@ -44,12 +44,26 @@ simulation_app = SimulationApp({"headless": HEADLESS})
 
 # --- everything below must be imported AFTER SimulationApp() starts Kit ---
 from pick_place_scene import (  # noqa: E402
-    PickPlaceScene, PLACE_TARGET_POSITION, MIN_CUBE_PIXELS_IN_BASE_VIEW)
-from isaac_sim_common import GRIPPER_DRIVE_JOINT_NAME  # noqa: E402
+    PickPlaceScene, PLACE_TARGET_POSITION, MIN_CUBE_PIXELS_IN_BASE_VIEW, ROBOT_PRIM_PATH)
+from isaac_sim_common import (  # noqa: E402
+    GRIPPER_DRIVE_JOINT_NAME, set_joint_max_force, zero_follower_joint_drives)
 from scripted_pick_place import ScriptedPickPlace  # noqa: E402
 
 PROMPT = "pick up the cube and place it in the target zone"
 CONTROL_FPS = 30  # matches the LeRobot dataset's `fps` metadata -- keep in sync with steps_per_segment choices
+
+# 2026-09-28: the first-ever successful grasp-lift (5/5, ~2x LIFT_Z_THRESHOLD,
+# see README's 2026-09-28 section) used IsaacLab's real FRANKA_ROBOTIQ_GRIPPER_CFG
+# reference gains, not this project's own as-shipped-then-"fixed" 20000/500/
+# no-limit default -- PickPlaceScene(finger_kp=None, finger_kd=None) resolves
+# to that broken default (see GripperController._fix_drive_gains), so leaving
+# these unset here would silently keep collecting against the config that has
+# never once produced a successful lift. These three go together -- see
+# check_free_space_closure.py's docstring for why (finger_effort_limit and
+# zero_follower_pd applied together with this kp/kd, not separately tested).
+GRIPPER_FINGER_KP = 17.0
+GRIPPER_FINGER_KD = 0.02
+GRIPPER_FINGER_EFFORT_LIMIT = 1650.0
 
 
 def _to_rgb_uint8(rgba_or_rgb):
@@ -97,7 +111,24 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
         image_writer_processes=5,
     )
 
-    scene = PickPlaceScene()
+    scene = PickPlaceScene(finger_kp=GRIPPER_FINGER_KP, finger_kd=GRIPPER_FINGER_KD)
+
+    # CONFIRMED 2026-09-28, load-bearing: this must run BEFORE the first
+    # scene.reset() below, not after. set_joint_max_force on finger_joint's
+    # prim reverts its LIVE controller gain (the finger_kp/finger_kd just
+    # requested above) back to the raw USD default as a side effect --
+    # scene.reset() calling reapply_drive_gains() afterwards is what restores
+    # the requested gain. Every subsequent scene.reset() (once per attempt,
+    # below) reapplies it again, so this block only needs to run once here.
+    # See set_joint_max_force's own docstring and check_grasp_alignment.py's
+    # matching comment for the full story.
+    robot_prim = scene.stage.GetPrimAtPath(ROBOT_PRIM_PATH)
+    set_joint_max_force(robot_prim, GRIPPER_FINGER_EFFORT_LIMIT, joint_names=(GRIPPER_DRIVE_JOINT_NAME,))
+    follower_names = zero_follower_joint_drives(robot_prim)
+    if not follower_names:
+        raise RuntimeError(
+            "zero_follower_joint_drives found no follower/passive gripper joints to zero -- "
+            "check resolve_gripper_follower_joint_names, the grasp fix depends on this.")
 
     # Look before leaping: two full collection runs were already lost to
     # camera faults that produced perfectly well-formed datasets full of

@@ -20,6 +20,30 @@ DOWNWARD_ROTVEC = np.array([0.0, np.pi, 0.0])
 STANDOFF_HEIGHT = 0.15  # meters above the table for approach/retract waypoints
 GRASP_HEIGHT = 0.02     # tool height when grasping/placing -- matches the cube's resting height
 
+# CONFIRMED 2026-09-28 (check_place_dynamics.py, 5 episodes, IsaacLab
+# gripper gains, seed=42): after the grasp/lift blocker was fixed, every
+# lifted episode still missed place_tolerance_m -- the cube consistently
+# landed +50.7 to +67.1mm (mean +57.5mm, std 7.1mm) PAST the place target in
+# +Y, the same direction as the transport motion; X error was small and
+# inconsistent (-18.1 to +9.7mm, mean -4.2mm -- ordinary noise, not a bias).
+# Root RMPflow mechanism NOT identified despite quantitatively ruling out:
+# grip slip, gravity/payload steady-state PD droop (predicted 0.02mm, 3
+# orders of magnitude too small), self-collision geometry from a closed
+# gripper, and kinematic singularity/low manipulability (place target's own
+# Yoshikawa index is BETTER than the grasp region's, not worse).
+#
+# TRIED AND REVERTED 2026-09-28: applying a fixed -57.5mm Y trim here
+# (matching the measured mean bias, same idea as GRIPPER_TCP_OFFSET_M) was
+# NOT a simple additive correction -- re-running the SAME 5 seeds with the
+# trim applied gave 21.7mm (fixed!) on one episode but 177-329mm (much
+# WORSE, X now off too) on three others. Moving the target changes which
+# RMPflow equilibrium it converges to; the tight std=7.1mm in the untrimmed
+# measurement was apparently a coincidence of re-using the same fixed-seed
+# spawn sequence, not evidence of a stable additive bias. Do not re-add a
+# constant trim here without re-deriving and testing on FRESH seeds, not
+# the same one used to measure it.
+PLACE_TCP_TRIM_M = np.array([0.0, 0.0, 0.0])
+
 # physics_dt in pick_place_scene.py -- 90 ticks/1.5s in the comment below is
 # this, not a coincidence.
 CONTROL_HZ = 60.0
@@ -111,6 +135,25 @@ def _ticks_for_distance(distance_m, floor_ticks):
 # fingertip hitting the cube is a different (and worse) impulse than a
 # stationary one nudging it, which the existing maxDepenetrationVelocity
 # cap (isaac_sim_common.py) is not designed to absorb.
+#
+# CONFIRMED 2026-09-28 (check_place_dynamics.py, 5/5 episodes, IsaacLab
+# gripper gains): the SAME gap exists a third time, on the PLACE side, and
+# was invisible until now because no episode had ever reached place before
+# (grasp/lift always failed first). `descend2` (above_target -> at_target,
+# also a 13cm vertical move, structurally identical to `descend`) flows
+# straight into `release` with no settle in between -- unlike the grasp
+# side, which has settle2 covering exactly this gap before `close`. Per-tick
+# commanded-vs-actual grip-point tracking error was a consistent 43-56mm at
+# the end of descend2 across all 5 episodes (vs ~13-18mm at the equivalent
+# point on the grasp side, where settle2 had time to converge it), and
+# place_error_m() (54-120mm, all 5 episodes, tolerance is 30mm) lands in the
+# same range -- the cube is released while the tool is still tens of mm from
+# the intended target and falls wherever that offset put it. Confirmed NOT
+# a grip-strength/H3 issue: dz (grip point to cube, the same measurement
+# check_grasp_alignment.py already tracks through close) stayed flat within
+# 1-3mm through transport AND descend2 in every episode -- the cube never
+# slips in the gripper, it's the ARM that hasn't converged when release
+# starts. Fix: settle3, mirroring settle/settle2, before release.
 SETTLE_TICKS = 90
 
 
@@ -149,8 +192,8 @@ class ScriptedPickPlace:
         cube_centre_height_above_table = cube_position[2]
         above_cube = cube_position + np.array([0.0, 0.0, STANDOFF_HEIGHT])
         at_cube = cube_position + np.array([0.0, 0.0, GRASP_HEIGHT])
-        above_target = target_position + np.array([0.0, 0.0, STANDOFF_HEIGHT])
-        at_target = target_position + np.array(
+        above_target = target_position + PLACE_TCP_TRIM_M + np.array([0.0, 0.0, STANDOFF_HEIGHT])
+        at_target = target_position + PLACE_TCP_TRIM_M + np.array(
             [0.0, 0.0, cube_centre_height_above_table + GRASP_HEIGHT])
 
         # (from_position, to_position, target_gripper, floor_ticks) -- the
@@ -165,6 +208,7 @@ class ScriptedPickPlace:
             (at_cube, above_cube, 1.0, steps_per_segment),             # lift
             (above_cube, above_target, 1.0, steps_per_segment),       # transport
             (above_target, at_target, 1.0, steps_per_segment),         # descend to the target
+            (at_target, at_target, 1.0, SETTLE_TICKS),                 # settle before releasing -- see SETTLE_TICKS
             (at_target, at_target, 0.0, steps_per_segment // 2),      # open the gripper, release
             (at_target, above_target, 0.0, steps_per_segment),         # retract
         ]

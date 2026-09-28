@@ -1315,6 +1315,126 @@ positions beyond these 5, and whether `collect_demos.py`/
 `collect_rlds_episodes.py` actually start saving episodes now that a real
 lift exists.
 
+### 2026-09-28 (continued): the grasp fix never reached the real pipeline, and place is its own unsolved blocker
+
+Follow-up the same day found the 5/5 result above had NOT actually reached
+`collect_demos.py`/`collect_rlds_episodes.py` -- both still constructed
+`PickPlaceScene()` with no `finger_kp`/`finger_kd` and no effort-limit/
+follower-zero calls at all, so real data collection was silently still
+running against the broken as-fixed 20000/500/no-limit config the whole
+time. Wired the IsaacLab config into both scripts as `GRIPPER_FINGER_*`
+constants (same effort-limit-before-first-reset ordering
+`check_grasp_alignment.py` already validated). While doing this, found a
+THIRD instance of the P2 pattern (a hard `world.reset()` silently undoing
+`GripperController._fix_drive_gains`, first documented in `reset()`'s own
+comment): `spawn_random_objects()` does the identical hard reset but was
+missing the `reapply_drive_gains()` call `reset()` has -- fixed. This means
+every prior `collect_rlds_episodes.py`/`hybrid_pick_place_demo.py` run
+(anything using the multi-object path) had been silently losing its
+gripper-gain fix on every single attempt, independent of today's change.
+
+**Smoke test (`collect_demos.py --num_episodes 3`, unseeded): 0/10
+attempts completed, 0/3 saved.** But split by failure mode: 6/10 attempts
+DID lift the cube (max_cube_z 0.158-0.202m, comfortably clearing
+`LIFT_Z_THRESHOLD`) -- the grasp fix generalizes reasonably beyond the
+5/5 fixed-seed result. All 6 of those then missed `place_tolerance_m`
+(30mm) by 44-392mm. The other 4/10 never lifted at all. **The grasp-lift
+blocker above is resolved but was never sufficient on its own -- place is a
+separate, previously-invisible blocker** (with grasp failing ~100% of the
+time historically, "does the placed position match" never had a chance to
+matter until now).
+
+Per-tick diagnostic (`check_place_dynamics.py`, new: logs dz
+grip-to-cube AND commanded-vs-actual grip point across the FULL episode,
+not just through lift) on 5 fixed-seed episodes found: dz stays flat
+(+/-3mm) through transport AND descend2 in every episode -- ruling out
+grip slip. Commanded-vs-actual tracking error (tcp_err) is a consistent
+25-56mm through transport/descend2/release, vs ~13-18mm at the equivalent
+pre-grasp point (descend/settle2). Extending `SETTLE_TICKS=90`'s
+dwell-before-contact-sensitive-segment pattern (already used twice, for
+`approach->descend` and `descend->close`, both documented above in this
+file) to a third sibling -- `settle3` between `descend2` and `release` --
+is structurally correct (added, kept) but insufficient alone: even a
+400-tick (6.7s) dwell left tcp_err perfectly flat at 36-40mm, meaning this
+is a genuine steady-state equilibrium, not a settling-time problem.
+
+**Elimination sequence for the place-side bias** (each quantitatively
+tested, not assumed):
+- Grip slip (H3): ruled out -- dz flat through the whole loaded trajectory.
+- RMPflow avoiding the cube as an obstacle: ruled out -- no obstacle
+  registration for the cube exists anywhere in this codebase (`setup_rmpflow`
+  just calls `load_supported_motion_policy_config`, confirmed by grep).
+- Self-collision geometry from a closed gripper: ruled out --
+  `check_gripper_closed_tracking_bias.py`, an open-vs-closed A/B at a fixed
+  point with the cube moved away (no payload/contact possible either way),
+  tracked identically (38.9mm vs 41.1mm) once commanded with the SAME
+  linear ramp `generate_frames()` uses. (v1 of that script used a step
+  command straight to the target and got the same false-positive ~40mm
+  "bias" in BOTH conditions -- see below.)
+- Gravity/payload steady-state PD droop: ruled out quantitatively, not just
+  by magnitude-of-doubt. `check_gravity_droop_prediction.py` computes
+  `tau = J(q)^T @ [0,0,-m_cube*g]` from the real numerical Jacobian
+  (`feasibility_gate.py`'s `_numerical_jacobian`, reused rather than
+  reimplemented) and real live arm kp (9400-10230 N*m/rad, read via
+  `get_joint_drive_gains`, not assumed), then `dtheta = tau/kp`, `dx = J@dtheta`:
+  predicts 0.02mm of droop from the 50g cube. Three orders of magnitude too
+  small to explain 36-56mm -- these joints are far too stiff for a payload
+  this light to matter.
+- Kinematic singularity / low manipulability at the place target: ruled
+  out -- `check_place_manipulability.py` (reuses `FeasibilityGate`'s IK +
+  Jacobian directly, bypassing its `workspace_ok()` pre-filter, whose
+  `Z_MIN_M=0.08` guard rejects this task's own real 0.04m grasp/place
+  height and would otherwise block the check entirely) found the place
+  target's Yoshikawa manipulability index (0.078) is BETTER than the
+  grasp region's (0.048-0.064), and condition numbers (6.95-8.49) are
+  comfortably under `feasibility_gate.py`'s own 17/30 soft/hard gates at
+  both.
+- Step-vs-ramp command path dependence: real, but a confound in THIS
+  session's own diagnostic scripts, not the production bug. v1 of
+  `check_gripper_closed_tracking_bias.py` and the first pass of
+  `check_gravity_droop_prediction.py` both converged to the same
+  suspicious ~40mm at a step-commanded fixed point, coincidentally
+  matching the real bias's magnitude -- three unrelated scripts sharing one
+  inherited test-harness defect (a new variant of pattern P1: not a
+  misread API this time, but a shared command-profile design flaw). Fixed
+  by ramping the test exactly like `generate_frames()` does; the result
+  (self-collision ruled out, above) held up under the fix.
+
+**Tried and reverted**: the untrimmed 5-seed measurement showed a
+strikingly consistent +50.7 to +67.1mm (mean +57.5mm, std 7.1mm) place
+residual in +Y (the transport direction), with small/inconsistent X error
+(-18.1 to +9.7mm) -- textbook signature of a fixed, additively-correctable
+bias, so `PLACE_TCP_TRIM_M = [0, -0.0575, 0]` was added to `above_target`/
+`at_target` (same "measured, not derived" pattern as
+`GRIPPER_TCP_OFFSET_M`) and re-tested on the SAME 5 seeds. Result: 1/5
+episodes landed inside tolerance (21.7mm) but 3/5 got MUCH worse (177.6,
+284.9, 328.8mm, with X now badly off too, which the trim never touched).
+Moving the target changes which equilibrium RMPflow converges to -- the
+tight std=7.1mm in the untrimmed run was apparently a coincidence of
+reusing one fixed-seed spawn sequence, not evidence of a real constant
+offset. Trim reverted to `[0, 0, 0]` (code left in place, structurally a
+no-op, documented in `scripted_pick_place.py` for whoever re-attempts
+this).
+
+**Current status: place is an open, unresolved blocker.** Root RMPflow
+mechanism not identified after a fairly thorough elimination pass; the
+returns on continuing to guess-and-test have dropped sharply. The
+pragmatic path not yet attempted is closed-loop correction (re-measure the
+actual grip point after `settle3`, command one more corrective move before
+opening the gripper) rather than continuing to chase an open-loop
+explanation -- this needs restructuring `ScriptedPickPlace.generate_frames()`
+from a pure open-loop generator into something that can read live scene
+state mid-episode, which touches every caller (`collect_demos.py`,
+`collect_rlds_episodes.py`, `check_grasp_alignment.py`). Also undecided:
+whether a logged correction should appear in the demonstration trajectory
+itself (teaches the policy a "recover from residual" skill, arguably more
+valuable for eventual real-UR5e transfer) or be applied invisibly. Not yet
+started.
+
+New diagnostic scripts from this session: `check_place_dynamics.py`,
+`check_gripper_closed_tracking_bias.py`, `check_gravity_droop_prediction.py`,
+`check_place_manipulability.py`.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls

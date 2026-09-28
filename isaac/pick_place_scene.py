@@ -1016,6 +1016,14 @@ class PickPlaceScene:
         # get_observation() right after this (e.g. hybrid_pick_place_demo.py).
         self.world.reset()
         self.robot.initialize()
+        # CONFIRMED 2026-09-28: this hard reset silently undoes
+        # GripperController._fix_drive_gains the exact same way reset()'s own
+        # comment above already documents for the single-cube path -- this
+        # method was just missing the reapply call reset() has. Without it,
+        # every collect_rlds_episodes.py/hybrid_pick_place_demo.py attempt
+        # (both call this every episode) reverts finger_joint's live
+        # controller gain to the raw USD default after the FIRST call, silently.
+        self.gripper.reapply_drive_gains()
         self._sync_gripper_to_flange()
         self.gripper.open()
         self.world.step(render=True)
