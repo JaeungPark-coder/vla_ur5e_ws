@@ -1230,6 +1230,91 @@ motivated sweeping arm stiffness up to 3x (and produced the divergence)
 might not need correcting via arm stiffness at all once the gripper
 itself stops fighting its own follower joints.
 
+### 2026-09-28: grasp-lift succeeds for the first time -- 5/5, ~2x the threshold -- but the mechanism above doesn't hold up
+
+Two externally-researched documents (2026-09-24/25 sessions) proposed the
+follower-PD-opposition mechanism above as the explanation for 9/19's
+47%-free-space-closure finding, and named the free-space 2x2 (follower PD
+{as-shipped, zero} x finger_kp {171.89, 17}) as the single cheapest,
+most decisive test. Ran it properly (two bugs in the first attempt, both
+fixed along the way -- see below) and it does not discriminate anything:
+
+| finger_kp / kd | follower PD | free-space closure |
+|---|---|---|
+| 171.89 / 0.0115 (true as-shipped) | as-shipped | **100%** |
+| 171.89 / 0.0115 | zeroed | **100%** |
+| 20000 / 500 (current default) | as-shipped | **100%** |
+| 17 / 0.02, effort=1650 (IsaacLab ref) | zeroed | **100%** |
+
+Every combination closes fully in free space today, including the exact
+historical baseline. **9/19's 47% figure does not reproduce** -- whatever
+combination of the many fixes landed since then (gripper mass rescale,
+collider changes, friction material) already resolved that specific
+symptom, independent of finger_kp or follower PD. Since the follower-PD
+hypothesis's own predicted differential (171.89 alone -> 47%, 171.89 +
+zeroed follower -> ~100%) doesn't exist to observe, this test cannot
+confirm or refute the mechanism -- it's a ceiling effect, not evidence.
+
+**Two real bugs found getting a trustworthy reading, both worth knowing
+about independent of the above:**
+1. `get_joint_drive_gains` (raw `UsdPhysics.DriveAPI` reader) reads a
+   completely different, unrelated number for `finger_joint` than what
+   actually drives its physics. `GripperController._fix_drive_gains` sets
+   `finger_joint`'s gain through `SingleArticulation.get_articulation_
+   controller().set_gains()` -- a separate "live controller" path -- not
+   through `UsdPhysics.DriveAPI` the way the arm and follower joints are.
+   Reading `finger_joint`'s real gain needs
+   `robot.get_articulation_controller().get_gains()` at its dof index, not
+   `get_joint_drive_gains`.
+2. `set_joint_max_force`, called on `finger_joint`, reverts its live
+   controller stiffness/damping back to the raw USD schema default --
+   confirmed live (requested kp=17 read back as ~171.89 immediately after
+   calling it). `UsdPhysics.DriveAPI.Apply()` touching the prim clobbers
+   the separate live-controller state `_fix_drive_gains` had just set.
+   `check_grasp_alignment.py`'s own call order (effort-limit/follower-zero
+   block runs BEFORE its per-episode `scene.reset()`, which calls
+   `reapply_drive_gains()` last) happens to dodge this by accident, not by
+   design -- worth hardening rather than relying on incidental ordering.
+
+**But the prescription itself -- not the story connecting it to 9/19 --
+turned out to be exactly right.** Ran `check_grasp_alignment.py --episodes
+5 --hold-ticks 0 --seed 42 --finger-kp 17 --finger-kd 0.02
+--finger-effort-limit 1650 --zero-follower-pd` (IsaacLab's reference
+config, verbatim, at baseline 1x arm stiffness -- no arm-side changes at
+all):
+
+```
+episode 1: max_cube_z=0.1604m (lifted=YES)
+episode 2: max_cube_z=0.1620m (lifted=YES)
+episode 3: max_cube_z=0.1595m (lifted=YES)
+episode 4: max_cube_z=0.1609m (lifted=YES)
+episode 5: max_cube_z=0.1613m (lifted=YES)
+```
+
+**5/5 lifted, ~2x `LIFT_Z_THRESHOLD=0.08m`, tightly clustered.** This is
+the first successful grasp-and-lift this entire project has ever
+recorded, across every session back to the original scripted-expert
+work -- the previous best (any configuration, any session) was 0.069m
+(86% of threshold), never crossing it. Close-segment closure now stalls
+at a real 63-70% in every episode (genuine contact resistance every
+time), not the mix of "stalls early" / "closes to 97% with none" the
+2026-09-23 close/lift diagnostics found at 3x arm stiffness -- and this
+result needed NO arm-stiffness correction at all (1x, the original
+baseline), which also means the 30% Y-divergence at 3x arm stiffness and
+the squeeze-shove-during-closure investigation may both be moot: fixing
+the gripper's own gains looks sufficient on its own.
+
+Net assessment of the two source documents: the sourcing discipline was
+genuinely good (fetched IsaacLab's real config and PhysX's real docs
+rather than trusting pasted claims, retracted a wrong mechanism after
+checking the primary source) but the specific causal chain built on top
+of that sourcing rested on an unreproduced 2026-09-19 number and doesn't
+survive a direct live test. The prescribed fix works regardless of why.
+**Not yet re-verified**: whether this holds at other seeds/spawn
+positions beyond these 5, and whether `collect_demos.py`/
+`collect_rlds_episodes.py` actually start saving episodes now that a real
+lift exists.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls

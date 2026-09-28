@@ -270,7 +270,18 @@ def run(episodes, hold_ticks, seed, stiffness_scale, damping_scale, joint_choice
     # same DriveAPI calls set_joint_drive_gains already uses for the wrist
     # joints above, so (unlike finger_joint's own kp/kd, see
     # reapply_drive_gains) these should survive every episode's Stop+Play
-    # without needing to be reapplied -- confirm that assumption live too.
+    # without needing to be reapplied -- CONFIRMED 2026-09-28.
+    #
+    # CONFIRMED 2026-09-28, and load-bearing, not incidental: this block
+    # calling set_joint_max_force on finger_joint reverts its LIVE
+    # controller gain (set separately via reapply_drive_gains ->
+    # _fix_drive_gains -> get_articulation_controller().set_gains(), not
+    # UsdPhysics.DriveAPI) back to the raw USD default. Running this block
+    # BEFORE the episode loop below (whose scene.reset() calls
+    # reapply_drive_gains() every episode, restoring the requested
+    # finger_kp/finger_kd last) is what makes this file get the right
+    # answer -- see set_joint_max_force's own docstring for a caller that
+    # got this wrong. Do not reorder these relative to each other.
     if finger_effort_limit is not None or zero_follower_pd:
         robot_prim = scene.stage.GetPrimAtPath(ROBOT_PRIM_PATH)
         if finger_effort_limit is not None:
@@ -281,8 +292,8 @@ def run(episodes, hold_ticks, seed, stiffness_scale, damping_scale, joint_choice
             follower_names = zero_follower_joint_drives(robot_prim)
             say(f"follower/passive joint PD zeroed on: {follower_names} "
                 f"({'WARNING: none found -- check resolve_gripper_follower_joint_names' if not follower_names else 'OK'})")
-        after = get_joint_drive_gains(robot_prim, joint_names=joint_names)
-        say(f"  after:  {after}")
+            after = get_joint_drive_gains(robot_prim, joint_names=follower_names)
+            say(f"  follower gains after: {after}")
 
     hold_plateaus = []  # (episode, final |d| mm) -- printed as a compact summary at the end
     lift_results = []  # (episode, max_cube_z, lifted) -- only populated when hold_ticks == 0

@@ -309,7 +309,23 @@ def set_joint_max_force(robot_prim, max_force, joint_names=(GRIPPER_DRIVE_JOINT_
     effort_limit_sim=1650 on the same joint alongside its much lower
     kp=17/kd=0.02 -- an unlimited-force drive at this project's kp=20000
     can, in principle, command far more squeeze force than any real
-    finger_joint actuator could produce. UNVERIFIED against a live run.
+    finger_joint actuator could produce.
+
+    CONFIRMED 2026-09-28: when `GRIPPER_DRIVE_JOINT_NAME` is among
+    `joint_names`, calling this reverts that joint's LIVE controller
+    stiffness/damping (GripperController._fix_drive_gains, set through
+    SingleArticulation.get_articulation_controller().set_gains() -- a
+    separate mechanism from this function's UsdPhysics.DriveAPI writes)
+    back to the raw USD schema default. `UsdPhysics.DriveAPI.Apply()`
+    touching the prim clobbers that separate live-controller state.
+    Callers MUST call gripper.reapply_drive_gains() (or otherwise re-apply
+    finger_joint's controller gains) AFTER calling this, not before --
+    check_grasp_alignment.py's own ordering (this runs once, up front;
+    finger_joint's gains get (re)applied once per episode afterward via
+    scene.reset() -> reapply_drive_gains()) happens to satisfy this by
+    accident. A caller that applies gains once and then calls this
+    afterward (e.g. check_free_space_closure.py's first version) silently
+    gets the wrong finger_joint gain with no error.
     Returns the joint names actually found and changed."""
     changed = []
     for name in joint_names:
