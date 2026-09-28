@@ -1580,6 +1580,47 @@ path) has not been re-verified against these fixes yet.
 
 New: `ScriptedPickPlace.grasp_diffik_frame_range`, `ScriptedPickPlace.settle2_end_tick`.
 
+### 2026-09-28 (Phase 3 pre-flight checklist)
+
+Before moving to LoRA fine-tuning:
+- **Data volume**: pi0's own reported results (starting from a pretrained
+  checkpoint) use roughly 150 demonstrations per task for strong results.
+  The two dry runs above total ~25 episodes; N=30-50 validation runs get
+  the reliability confidence interval tighter but are still well short of
+  that volume on their own. Plan: keep collecting with `collect_demos.py`
+  past the validation runs toward ~150, not "validate then stop and
+  restart for real collection" -- at the current ~90-100% success rate the
+  attempt overhead is small.
+- **extra_delta_transform / action convention**: statically confirmed
+  correct AND re-checked against real collected data (2026-09-28) -- see
+  `train_config_snippet.py`'s `LeRobotUR5eDataConfig`
+  (`delta_action_mask = make_bool_mask(6, -1)`, i.e. joints delta, gripper
+  absolute) against `collect_demos.py`'s actual stored actions (absolute
+  joints+gripper, per `UR5eInputs`'s docstring "joint-delta actions with an
+  absolute gripper" -- the delta conversion happens at training-config load
+  time via `DeltaActions`, not at collection time). Manually reproduced
+  that transform on the real `smoketest/collect_demos_grasp_diffik_20260928`
+  dataset: per-tick joint deltas are 0.001-0.004 rad mean, 0.018-0.041 rad
+  max, no NaN/inf; gripper (left absolute) ranges 0.0-0.710, consistent
+  with this session's own repeated 63-73% real-contact closure-stall
+  observation. No mismatch found.
+- **Correction-trigger rate**: not yet measured -- `collect_demos.py` now
+  prints `correction_ticks=N` per attempt and a per-run summary (how many
+  saved episodes needed any correction, and how many ticks). Needs an
+  actual run to read. Relevant because openpi's own fine-tuning guidance
+  wants demonstrations as smooth single completions without
+  pause/restart/recovery, while corrective-feedback imitation-learning
+  literature (VITAL 2024) argues the opposite -- recording the correction
+  sub-trajectory teaches recovery behavior. If the trigger rate turns out
+  low (a handful of episodes), it's probably not worth relitigating; if
+  most episodes trigger it, worth deciding whether to trim/mask correction
+  ticks from the training loss rather than changing collection itself.
+- **Spawn diversity**: `CUBE_X_RANGE`/`CUBE_Y_RANGE` span 6cm x 20cm,
+  intentionally narrow for reliability, not a bug. Not yet addressed, but
+  worth stating explicitly in any write-up: Phase 4 eval outside this
+  range should be expected to degrade, and any reported success rate is
+  "within this spawn range," not a general claim.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls

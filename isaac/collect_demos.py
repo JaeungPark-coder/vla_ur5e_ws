@@ -155,6 +155,7 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
     attempted = 0
     n_success = 0
     place_errors = []
+    correction_ticks_by_episode = []  # 2026-09-28: how many closed-loop correction ticks each SAVED episode needed
 
     while n_success < num_episodes:
         attempted += 1
@@ -178,6 +179,7 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
         n_logged = 0
         max_cube_z = -np.inf
         peak_cube_px = 0
+        correction_ticks_used = 0  # 2026-09-28: how much the closed-loop correction actually did
 
         def log_one_tick(target_pos, target_rotvec, target_gripper, use_diffik):
             nonlocal n_logged, max_cube_z, peak_cube_px
@@ -228,6 +230,7 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
                     if residual_m <= PLACE_CORRECTION_TOLERANCE_M:
                         break
                     log_one_tick(target_pos, target_rotvec, target_gripper, use_diffik=True)
+                    correction_ticks_used += 1
 
         # Only a demonstration that actually demonstrates the task is worth
         # keeping. clear_episode_buffer() also removes the frames' image
@@ -248,7 +251,10 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
 
         print(f"attempt {attempted} -> episode {n_success}/{num_episodes}: {outcome}, "
               f"{n_logged} frames, cube spawned at {np.round(scene.cube_position, 3)}, "
-              f"max_cube_z={max_cube_z:.3f}m, peak_cube_px={peak_cube_px}")
+              f"max_cube_z={max_cube_z:.3f}m, peak_cube_px={peak_cube_px}, "
+              f"correction_ticks={correction_ticks_used}")
+        if outcome == "OK":
+            correction_ticks_by_episode.append(correction_ticks_used)
 
         # Stop the moment a SAVED episode's cube was never actually visible.
         # A dataset the cube never appears in trains a policy that cannot
@@ -279,6 +285,12 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
     if place_errors:
         print(f"placement error: mean {np.mean(place_errors) * 1000:.1f}mm, "
               f"max {np.max(place_errors) * 1000:.1f}mm")
+    if correction_ticks_by_episode:
+        n_corrected = sum(1 for t in correction_ticks_by_episode if t > 0)
+        print(f"closed-loop correction: triggered in {n_corrected}/{len(correction_ticks_by_episode)} "
+              f"saved episodes ({n_corrected / len(correction_ticks_by_episode):.0%}), "
+              f"ticks used (of {len(correction_ticks_by_episode)} episodes): "
+              f"{correction_ticks_by_episode}")
     if success_rate < 0.9:
         print("WARNING: the scripted expert is failing often. These demonstrations are still "
               "valid (failures were discarded), but a flaky expert usually means an unstable "
