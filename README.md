@@ -1585,41 +1585,63 @@ New: `ScriptedPickPlace.grasp_diffik_frame_range`, `ScriptedPickPlace.settle2_en
 Before moving to LoRA fine-tuning:
 - **Data volume**: pi0's own reported results (starting from a pretrained
   checkpoint) use roughly 150 demonstrations per task for strong results.
-  The two dry runs above total ~25 episodes; N=30-50 validation runs get
-  the reliability confidence interval tighter but are still well short of
-  that volume on their own. Plan: keep collecting with `collect_demos.py`
-  past the validation runs toward ~150, not "validate then stop and
-  restart for real collection" -- at the current ~90-100% success rate the
-  attempt overhead is small.
+  Three dry runs today (15+50+20, see below) total **85 saved episodes**,
+  already past halfway to that target -- but split across THREE separate
+  LeRobot datasets (`smoketest/collect_demos_grasp_diffik_20260928`,
+  `..._batch50_20260928`, `..._tol5mm_20260928`), not one. **Not yet
+  consolidated into a single training-ready dataset** -- needs either a
+  merge step or a real (non-`smoketest/`) `--repo_id` for the next
+  collection run to append to, before Phase 3 can point at "the" dataset.
 - **extra_delta_transform / action convention**: statically confirmed
-  correct AND re-checked against real collected data (2026-09-28) -- see
+  correct AND re-checked against real collected data -- see
   `train_config_snippet.py`'s `LeRobotUR5eDataConfig`
   (`delta_action_mask = make_bool_mask(6, -1)`, i.e. joints delta, gripper
   absolute) against `collect_demos.py`'s actual stored actions (absolute
   joints+gripper, per `UR5eInputs`'s docstring "joint-delta actions with an
   absolute gripper" -- the delta conversion happens at training-config load
   time via `DeltaActions`, not at collection time). Manually reproduced
-  that transform on the real `smoketest/collect_demos_grasp_diffik_20260928`
-  dataset: per-tick joint deltas are 0.001-0.004 rad mean, 0.018-0.041 rad
-  max, no NaN/inf; gripper (left absolute) ranges 0.0-0.710, consistent
-  with this session's own repeated 63-73% real-contact closure-stall
-  observation. No mismatch found.
-- **Correction-trigger rate**: not yet measured -- `collect_demos.py` now
-  prints `correction_ticks=N` per attempt and a per-run summary (how many
-  saved episodes needed any correction, and how many ticks). Needs an
-  actual run to read. Relevant because openpi's own fine-tuning guidance
-  wants demonstrations as smooth single completions without
-  pause/restart/recovery, while corrective-feedback imitation-learning
-  literature (VITAL 2024) argues the opposite -- recording the correction
-  sub-trajectory teaches recovery behavior. If the trigger rate turns out
-  low (a handful of episodes), it's probably not worth relitigating; if
-  most episodes trigger it, worth deciding whether to trim/mask correction
-  ticks from the training loss rather than changing collection itself.
+  that transform on real data: per-tick joint deltas are 0.001-0.004 rad
+  mean, 0.018-0.041 rad max, no NaN/inf; gripper (left absolute) ranges
+  0.0-0.710, consistent with this session's own repeated 63-73%
+  real-contact closure-stall observation. No mismatch found.
+- **Correction-trigger rate**: measured, and it caught a real bug.
+  50-episode batch (unseeded): 45/50 (90%) saved episodes triggered
+  correction, and -- the actual finding -- EVERY ONE of all 50 episodes'
+  tick counts were exact multiples of 30 (0, 30, or 60, never anything
+  between). That's not a real "converges most of the time" distribution;
+  it means `PLACE_CORRECTION_TOLERANCE_M=0.003` was tighter than
+  `step_towards_diffik`'s own achievable floor (close-segment tcp_err
+  converges to ~3-4mm mean, see above) -- the loop was essentially always
+  either skipped (already under 3mm) or running the full 30-tick budget
+  without ever crossing it, not converging-then-stopping as designed.
+  Not a correctness problem (place_error stayed healthy, mean 10.9mm/max
+  23.2mm all run), just wasted ticks padding the recorded trajectory.
+  Loosened to 0.005 and re-verified on a fresh 20-episode run: trigger
+  rate dropped to 35% (7/20) and tick counts now show real intermediate
+  values (3, 5, 30...), confirming the loop actually converges-and-exits
+  most of the time now. This answers the openpi-smooth-demo-vs-recorded-
+  recovery question from below: at 35% with mostly small tick counts, it's
+  not "most episodes," so not obviously worth trimming/masking -- revisit
+  if a much larger sample shows otherwise.
 - **Spawn diversity**: `CUBE_X_RANGE`/`CUBE_Y_RANGE` span 6cm x 20cm,
   intentionally narrow for reliability, not a bug. Not yet addressed, but
   worth stating explicitly in any write-up: Phase 4 eval outside this
   range should be expected to degrade, and any reported success rate is
   "within this spawn range," not a general claim.
+- **Reliability, pooled across all three grasp-diffIK-era dry runs**
+  (15/15 + 50/58 + 20/20 = 85/93): **91.4%, Wilson 95% CI [83.9%, 95.6%]**.
+  Clearly separated from the pre-grasp-diffIK pooled estimate ([39.1%,
+  67.1%]) with no overlap.
+- **New, unexplained, low-rate anomaly**: 2 attempts (of 108 total across
+  today's runs) show the cube launched far above normal peak height
+  (max_cube_z 0.554m and 0.562m, vs the usual ~0.16m) with placement off
+  by hundreds of mm -- a contact-explosion-style event, consistent with
+  this project's previously-documented contact-instability history, but
+  not specifically investigated this session. A few milder elevated
+  peaks (0.197-0.339m, still passing place_tolerance_m) may be the same
+  mechanism at lower severity. Not blocking (rejected attempts cost a
+  retry, nothing worse), but worth a closer look before scaling collection
+  much further.
 
 ### Operational note: `check_cameras.py` is unsafe to import from
 

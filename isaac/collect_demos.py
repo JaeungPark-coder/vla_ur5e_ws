@@ -74,7 +74,22 @@ GRIPPER_FINGER_EFFORT_LIMIT = 1650.0
 # ("basin-hopping", see README). With diffIK already converging close
 # (2-20mm observed), a few more small corrective diffIK ticks toward the
 # SAME target carries none of that risk.
-PLACE_CORRECTION_TOLERANCE_M = 0.003
+#
+# CONFIRMED 2026-09-28 (50-episode batch, correction_ticks telemetry): the
+# original 0.003 tolerance was tighter than step_towards_diffik's own
+# achievable floor (close-segment tcp_err converges to ~3-4mm mean, see
+# README) -- 45/50 saved episodes triggered correction, and EVERY ONE of
+# those 50 episodes' tick counts were exact multiples of 30 (0, 30, or 60
+# -- never anything in between), meaning the loop was essentially always
+# either not needed or running the full budget without ever crossing the
+# tolerance, not converging-then-stopping as intended. Not a correctness
+# problem (place_error stayed healthy throughout, mean 10.9mm/max 23.2mm,
+# well under place_tolerance_m), just wasted/redundant correction ticks
+# padding the recorded trajectory -- relevant to the openpi-smooth-demo-vs-
+# recorded-recovery tension in README's Phase 3 checklist. Loosened to
+# 0.005 so the loop can actually reach "converged" and exit early instead
+# of always maxing out.
+PLACE_CORRECTION_TOLERANCE_M = 0.005
 PLACE_CORRECTION_MAX_TICKS = 30
 
 

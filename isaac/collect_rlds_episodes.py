@@ -57,8 +57,11 @@ GRIPPER_FINGER_EFFORT_LIMIT = 1650.0
 # descend2/settle3/release already use step_towards_diffik; an earlier
 # fixed-trim attempt at this same problem, back when the place approach was
 # still RMPflow-driven, made results worse by pushing into a different
-# RMPflow equilibrium).
-PLACE_CORRECTION_TOLERANCE_M = 0.003
+# RMPflow equilibrium). 0.005, not 0.003 -- see collect_demos.py's matching
+# comment: 0.003 was tighter than step_towards_diffik's own achievable
+# floor (~3-4mm), so the loop almost always maxed out its tick budget
+# instead of converging and exiting early.
+PLACE_CORRECTION_TOLERANCE_M = 0.005
 PLACE_CORRECTION_MAX_TICKS = 30
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "openvla_integration", "raw_episodes")
