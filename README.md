@@ -1230,6 +1230,96 @@ motivated sweeping arm stiffness up to 3x (and produced the divergence)
 might not need correcting via arm stiffness at all once the gripper
 itself stops fighting its own follower joints.
 
+### 2026-09-28 summary: today's full arc, problem by problem
+
+One long session, six commits (`f9b4e70`..`d6151b4`), start to finish:
+grasp-lift went from 0% (never once succeeded, in any prior session) to a
+first real, loadable, multi-episode training dataset. The five detailed
+sections below (in commit order) have the full evidence and the dead ends;
+this is the map.
+
+1. **Grasp-lift itself (0% -> 5/5)** -- `f9b4e70`. Two independently-
+   researched documents proposed a follower-joint-PD-opposition mechanism
+   and prescribed IsaacLab's real reference gripper config (kp=17, kd=0.02,
+   effort_limit=1650, follower joints' PD zeroed). Ran the documents'
+   own proposed decisive test (a free-space 2x2 gain sweep) and it came
+   back a ceiling effect -- all 4 cases hit 100% closure, unable to
+   discriminate the mechanism the historical 47%-closure number was based
+   on. The mechanistic STORY didn't survive contact with a live test. The
+   prescribed FIX did anyway: applying it at 1x arm stiffness (no
+   stiffness sweep needed) produced this project's first-ever successful
+   grasp-and-lift, 5/5 at a fixed seed, ~2x the lift threshold. Also found
+   and fixed two latent tooling bugs along the way (`get_joint_drive_gains`
+   silently wrong for `finger_joint`; `set_joint_max_force` clobbering its
+   live controller gain). See "grasp-lift succeeds for the first time"
+   below.
+2. **The fix never reached real collection** -- `5f23b60`. Follow-up found
+   `collect_demos.py`/`collect_rlds_episodes.py` had never actually been
+   wired to use the new gripper config -- real data collection was still
+   silently running the broken one. Wiring it in surfaced a THIRD instance
+   of an already-known bug pattern (a hard scene reset silently undoing
+   the gripper gain fix, this time in `spawn_random_objects()`). A smoke
+   test then found grasp itself now mostly worked (6/10 lifted) but every
+   lift missed the PLACEMENT tolerance by 44-392mm -- a second, previously
+   invisible blocker, invisible only because grasp used to fail first
+   ~100% of the time. See "the grasp fix never reached the real pipeline"
+   below.
+3. **The place blocker -- five hypotheses eliminated, then the real fix**
+   -- `e93526c`. RMPflow's Cartesian tracking near the place target
+   plateaued at a persistent 25-56mm error that a 400-tick dwell would not
+   resolve. Eliminated, each quantitatively: grip slip (dz stayed flat),
+   RMPflow-vs-cube obstacle avoidance (no such registration exists),
+   closed-gripper self-collision geometry (a properly-ramped A/B test
+   showed no effect), gravity/payload steady-state PD droop (predicted
+   0.02mm from first principles, 3 orders of magnitude too small), and
+   kinematic singularity/low manipulability (the place target was
+   BETTER-conditioned than the grasp region, not worse). A measured fixed
+   trim looked promising on paper (very consistent residual across 5
+   seeds) but made results worse when tested, revealing RMPflow's error
+   was basin-dependent, not a simple additive bias. The actual fix: stop
+   using RMPflow for the final centimeters at all -- added
+   `step_towards_diffik` (direct/differential Jacobian servoing, standard
+   practice for this exact regime) for the place approach, plus a
+   closed-loop correction pass, logged into the demonstration rather than
+   hidden. Result: 5/5 seeds inside tolerance, then 10/10 in a real
+   production dry run. First complete, loadable dataset this project has
+   ever produced. See "place actually fixed" below.
+4. **The same mechanism was ALSO the grasp-reliability bottleneck** --
+   `9c3848b`. Post-hoc look at every "never lifted" failure (20 of them,
+   pooled across two dry runs) found all 20 flat at the cube's own resting
+   height -- never even a momentary partial lift -- ruling out "grasped
+   then dropped" in favor of "never got an effective grip," an alignment
+   problem, and explicitly NOT the same mechanism as the older, already-
+   fixed squeeze-shove pattern (contact force, not alignment). Since
+   `descend`/`settle2`/`close` (the grasp-side approach) were still
+   RMPflow-driven, the same diffIK swap was extended there. Result: 15/15,
+   100%, zero rejections, in a real dry run. See "grasp reliability was
+   the SAME RMPflow-alignment mechanism" below.
+5. **Phase 3 pre-flight, and the telemetry immediately paid for itself**
+   -- `0b28eb6`, `d6151b4`. Before LoRA fine-tuning: checked data volume
+   (85 episodes collected today, still split across 3 unmerged datasets),
+   re-verified the DeltaActions/AbsoluteActions action convention against
+   REAL data rather than trusting the static config (no mismatch), and
+   added telemetry for the closed-loop correction's trigger rate. That
+   telemetry immediately caught a real, if minor, bug: every correction's
+   tick count was an exact multiple of 30 across 50 episodes -- the
+   3mm convergence tolerance was tighter than what the controller could
+   actually achieve, so it was always maxing out its budget instead of
+   converging early. Fixed (5mm) and reverified. Pooled reliability across
+   today's grasp-diffIK-era runs: 91.4%, Wilson 95% CI [83.9%, 95.6%] --
+   cleanly separated from the pre-fix estimate's [39%, 67%]. See "Phase 3
+   pre-flight checklist" below.
+
+**What's still open, going into the next session**: consolidate the 3
+separate `smoketest/` datasets (or start a real `--repo_id` run) and keep
+collecting toward pi0's ~150-demos-per-task guidance; investigate a new,
+low-rate (2/108 today) contact-explosion anomaly (cube launched to
+0.55-0.56m vs the usual ~0.16m) that isn't blocking but is unexplained;
+re-verify Phase 6's multi-object path against today's fixes (not yet
+touched); and, on the potato_drill_ws side (untouched today), still
+nothing beyond a code-level read of the motion-during-capture hypothesis --
+the proposed stationary-gated scan test has never been run live.
+
 ### 2026-09-28: grasp-lift succeeds for the first time -- 5/5, ~2x the threshold -- but the mechanism above doesn't hold up
 
 Two externally-researched documents (2026-09-24/25 sessions) proposed the
