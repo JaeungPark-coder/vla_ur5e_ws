@@ -1733,6 +1733,51 @@ Before moving to LoRA fine-tuning:
   retry, nothing worse), but worth a closer look before scaling collection
   much further.
 
+### 2026-09-29: audited every pi0-pipeline caller for the same gap -- found it twice more
+
+**The "fix landed in one file, its siblings kept the broken default" pattern
+(already caught once inside 2026-09-28 itself, in `collect_demos.py`) had
+recurred twice more, both squarely in pi0's own pipeline** -- laptop-only
+audit (`grep` for `finger_kp`/`step_towards_diffik` across every
+`PickPlaceScene`/`GripperController` caller), not yet live-verified:
+
+- `pick_place_scene_bridge.py` -- what `vla_policy_client.py`'s `eval_mode`
+  (and eventually the real UR5e) actually grasps against. Still built
+  `PickPlaceScene()` with no gripper override at all, so any pi0 checkpoint
+  evaluated through it would fail on the gripper alone, before the
+  checkpoint's own quality even enters into it.
+- `residual_rl_train_env.py` -- trains a residual correction on top of
+  pi0's own actions; same gap. A residual policy trained against a
+  gripper that can't grasp has nothing real to correct against.
+
+Fixed both the same way `collect_demos.py` already was (`finger_kp=17`,
+`finger_kd=0.02`, `set_joint_max_force(..., 1650)`,
+`zero_follower_joint_drives`, applied once before the first `reset()`).
+Neither needed the diffIK swap -- both drive joint targets directly from
+an external policy's own output (pi0's, or pi0+residual), never through
+`ScriptedPickPlace`'s Cartesian waypoints, so there's no RMPflow-tracking-
+bias segment for diffIK to replace in either.
+
+Also deduplicated `GRIPPER_FINGER_KP`/`KD`/`EFFORT_LIMIT` into
+`pick_place_scene.py` (single source of truth) -- `collect_demos.py` had
+independently redeclared the same three values `collect_rlds_episodes.py`
+(OpenVLA's own collector) already had, the same duplicate-constant shape
+`LIFT_Z_THRESHOLD` was fixed for on 2026-09-23.
+**`collect_rlds_episodes.py`'s own copy deliberately left untouched** --
+still correct (same values), just not yet pointed at the shared one --
+since OpenVLA's and the hybrid pipeline's own audit (same "does it have
+the working gripper config AND diffIK" question, confirmed NOT yet true
+for `hybrid_pick_place_demo.py`/`openvla_pick_place_demo.py` as of
+2026-09-25's report) is intentionally being done as its own pass, after
+pi0's.
+
+`py_compile` + `pyflakes` + `ruff --select F821,F823` (whole repo) +
+`pytest test/ -q` (131 passed) all clean. **Not run against Isaac Sim** --
+the wiring mirrors `collect_demos.py`'s already-live-confirmed pattern
+exactly, but these two files' own execution through it is untested; next
+Isaac Sim session should confirm `pick_place_scene_bridge.py`-driven
+eval actually grasps now before trusting any go/no-go number it produces.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls
