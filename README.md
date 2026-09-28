@@ -1520,6 +1520,66 @@ deferred earlier in this file becomes relevant again. Not started.
 New: `PickPlaceScene.step_towards_diffik`, `PickPlaceScene.get_diffik_gate`,
 `ScriptedPickPlace.diffik_frame_range`, `ScriptedPickPlace.settle3_end_tick`.
 
+### 2026-09-28 (continued a third time): grasp reliability was the SAME RMPflow-alignment mechanism -- 15/15, 100%
+
+Post-hoc analysis of all 20 "never lifted" attempts across the two dry runs
+above (pooled, since only place-side code differed between them, grasp code
+was identical) found every single one flat at max_cube_z=0.020-0.025m --
+CUBE_Z's own resting height, no meaningful rise at all, ever, in any of the
+20. This rules out "closed on the cube, then lost it during lift" (which
+would leave SOME intermediate peak before falling back) in favor of "never
+got an effective grip in the first place." Important to keep distinct from
+the previously-documented squeeze-shove pattern in the grasp-lift section
+above: squeeze-shove was kp=20000 continuing to dig in AFTER contact (a
+contact-FORCE problem, already fixed by kp=17/effort_limit=1650) -- this is
+an alignment problem BEFORE contact, a different mechanism with
+similar-looking symptoms. Do not conflate the two, and do not read this as
+"reopen the gripper kp question."
+
+Since `descend`/`settle2`/`close` (the grasp-side approach, symmetric to
+`descend2`/`settle3`/`release` on the place side) were STILL RMPflow-driven,
+the exact same basin-hopping mechanism fixed for place was a live
+hypothesis for grasp too -- spawn positions of failures not clustering by
+region (see above) fits "occasional large residual, independent of
+location" better than a location-specific kinematic issue.
+
+Extended the same infrastructure: `ScriptedPickPlace.grasp_diffik_frame_range()`
+(descend/settle2/close -> diffIK; approach/settle and lift keep RMPflow,
+mirroring transport/retract on the place side) and `settle2_end_tick()`
+(closed-loop correction before close, mirroring settle3's before release).
+Wired into `collect_demos.py`/`collect_rlds_episodes.py`/
+`check_place_dynamics.py` the same way.
+
+**Verification, same 5 fixed seeds**: `close` segment tcp_err dropped to
+3.0-4.1mm mean (was 13-28mm/28-82mm mean/max under RMPflow). All 5 lifted,
+place_error 7.0-23.3mm, all inside tolerance.
+
+**Full dry run (`collect_demos.py --num_episodes 15`, unseeded): 15/15
+successful episodes in 15 attempts -- 100%, zero rejections of any kind.**
+Verified by loading the dataset directly: 15 episodes, 16,037 frames, all
+features correct. Placement error mean 9.4mm, max 16.4mm -- tighter than
+the place-only-diffIK run. This is its own fresh statistical sample (grasp
+code changed, so it must NOT be pooled with the two pre-fix dry runs above)
+-- Wilson 95% CI on 15/15 is [79.6%, 100%], which doesn't even overlap the
+pre-fix pooled estimate's [39.1%, 67.1%] upper bound. A few episodes still
+had visibly lower max_cube_z (0.109-0.124m vs the usual ~0.163-0.168m) --
+still comfortably clearing the 0.08m threshold, no failures from it this
+run, but worth watching in a larger sample as a residual "weaker grasp"
+variability signal.
+
+**Net effect of this session**: grasp-lift 0% -> first dataset ever (9/10)
+-> place fixed (10/10) -> grasp alignment fixed (15/15, 100%). Both the
+place and grasp approach phases now use direct Jacobian servoing instead of
+RMPflow; RMPflow is only used for gross reach (approach/transport) and
+post-task retreat (lift/retract), matching the standard practice this whole
+investigation converged on independently. Next: a genuinely large-N
+(30-50+) unseeded run to get a real confidence interval on steady-state
+reliability now that both fixes are in, and only then move to Phase 3
+(LoRA fine-tune) with actual data. Phase 6 (multi-object, spawn_random_objects
+path) has not been re-verified against these fixes yet.
+
+New: `ScriptedPickPlace.grasp_diffik_frame_range`, `ScriptedPickPlace.settle2_end_tick`.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls

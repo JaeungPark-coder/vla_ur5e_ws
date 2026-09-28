@@ -144,6 +144,8 @@ def collect_episode(scene, target_description, target_position, target_prim_path
     policy = ScriptedPickPlace(obs["tool_pos"], target_position, PLACE_TARGET_POSITION)
     diffik_start, diffik_end = policy.diffik_frame_range()
     settle3_end = policy.settle3_end_tick()
+    grasp_diffik_start, grasp_diffik_end = policy.grasp_diffik_frame_range()
+    settle2_end = policy.settle2_end_tick()
 
     steps = []
     max_target_z = -np.inf
@@ -183,12 +185,15 @@ def collect_episode(scene, target_description, target_position, target_prim_path
                 scene.get_object_position(target_prim_path)[2]))
 
     for tick, (target_pos, target_rotvec, target_gripper) in enumerate(policy.generate_frames(), start=1):
-        log_one_tick(target_pos, target_rotvec, target_gripper, use_diffik=(diffik_start <= tick <= diffik_end))
+        use_diffik = (grasp_diffik_start <= tick <= grasp_diffik_end) or (diffik_start <= tick <= diffik_end)
+        log_one_tick(target_pos, target_rotvec, target_gripper, use_diffik=use_diffik)
 
-        if tick == settle3_end:
-            # Closed-loop place correction -- see collect_demos.py's
-            # matching comment / README's 2026-09-28 section. Logged, not
-            # hidden: each correction tick becomes a real recorded step.
+        if tick == settle2_end or tick == settle3_end:
+            # Closed-loop correction at both the grasp-approach dwell
+            # (settle2) and the place-approach dwell (settle3) -- see
+            # collect_demos.py's matching comment / README's 2026-09-28
+            # section. Logged, not hidden: each correction tick becomes a
+            # real recorded step.
             for _ in range(PLACE_CORRECTION_MAX_TICKS):
                 residual_m = float(np.linalg.norm(
                     np.asarray(target_pos, dtype=float) - scene.grip_point_world()))

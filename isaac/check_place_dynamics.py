@@ -92,15 +92,17 @@ def run(episodes, seed):
             f"{'dz_mm':>8} {'tcp_err_mm':>10} {'cube_z_mm':>9}")
 
         diffik_start, diffik_end = policy.diffik_frame_range()
-        say(f"diffik controls ticks [{diffik_start}, {diffik_end}] (descend2/settle3/release); "
-            f"RMPflow elsewhere")
+        grasp_diffik_start, grasp_diffik_end = policy.grasp_diffik_frame_range()
+        say(f"diffik controls ticks [{grasp_diffik_start}, {grasp_diffik_end}] (descend/settle2/close) "
+            f"and [{diffik_start}, {diffik_end}] (descend2/settle3/release); RMPflow elsewhere")
 
         max_cube_z = -np.inf
         seg_idx = 0
         dz_by_segment = {}  # seg_name -> list of dz (mm)
         tcp_err_by_segment = {}
         for tick, (target_pos, target_rotvec, target_gripper) in enumerate(policy.generate_frames(), start=1):
-            if diffik_start <= tick <= diffik_end:
+            use_diffik = (grasp_diffik_start <= tick <= grasp_diffik_end) or (diffik_start <= tick <= diffik_end)
+            if use_diffik:
                 scene.step_towards_diffik(target_pos, target_rotvec, target_gripper)
             else:
                 scene.step_towards(target_pos, target_rotvec, target_gripper)

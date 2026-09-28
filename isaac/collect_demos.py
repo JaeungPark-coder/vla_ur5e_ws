@@ -172,6 +172,8 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
         policy = ScriptedPickPlace(obs["tool_pos"], scene.cube_position, PLACE_TARGET_POSITION)
         diffik_start, diffik_end = policy.diffik_frame_range()
         settle3_end = policy.settle3_end_tick()
+        grasp_diffik_start, grasp_diffik_end = policy.grasp_diffik_frame_range()
+        settle2_end = policy.settle2_end_tick()
 
         n_logged = 0
         max_cube_z = -np.inf
@@ -210,19 +212,16 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
             peak_cube_px = max(peak_cube_px, scene.cube_pixels_visible(obs["base_rgb"]))
 
         for tick, (target_pos, target_rotvec, target_gripper) in enumerate(policy.generate_frames(), start=1):
-            log_one_tick(target_pos, target_rotvec, target_gripper, use_diffik=(diffik_start <= tick <= diffik_end))
+            use_diffik = (grasp_diffik_start <= tick <= grasp_diffik_end) or (diffik_start <= tick <= diffik_end)
+            log_one_tick(target_pos, target_rotvec, target_gripper, use_diffik=use_diffik)
 
-            if tick == settle3_end:
-                # Closed-loop place correction: settle3's fixed 90-tick
-                # diffIK dwell already gets the grip point close (2-20mm,
-                # see check_place_dynamics.py's 5-seed verification) but
-                # doesn't measure-and-decide. Keep re-measuring and
-                # correcting (same target, same diffIK controller) until
-                # within tolerance or the tick budget runs out, LOGGING each
-                # correction tick into the dataset rather than hiding it --
-                # teaches the policy the "approach then re-adjust" behavior
-                # a real deployment will need (see README's 2026-09-28
-                # section on why recording beats hiding this).
+            # 2026-09-28: closed-loop correction at BOTH the grasp-approach
+            # dwell (settle2, before close) and the place-approach dwell
+            # (settle3, before release) -- same mechanism, same reasoning
+            # (see README's 2026-09-28 sections; PLACE_CORRECTION_* despite
+            # the name applies to both, it's the tolerance/budget for "keep
+            # re-measuring and correcting via diffIK until close enough").
+            if tick == settle2_end or tick == settle3_end:
                 for _ in range(PLACE_CORRECTION_MAX_TICKS):
                     residual_m = float(np.linalg.norm(
                         np.asarray(target_pos, dtype=float) - scene.grip_point_world()))

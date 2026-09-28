@@ -264,6 +264,43 @@ class ScriptedPickPlace:
     def total_frames(self):
         return sum(num_ticks for _, _, num_ticks in self.waypoints)
 
+    def grasp_diffik_frame_range(self):
+        """1-indexed (start, end) tick range, INCLUSIVE, covering
+        descend+settle2+close -- the grasp-approach segments that need
+        PickPlaceScene.step_towards_diffik instead of step_towards, same
+        reasoning as diffik_frame_range's place-side range (see its
+        docstring / README's 2026-09-28 section): RMPflow's potential-field
+        composition can converge to an unpredictable residual near contact,
+        and standard practice for the final centimeters before a grasp is
+        direct Jacobian/differential-IK servoing, not a potential-field
+        planner. approach+settle (index 0-1) keep using RMPflow -- gross
+        reach, not final alignment -- and lift (index 5) resumes it once the
+        gripper has closed and precision no longer matters.
+
+        Distinct from the place-side pattern in one respect: DON'T mistake
+        this for squeeze-shove (the OTHER previously-documented near-cube
+        failure, see README's grasp-lift section) -- that was kp=20000
+        over-stiff drive continuing to dig in AFTER contact (a contact-FORCE
+        problem, already fixed by the kp=17/effort_limit=1650 change this
+        range is unrelated to). This range targets a possible ALIGNMENT
+        problem BEFORE contact (RMPflow's own tracking residual at the
+        moment closing starts), a different mechanism that happens to
+        produce similar-looking symptoms."""
+        bounds = np.cumsum([n for _, _, n in self.waypoints])
+        assert len(bounds) == 11, f"waypoint count changed ({len(bounds)}), update grasp_diffik_frame_range's indices"
+        start = int(bounds[1]) + 1  # first tick of descend
+        end = int(bounds[4])        # last tick of close
+        return start, end
+
+    def settle2_end_tick(self):
+        """1-indexed tick at which settle2 (the last dwell before close)
+        ends -- mirrors settle3_end_tick for the grasp side's own
+        closed-loop correction opportunity, if step_towards_diffik is being
+        used for descend/settle2/close (see grasp_diffik_frame_range)."""
+        bounds = np.cumsum([n for _, _, n in self.waypoints])
+        assert len(bounds) == 11, f"waypoint count changed ({len(bounds)}), update settle2_end_tick's index"
+        return int(bounds[3])
+
     def settle3_end_tick(self):
         """1-indexed tick at which settle3 (the last diffIK dwell before
         release) ends -- the natural point to measure the actual grip-point
