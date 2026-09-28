@@ -52,6 +52,15 @@ GRIPPER_FINGER_KP = 17.0
 GRIPPER_FINGER_KD = 0.02
 GRIPPER_FINGER_EFFORT_LIMIT = 1650.0
 
+# 2026-09-28: closed-loop place correction -- see collect_demos.py's
+# matching constants for the full rationale (safe now specifically because
+# descend2/settle3/release already use step_towards_diffik; an earlier
+# fixed-trim attempt at this same problem, back when the place approach was
+# still RMPflow-driven, made results worse by pushing into a different
+# RMPflow equilibrium).
+PLACE_CORRECTION_TOLERANCE_M = 0.003
+PLACE_CORRECTION_MAX_TICKS = 30
+
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "openvla_integration", "raw_episodes")
 
 # The quality gate every episode has to clear before it is written. Imported
@@ -133,17 +142,25 @@ def collect_episode(scene, target_description, target_position, target_prim_path
     """
     obs = scene.get_observation()
     policy = ScriptedPickPlace(obs["tool_pos"], target_position, PLACE_TARGET_POSITION)
+    diffik_start, diffik_end = policy.diffik_frame_range()
+    settle3_end = policy.settle3_end_tick()
 
     steps = []
     max_target_z = -np.inf
-    prev_pos, prev_quat = obs["tool_pos"], obs["tool_quat"]
-    prev_gripper = float(obs["gripper"][0])
+    state_holder = {"pos": obs["tool_pos"], "quat": obs["tool_quat"], "gripper": float(obs["gripper"][0])}
 
-    for target_pos, target_rotvec, target_gripper in policy.generate_frames():
+    def log_one_tick(target_pos, target_rotvec, target_gripper, use_diffik):
+        nonlocal max_target_z
         image = np.ascontiguousarray(np.asarray(scene.get_observation()["base_rgb"])[..., :3])
+        prev_pos, prev_quat, prev_gripper = state_holder["pos"], state_holder["quat"], state_holder["gripper"]
         state = _state_vec(prev_pos, prev_quat, prev_gripper)  # (8,): xyz+rpy+pad+gripper
 
-        scene.step_towards(target_pos, target_rotvec, target_gripper)
+        # 2026-09-28: place approach uses direct Jacobian servoing, not
+        # RMPflow -- see collect_demos.py's matching comment / README.
+        if use_diffik:
+            scene.step_towards_diffik(target_pos, target_rotvec, target_gripper)
+        else:
+            scene.step_towards(target_pos, target_rotvec, target_gripper)
 
         next_obs = scene.get_observation()
         next_pos, next_quat = next_obs["tool_pos"], next_obs["tool_quat"]
@@ -160,10 +177,24 @@ def collect_episode(scene, target_description, target_position, target_prim_path
             "language_instruction": f"pick up the {target_description} and place it in the target zone",
         })
 
-        prev_pos, prev_quat, prev_gripper = next_pos, next_quat, next_gripper
+        state_holder["pos"], state_holder["quat"], state_holder["gripper"] = next_pos, next_quat, next_gripper
         if target_prim_path is not None:
             max_target_z = max(max_target_z, float(
                 scene.get_object_position(target_prim_path)[2]))
+
+    for tick, (target_pos, target_rotvec, target_gripper) in enumerate(policy.generate_frames(), start=1):
+        log_one_tick(target_pos, target_rotvec, target_gripper, use_diffik=(diffik_start <= tick <= diffik_end))
+
+        if tick == settle3_end:
+            # Closed-loop place correction -- see collect_demos.py's
+            # matching comment / README's 2026-09-28 section. Logged, not
+            # hidden: each correction tick becomes a real recorded step.
+            for _ in range(PLACE_CORRECTION_MAX_TICKS):
+                residual_m = float(np.linalg.norm(
+                    np.asarray(target_pos, dtype=float) - scene.grip_point_world()))
+                if residual_m <= PLACE_CORRECTION_TOLERANCE_M:
+                    break
+                log_one_tick(target_pos, target_rotvec, target_gripper, use_diffik=True)
 
     return steps, max_target_z
 
@@ -269,6 +300,12 @@ def main():
             print(f"\ncollected {n_saved} episodes, rejected {n_rejected} "
                   f"({n_rejected / max(n_saved + n_rejected, 1):.0%} of attempts)")
     finally:
+        # See collect_demos.py's matching comment: simulation_app.close()'s
+        # fastShutdown can race ordinary buffered print() output, not just
+        # tracebacks -- flush unconditionally rather than hunting down every
+        # print() call above.
+        import sys
+        sys.stdout.flush()
         simulation_app.close()
 
 

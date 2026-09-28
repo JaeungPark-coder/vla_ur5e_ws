@@ -263,3 +263,35 @@ class ScriptedPickPlace:
 
     def total_frames(self):
         return sum(num_ticks for _, _, num_ticks in self.waypoints)
+
+    def settle3_end_tick(self):
+        """1-indexed tick at which settle3 (the last diffIK dwell before
+        release) ends -- the natural point to measure the actual grip-point
+        residual and, if still non-trivial, run a few explicit correction
+        ticks before opening the gripper (closed-loop place correction, see
+        README's 2026-09-28 section). settle3 itself already gets this
+        fairly small (2-20mm across the 5-seed check_place_dynamics.py
+        verification once descend2/settle3 moved to step_towards_diffik),
+        but is a fixed 90-tick dwell, not a measure-and-decide loop."""
+        bounds = np.cumsum([n for _, _, n in self.waypoints])
+        assert len(bounds) == 11, f"waypoint count changed ({len(bounds)}), update settle3_end_tick's index"
+        return int(bounds[8])
+
+    def diffik_frame_range(self):
+        """1-indexed (start, end) tick range, INCLUSIVE, covering
+        descend2+settle3+release -- the place-approach segments that need
+        PickPlaceScene.step_towards_diffik instead of step_towards (see its
+        docstring / README's 2026-09-28 section). transport (index 6) still
+        uses RMPflow -- diffIK is for the final centimeters, not gross
+        reach -- and retract (index 10) resumes RMPflow once the gripper has
+        released and precision no longer matters.
+
+        self.waypoints order (see _build_waypoints' `segments` list):
+        0=approach 1=settle 2=descend 3=settle2 4=close 5=lift 6=transport
+        7=descend2 8=settle3 9=release 10=retract -- keep these indices in
+        sync with that list if it changes again."""
+        bounds = np.cumsum([n for _, _, n in self.waypoints])
+        assert len(bounds) == 11, f"waypoint count changed ({len(bounds)}), update diffik_frame_range's indices"
+        start = int(bounds[6]) + 1   # first tick of descend2
+        end = int(bounds[9])         # last tick of release
+        return start, end

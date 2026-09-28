@@ -1435,6 +1435,91 @@ New diagnostic scripts from this session: `check_place_dynamics.py`,
 `check_gripper_closed_tracking_bias.py`, `check_gravity_droop_prediction.py`,
 `check_place_manipulability.py`.
 
+### 2026-09-28 (continued again): place actually fixed -- direct Jacobian servo + closed-loop correction, first-ever complete dataset
+
+The local-vs-global distinction resolves the apparent contradiction above:
+manipulability/condition number are LOCAL (is this one pose well-conditioned)
+while the RMPflow bias is a GLOBAL potential-field artifact (which basin does
+the composed attractor+joint-limit-avoidance+self-collision RMP converge to)
+-- a pose can be locally fine and still sit in a bad basin. Standard practice
+for the final centimeters of a grasp/place approach (MIT's manipulation
+course among others) is to not use a potential-field/RMP method there at
+all and switch to direct Jacobian/differential-IK Cartesian servoing
+instead, which has no competing potential terms to fall into a different
+equilibrium.
+
+Implemented exactly that: `PickPlaceScene.step_towards_diffik` (damped
+least-squares: `qdot = J^T (J J^T + damping^2 I)^-1 v`, `v` a clamped
+Cartesian velocity command toward the target) replaces `step_towards`
+(RMPflow) for `descend2`/`settle3`/`release` only -- `transport` still uses
+RMPflow for gross reach, `retract` resumes it once precision no longer
+matters. Reuses `feasibility_gate.py`'s `_numerical_jacobian` (same Lula FK
+RMPflow itself is built on) rather than a new implementation.
+`ScriptedPickPlace.diffik_frame_range()` gives callers the tick boundary;
+wired into `collect_demos.py`, `collect_rlds_episodes.py`, and
+`check_place_dynamics.py`.
+
+**Verification (check_place_dynamics.py, same 5 fixed seeds used
+throughout this investigation): all 5 placed inside tolerance for the first
+time -- 8.3, 19.2, 19.9, 13.4, 15.2mm** (vs 51-70mm with settle3 alone, and
+vs the 177-329mm the fixed-trim attempt produced on 3/5 of the same seeds).
+
+On top of that, added closed-loop correction (`PLACE_CORRECTION_TOLERANCE_M
+= 0.003`, `PLACE_CORRECTION_MAX_TICKS = 30`): right after settle3 ends,
+re-measure the actual grip point against the target and keep issuing more
+`step_towards_diffik` ticks (same target, logged as real demonstration
+frames, not hidden) until within 3mm or the tick budget runs out. Safe to
+add now specifically BECAUSE diffIK already removed the basin-hopping risk
+that made the earlier fixed-trim attempt backfire -- nudging a
+well-converged diffIK-driven pose by a few more small ticks carries none of
+that risk, unlike moving the RMPflow target did. Recording the correction
+rather than hiding it is intentional: an unrecorded "silently nudge into
+place" trajectory teaches a policy that a demonstration always lands
+exactly right the first time, robbing it of any "approach then re-adjust"
+behavior real deployment (with real payload droop, real sensor noise, real
+calibration error) will need.
+
+**Full end-to-end dry run (`collect_demos.py --num_episodes 10`,
+unseeded): 10/10 successful episodes saved in 15 attempts (66.7% raw
+success this run).** Verified by loading the actual written dataset (not
+just trusting the exit code -- collect()'s own final summary prints went
+missing from the run's log despite the run succeeding, see the stdout-flush
+fix below): `LeRobotDataset('...')` reports exactly 10 episodes, 10,316
+frames, all expected features (image/wrist_image/joints/gripper/actions),
+correct image shape. **This is the first complete, loadable,
+correctly-shaped dataset this project has ever produced.** Of the 5
+rejected attempts: 4 never lifted at all, 1 placed 160mm off with
+max_cube_z=0.081m -- barely above `LIFT_Z_THRESHOLD=0.08`, i.e. a marginal/
+weak grasp, not a place-approach problem (the small 32-56mm-band near-misses
+seen in the PRE-correction run did not recur at all in this run -- the
+correction loop appears to have closed exactly that gap, leaving only
+grasp-quality failures, a separate problem tracked below).
+
+Also fixed while investigating the missing summary prints: `collect_demos.py`/
+`collect_rlds_episodes.py`'s `main()` only flushed stdout on the exception
+path (matching an existing comment about Kit's `fastShutdown` racing a
+traceback) but not on normal return -- the same race silently drops
+ordinary buffered `print()` output too. Fixed by flushing unconditionally
+in `finally`, before `simulation_app.close()`.
+
+**Grasp reliability is now the dominant, measurable bottleneck** -- 47-67%
+raw success across the two dry runs so far (N=15-30, too small for a real
+confidence interval: Wilson interval at 14/30 is roughly 31-63%). Spawn
+positions of failures don't visibly cluster in one region across either
+run, suggesting a general reliability issue rather than a location-specific
+one, but this needs an actual N=30-50 run with spawn-XY logged per outcome
+to confirm rather than eyeballing. Also not yet split: "never closes"
+(closure itself fails) vs "closes then drops before lift" (grip force
+marginal) -- the existing dz/closure-fraction logging pattern
+(`check_grasp_alignment.py`) applied to a batch of "never lifted" cases
+would separate these; if it's the latter, the kp=17/effort_limit=1650
+softening that fixed the original contact-force-spike problem may have
+overcorrected, and the kp/effort_limit/follower-PD 3-way decomposition
+deferred earlier in this file becomes relevant again. Not started.
+
+New: `PickPlaceScene.step_towards_diffik`, `PickPlaceScene.get_diffik_gate`,
+`ScriptedPickPlace.diffik_frame_range`, `ScriptedPickPlace.settle3_end_tick`.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls

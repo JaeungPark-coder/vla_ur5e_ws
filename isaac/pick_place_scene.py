@@ -444,6 +444,7 @@ class PickPlaceScene:
         # the cube prim and played physics at least once -- see reset()'s
         # own comment for why this replaced set_rigid_body_translation.
         self.cube_rigid_prim = None
+        self._diffik_gate = None  # lazy -- see get_diffik_gate()
 
     def _setup_cameras(self):
         base_cam = UsdGeom.Camera.Define(self.stage, BASE_CAMERA_PRIM_PATH)
@@ -803,6 +804,75 @@ class PickPlaceScene:
         self.gripper.set_target(gripper_target)
         self.world.step(render=True)
         self._sync_gripper_to_flange()
+
+    def get_diffik_gate(self):
+        """Lazily constructs and caches a FeasibilityGate (feasibility_gate.py)
+        for step_towards_diffik's own use -- constructing a fresh
+        LulaKinematicsSolver every tick would be needlessly expensive, and
+        scripts that never reach the place segment (check_grasp_alignment.py,
+        check_close_lift_dynamics.py) shouldn't pay for one at all."""
+        if self._diffik_gate is None:
+            from feasibility_gate import FeasibilityGate
+            self._diffik_gate = FeasibilityGate(ROBOT_PRIM_PATH)
+        return self._diffik_gate
+
+    def step_towards_diffik(self, target_pos, target_rotvec, target_gripper,
+                             cart_gain=4.0, max_lin_speed=0.3, max_ang_speed=2.0, damping=1e-3):
+        """CONFIRMED 2026-09-28 (README's 2026-09-28 section): the place
+        approach (descend2/settle3/release) converges to a persistent
+        25-56mm tracking bias under step_towards's RMPflow-driven Cartesian
+        control that survives even a 400-tick dwell -- a genuine alternate
+        equilibrium in the potential-field composition RMPflow solves
+        (attractor + joint-limit-avoidance + self-collision RMPs), not a
+        settling-time problem. Quantitatively ruled out as the cause: grip
+        slip, RMPflow-vs-cube obstacle avoidance, closed-gripper self-
+        collision geometry, gravity/payload steady-state PD droop (predicted
+        droop was 3 orders of magnitude too small), and kinematic
+        singularity/low manipulability (the place target is BETTER
+        conditioned than the grasp region, not worse) -- i.e. this specific
+        pose is not locally bad, but the RMP composition's GLOBAL basin
+        structure getting there can still have multiple equilibria, which a
+        local manipulability/condition-number check cannot see.
+
+        Bypasses RMPflow entirely for the segment(s) that need millimeter
+        convergence (matches the standard practice of using direct
+        Jacobian/differential-IK Cartesian servoing, not a potential-field
+        planner, for the final grasp/place approach -- RMP-style methods are
+        suited to gross, obstacle-aware reach, not final-centimeter
+        precision). Same target-frame semantics as step_towards (grip-frame
+        target_pos/target_rotvec via the SAME _grip_pose_to_tool0 conversion)
+        so callers can swap one for the other per-segment without changing
+        what they pass in.
+
+        Damped least-squares (Levenberg-style: qdot = J^T (J J^T + damping^2
+        I)^-1 v) rather than a plain inverse -- manipulability was confirmed
+        fine at the place target (check_place_manipulability.py), but
+        damping is cheap insurance against whatever intermediate pose the
+        servo passes through before it gets there. Uses MEASURED joint
+        positions for both the current-pose FK and the Jacobian (not the
+        last commanded target), so this is self-consistent live state
+        feedback, not open-loop."""
+        gate = self.get_diffik_gate()
+        flange_pos, tool0_quat_wxyz = self._grip_pose_to_tool0(target_pos, target_rotvec)
+
+        q = np.asarray(self.robot.get_joint_positions())[:6]
+        cur_pos, cur_rot = gate.solver.compute_forward_kinematics(gate.ee_frame_name, q)
+        cur_pos = np.asarray(cur_pos, dtype=float)
+        r_cur = Rot.from_matrix(np.asarray(cur_rot))
+        r_target = Rot.from_quat(np.asarray(tool0_quat_wxyz, dtype=float)[[1, 2, 3, 0]])
+
+        pos_err = np.asarray(flange_pos, dtype=float) - cur_pos
+        rot_err = (r_target * r_cur.inv()).as_rotvec()
+        v_lin = np.clip(cart_gain * pos_err, -max_lin_speed, max_lin_speed)
+        v_ang = np.clip(cart_gain * rot_err, -max_ang_speed, max_ang_speed)
+        v = np.concatenate([v_lin, v_ang])
+
+        jac = gate._numerical_jacobian(q)  # (6,6): rows 0-2 linear, 3-5 angular
+        jjt = jac @ jac.T
+        qdot = jac.T @ np.linalg.solve(jjt + (damping ** 2) * np.eye(6), v)
+        q_new = q + qdot * self.physics_dt
+
+        self.apply_joint_targets(q_new, target_gripper)
 
     def get_observation(self):
         # The fingertips, not the bare flange: waypoints are expressed as grip

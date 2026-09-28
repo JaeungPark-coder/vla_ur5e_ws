@@ -65,6 +65,18 @@ GRIPPER_FINGER_KP = 17.0
 GRIPPER_FINGER_KD = 0.02
 GRIPPER_FINGER_EFFORT_LIMIT = 1650.0
 
+# 2026-09-28: closed-loop place correction (see the settle3_end handling
+# below) -- small on purpose. This is safe to add now specifically BECAUSE
+# descend2/settle3/release already use step_towards_diffik: the earlier
+# fixed-trim attempt at this same problem (moving the TARGET by a measured
+# constant, back when the place approach was still RMPflow-driven) made 3/5
+# episodes much worse by pushing into a different RMPflow equilibrium
+# ("basin-hopping", see README). With diffIK already converging close
+# (2-20mm observed), a few more small corrective diffIK ticks toward the
+# SAME target carries none of that risk.
+PLACE_CORRECTION_TOLERANCE_M = 0.003
+PLACE_CORRECTION_MAX_TICKS = 30
+
 
 def _to_rgb_uint8(rgba_or_rgb):
     """Replicator's "rgb" annotator returns HxWx4 (RGBA) uint8 -- LeRobot's
@@ -158,13 +170,25 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
 
         obs = scene.reset()
         policy = ScriptedPickPlace(obs["tool_pos"], scene.cube_position, PLACE_TARGET_POSITION)
+        diffik_start, diffik_end = policy.diffik_frame_range()
+        settle3_end = policy.settle3_end_tick()
 
         n_logged = 0
         max_cube_z = -np.inf
         peak_cube_px = 0
-        for target_pos, target_rotvec, target_gripper in policy.generate_frames():
+
+        def log_one_tick(target_pos, target_rotvec, target_gripper, use_diffik):
+            nonlocal n_logged, max_cube_z, peak_cube_px
             obs = scene.get_observation()
-            scene.step_towards(target_pos, target_rotvec, target_gripper)
+            # 2026-09-28: descend2/settle3/release (the place approach) use
+            # direct Jacobian servoing instead of RMPflow -- see
+            # step_towards_diffik's docstring / README's 2026-09-28 section
+            # for why (a persistent 25-56mm RMPflow tracking bias at the
+            # place target that a 400-tick dwell does not resolve).
+            if use_diffik:
+                scene.step_towards_diffik(target_pos, target_rotvec, target_gripper)
+            else:
+                scene.step_towards(target_pos, target_rotvec, target_gripper)
             next_obs = scene.get_observation()
 
             # Log the ACHIEVED next joint state as the action, not the
@@ -184,6 +208,27 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
             n_logged += 1
             max_cube_z = max(max_cube_z, float(scene.get_cube_position()[2]))
             peak_cube_px = max(peak_cube_px, scene.cube_pixels_visible(obs["base_rgb"]))
+
+        for tick, (target_pos, target_rotvec, target_gripper) in enumerate(policy.generate_frames(), start=1):
+            log_one_tick(target_pos, target_rotvec, target_gripper, use_diffik=(diffik_start <= tick <= diffik_end))
+
+            if tick == settle3_end:
+                # Closed-loop place correction: settle3's fixed 90-tick
+                # diffIK dwell already gets the grip point close (2-20mm,
+                # see check_place_dynamics.py's 5-seed verification) but
+                # doesn't measure-and-decide. Keep re-measuring and
+                # correcting (same target, same diffIK controller) until
+                # within tolerance or the tick budget runs out, LOGGING each
+                # correction tick into the dataset rather than hiding it --
+                # teaches the policy the "approach then re-adjust" behavior
+                # a real deployment will need (see README's 2026-09-28
+                # section on why recording beats hiding this).
+                for _ in range(PLACE_CORRECTION_MAX_TICKS):
+                    residual_m = float(np.linalg.norm(
+                        np.asarray(target_pos, dtype=float) - scene.grip_point_world()))
+                    if residual_m <= PLACE_CORRECTION_TOLERANCE_M:
+                        break
+                    log_one_tick(target_pos, target_rotvec, target_gripper, use_diffik=True)
 
         # Only a demonstration that actually demonstrates the task is worth
         # keeping. clear_episode_buffer() also removes the frames' image
@@ -281,6 +326,19 @@ def main():
         import traceback
         print("\n=== FAILED ===\n" + traceback.format_exc(), flush=True)
     finally:
+        # CONFIRMED 2026-09-28: not just the exception path -- collect()'s own
+        # final summary prints (the last "attempt N -> ..." line, "collected
+        # N successful episodes...", "done -- dataset written to...") were
+        # observed missing from a real run's log despite the run completing
+        # correctly (verified by loading the resulting dataset directly:
+        # exactly the right episode/frame count, fully finalized). Those
+        # print()s aren't flush=True and stdout is block-buffered once
+        # redirected to a file/pipe -- the SAME fastShutdown race the
+        # exception-path comment above already describes, just for ordinary
+        # buffered output instead of a traceback. Flush unconditionally here
+        # rather than hunting down every print() call in collect().
+        import sys
+        sys.stdout.flush()
         simulation_app.close()
 
 

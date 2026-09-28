@@ -91,12 +91,19 @@ def run(episodes, seed):
         say(f"{'tick':>5} {'seg':>10} {'grip_tgt':>8} {'grip_act':>8} "
             f"{'dz_mm':>8} {'tcp_err_mm':>10} {'cube_z_mm':>9}")
 
+        diffik_start, diffik_end = policy.diffik_frame_range()
+        say(f"diffik controls ticks [{diffik_start}, {diffik_end}] (descend2/settle3/release); "
+            f"RMPflow elsewhere")
+
         max_cube_z = -np.inf
         seg_idx = 0
         dz_by_segment = {}  # seg_name -> list of dz (mm)
         tcp_err_by_segment = {}
         for tick, (target_pos, target_rotvec, target_gripper) in enumerate(policy.generate_frames(), start=1):
-            scene.step_towards(target_pos, target_rotvec, target_gripper)
+            if diffik_start <= tick <= diffik_end:
+                scene.step_towards_diffik(target_pos, target_rotvec, target_gripper)
+            else:
+                scene.step_towards(target_pos, target_rotvec, target_gripper)
             while seg_idx < len(segment_bounds) - 1 and tick > segment_bounds[seg_idx]:
                 seg_idx += 1
             seg_name = SEGMENT_NAMES[seg_idx]
