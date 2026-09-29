@@ -35,7 +35,11 @@ HEADLESS = os.environ.get("ISAAC_RESIDUAL_ENV_HEADLESS", "1") != "0"
 simulation_app = SimulationApp({"headless": HEADLESS})
 
 # --- everything below must be imported AFTER SimulationApp() starts Kit ---
-from pick_place_scene import PickPlaceScene, PLACE_TARGET_POSITION, LIFT_Z_THRESHOLD  # noqa: E402
+from pick_place_scene import (  # noqa: E402
+    PickPlaceScene, PLACE_TARGET_POSITION, LIFT_Z_THRESHOLD, ROBOT_PRIM_PATH,
+    GRIPPER_FINGER_KP, GRIPPER_FINGER_KD, GRIPPER_FINGER_EFFORT_LIMIT)
+from isaac_sim_common import (  # noqa: E402
+    GRIPPER_DRIVE_JOINT_NAME, set_joint_max_force, zero_follower_joint_drives)
 
 OBS_DIM = 14   # joints(6) + gripper(1) + pi0's own proposed action(7) -- see module docstring in ../README.md Phase 4 on why NOT cube/target position
 ACTION_DIM = 6  # residual correction on the 6 arm joints only -- gripper stays under pi0's direct control
@@ -65,7 +69,30 @@ class IsaacResidualEnv(gym.Env):
         from openpi_client.websocket_client_policy import WebsocketClientPolicy
         self.policy = WebsocketClientPolicy(host=policy_host, port=policy_port)
 
-        self.scene = PickPlaceScene()
+        # 2026-09-29: this env was still constructing PickPlaceScene with no
+        # gripper override at all, silently training the residual policy
+        # against the as-shipped-fixed 20000/500/no-limit config that has
+        # never once produced a successful lift, even after 2026-09-28's
+        # collect_demos.py fix -- see pick_place_scene.py's own comment on
+        # GRIPPER_FINGER_KP for the full story and why the three values
+        # below go together. A residual correction trained on top of a
+        # gripper that can't grasp at all would have nothing real to
+        # correct against.
+        self.scene = PickPlaceScene(finger_kp=GRIPPER_FINGER_KP, finger_kd=GRIPPER_FINGER_KD)
+
+        # Same ordering requirement as collect_demos.py/pick_place_scene_
+        # bridge.py -- must run BEFORE the first self.scene.reset() (called
+        # from this class's own reset() below, by whatever training loop
+        # constructs this env). set_joint_max_force reverts finger_joint's
+        # live controller gain as a side effect; reset()'s own
+        # reapply_drive_gains() restores it, on every subsequent reset too.
+        robot_prim = self.scene.stage.GetPrimAtPath(ROBOT_PRIM_PATH)
+        set_joint_max_force(robot_prim, GRIPPER_FINGER_EFFORT_LIMIT, joint_names=(GRIPPER_DRIVE_JOINT_NAME,))
+        follower_names = zero_follower_joint_drives(robot_prim)
+        if not follower_names:
+            raise RuntimeError(
+                "zero_follower_joint_drives found no follower/passive gripper joints to zero -- "
+                "check resolve_gripper_follower_joint_names, the grasp fix depends on this.")
 
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(OBS_DIM,), dtype=np.float32)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(ACTION_DIM,), dtype=np.float32)

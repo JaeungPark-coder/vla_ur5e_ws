@@ -40,7 +40,11 @@ from std_msgs.msg import Float32, Empty  # noqa: E402
 from geometry_msgs.msg import Point  # noqa: E402
 from cv_bridge import CvBridge  # noqa: E402
 
-from pick_place_scene import PickPlaceScene  # noqa: E402
+from pick_place_scene import (  # noqa: E402
+    PickPlaceScene, ROBOT_PRIM_PATH, GRIPPER_FINGER_KP, GRIPPER_FINGER_KD,
+    GRIPPER_FINGER_EFFORT_LIMIT)
+from isaac_sim_common import (  # noqa: E402
+    GRIPPER_DRIVE_JOINT_NAME, set_joint_max_force, zero_follower_joint_drives)
 
 JOINT_TARGET_TOPIC = "/vla/joint_target"
 GRIPPER_TARGET_TOPIC = "/vla/gripper_target"
@@ -98,7 +102,34 @@ class PickPlaceSceneBridge(Node):
 
 
 def main():
-    scene = PickPlaceScene()
+    # 2026-09-29: this bridge is what vla_policy_client.py's eval_mode (and
+    # the eventual real UR5e serving path) actually grasps against -- it
+    # was still constructing PickPlaceScene with no gripper override at
+    # all, silently defaulting to the as-shipped-fixed 20000/500/no-limit
+    # config that has never once produced a successful lift, even after
+    # 2026-09-28's collect_demos.py fix (see pick_place_scene.py's own
+    # comment on GRIPPER_FINGER_KP for the full story and why the three
+    # values below go together). Whatever pi0 policy gets evaluated here
+    # was going to fail on the gripper alone, independent of how good the
+    # policy itself is.
+    scene = PickPlaceScene(finger_kp=GRIPPER_FINGER_KP, finger_kd=GRIPPER_FINGER_KD)
+
+    # Same ordering requirement as collect_demos.py -- must run BEFORE the
+    # first scene.reset() below. set_joint_max_force on finger_joint's prim
+    # reverts its LIVE controller gain (the finger_kp/finger_kd just
+    # requested above) back to the raw USD default as a side effect;
+    # scene.reset()'s reapply_drive_gains() is what restores it, and this
+    # bridge already calls scene.reset() again on every eval trial
+    # (bridge.reset_requested below), so this block only needs to run once
+    # here.
+    robot_prim = scene.stage.GetPrimAtPath(ROBOT_PRIM_PATH)
+    set_joint_max_force(robot_prim, GRIPPER_FINGER_EFFORT_LIMIT, joint_names=(GRIPPER_DRIVE_JOINT_NAME,))
+    follower_names = zero_follower_joint_drives(robot_prim)
+    if not follower_names:
+        raise RuntimeError(
+            "zero_follower_joint_drives found no follower/passive gripper joints to zero -- "
+            "check resolve_gripper_follower_joint_names, the grasp fix depends on this.")
+
     scene.reset()
 
     rclpy.init()

@@ -44,7 +44,8 @@ simulation_app = SimulationApp({"headless": HEADLESS})
 
 # --- everything below must be imported AFTER SimulationApp() starts Kit ---
 from pick_place_scene import (  # noqa: E402
-    PickPlaceScene, PLACE_TARGET_POSITION, MIN_CUBE_PIXELS_IN_BASE_VIEW, ROBOT_PRIM_PATH)
+    PickPlaceScene, PLACE_TARGET_POSITION, MIN_CUBE_PIXELS_IN_BASE_VIEW, ROBOT_PRIM_PATH,
+    GRIPPER_FINGER_KP, GRIPPER_FINGER_KD, GRIPPER_FINGER_EFFORT_LIMIT)
 from isaac_sim_common import (  # noqa: E402
     GRIPPER_DRIVE_JOINT_NAME, set_joint_max_force, zero_follower_joint_drives)
 from scripted_pick_place import ScriptedPickPlace  # noqa: E402
@@ -52,18 +53,18 @@ from scripted_pick_place import ScriptedPickPlace  # noqa: E402
 PROMPT = "pick up the cube and place it in the target zone"
 CONTROL_FPS = 30  # matches the LeRobot dataset's `fps` metadata -- keep in sync with steps_per_segment choices
 
-# 2026-09-28: the first-ever successful grasp-lift (5/5, ~2x LIFT_Z_THRESHOLD,
-# see README's 2026-09-28 section) used IsaacLab's real FRANKA_ROBOTIQ_GRIPPER_CFG
+# 2026-09-29: GRIPPER_FINGER_KP/KD/EFFORT_LIMIT moved to pick_place_scene.py
+# (single source of truth -- see its own comment there) since
+# collect_rlds_episodes.py had already independently redeclared the same
+# three values, and pick_place_scene_bridge.py/residual_rl_train_env.py
+# needed them too but had neither the values nor the wiring at all. The
+# first-ever successful grasp-lift (5/5, ~2x LIFT_Z_THRESHOLD, see README's
+# 2026-09-28 section) used these -- IsaacLab's real FRANKA_ROBOTIQ_GRIPPER_CFG
 # reference gains, not this project's own as-shipped-then-"fixed" 20000/500/
 # no-limit default -- PickPlaceScene(finger_kp=None, finger_kd=None) resolves
 # to that broken default (see GripperController._fix_drive_gains), so leaving
 # these unset here would silently keep collecting against the config that has
-# never once produced a successful lift. These three go together -- see
-# check_free_space_closure.py's docstring for why (finger_effort_limit and
-# zero_follower_pd applied together with this kp/kd, not separately tested).
-GRIPPER_FINGER_KP = 17.0
-GRIPPER_FINGER_KD = 0.02
-GRIPPER_FINGER_EFFORT_LIMIT = 1650.0
+# never once produced a successful lift.
 
 # 2026-09-28: closed-loop place correction (see the settle3_end handling
 # below) -- small on purpose. This is safe to add now specifically BECAUSE

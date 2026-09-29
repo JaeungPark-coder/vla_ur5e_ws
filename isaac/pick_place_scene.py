@@ -88,6 +88,31 @@ CUBE_SIZE_M = 0.04  # edge length of the spawned cube
 CUBE_Z = 0.02  # resting height for a 4cm cube on the table surface
 PLACE_TARGET_POSITION = np.array([0.45, 0.30, 0.0])
 
+# 2026-09-29: single source of truth for the finger_joint config the
+# 2026-09-28 first-ever successful grasp-lift actually used (IsaacLab's
+# real FRANKA_ROBOTIQ_GRIPPER_CFG reference gains -- kp=20000/kd=500/no
+# limit, GripperController's as-shipped-fixed default, has never once
+# produced a successful lift). Moved here from collect_demos.py, which
+# had this triplicate-declared with collect_rlds_episodes.py (same
+# values, independently typed twice already -- exactly the kind of
+# duplicate-constant drift this project has been bitten by before, e.g.
+# LIFT_Z_THRESHOLD's own 2026-09-23 fix). Every caller that constructs a
+# PickPlaceScene meant to actually grasp something should use these
+# three together -- see check_free_space_closure.py's docstring for why
+# kp/kd, effort_limit, and zero_follower_joint_drives were only ever
+# tested as a set, not separately -- via:
+#   scene = PickPlaceScene(finger_kp=GRIPPER_FINGER_KP, finger_kd=GRIPPER_FINGER_KD)
+#   robot_prim = scene.stage.GetPrimAtPath(ROBOT_PRIM_PATH)
+#   set_joint_max_force(robot_prim, GRIPPER_FINGER_EFFORT_LIMIT, joint_names=(GRIPPER_DRIVE_JOINT_NAME,))
+#   zero_follower_joint_drives(robot_prim)  # raise if this returns [] -- see collect_demos.py
+# BEFORE the first scene.reset() -- set_joint_max_force reverts finger_joint's
+# live controller gain as a side effect, and reset()'s reapply_drive_gains()
+# is what restores it, so ordering matters (see collect_demos.py's own
+# comment on this for the full story).
+GRIPPER_FINGER_KP = 17.0
+GRIPPER_FINGER_KD = 0.02
+GRIPPER_FINGER_EFFORT_LIMIT = 1650.0
+
 # Episode-outcome thresholds (see grasp_succeeded / place_error_m below).
 # The cube rests with its centre at CUBE_Z=0.02 and the scripted expert
 # lifts it ~0.15 m, so 0.08 cleanly separates "picked up" from "still on the
