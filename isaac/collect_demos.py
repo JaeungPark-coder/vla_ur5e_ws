@@ -108,7 +108,8 @@ def max_attempts_for(num_episodes: int) -> int:
     return max(10, 3 * num_episodes)
 
 
-def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_m: float = 0.03):
+def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_m: float = 0.03,
+            overwrite: bool = False):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.utils.constants import HF_LEROBOT_HOME
 
@@ -125,8 +126,26 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
           f"place_correction_max_ticks={PLACE_CORRECTION_MAX_TICKS} "
           f"place_tolerance_m={place_tolerance_m}", flush=True)
 
+    # CONFIRMED 2026-09-29: this used to unconditionally shutil.rmtree an
+    # existing repo_id -- fine for smoke tests, a real hazard now that
+    # `vla_ur5e_ws/ur5e_pick_place_v1` exists as the merged, permanent
+    # 82-episode dataset (README's Phase 3 checklist): this script has NO
+    # append mode (LeRobotDataset.create always starts empty), so running it
+    # again with that repo_id would silently delete everything already
+    # collected. Collect into a fresh/throwaway repo_id instead and merge in
+    # with `lerobot-edit-dataset --operation.type merge` afterward (the same
+    # workflow used to build v1) -- pass --overwrite only when the target
+    # really is meant to be replaced.
     output_path = HF_LEROBOT_HOME / repo_id
     if output_path.exists():
+        if not overwrite:
+            raise RuntimeError(
+                f"{output_path} already exists and --overwrite was not passed -- refusing to "
+                f"delete it. If this is meant to be a fresh throwaway/smoke-test dataset, pass "
+                f"--overwrite. If you meant to ADD to an existing dataset (e.g. the permanent "
+                f"vla_ur5e_ws/ur5e_pick_place_v1), collect into a NEW repo_id instead and merge "
+                f"it in with `lerobot-edit-dataset --operation.type merge` -- this script has no "
+                f"append mode and would otherwise silently destroy what's already there.")
         shutil.rmtree(output_path)
 
     image_shape = (256, 256, 3)  # keep in sync with pick_place_scene.CAMERA_RESOLUTION
@@ -355,13 +374,20 @@ def main():
                         help="max cube-to-target planar error for an episode to count as a "
                              "demonstration; matches the success threshold vla_policy_client.py's "
                              "eval_mode and hybrid_pick_place_demo.py already use")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="allow deleting an existing dataset at --repo_id. Without this, "
+                             "an existing repo_id refuses to run rather than silently deleting "
+                             "it -- there is no append mode, so collecting more into an existing "
+                             "permanent dataset means a NEW repo_id + a separate "
+                             "`lerobot-edit-dataset --operation.type merge` step, not rerunning "
+                             "this with the same --repo_id.")
     args = parser.parse_args()
 
     # Print any traceback BEFORE closing the app: simulation_app.close() runs
     # Kit's fastShutdown, which kills the process before Python can report an
     # escaping exception, making a crash look like a clean exit.
     try:
-        collect(args.num_episodes, args.repo_id, args.push_to_hub, args.place_tolerance_m)
+        collect(args.num_episodes, args.repo_id, args.push_to_hub, args.place_tolerance_m, args.overwrite)
     except BaseException:
         import traceback
         print("\n=== FAILED ===\n" + traceback.format_exc(), flush=True)

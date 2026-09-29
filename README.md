@@ -1675,34 +1675,68 @@ New: `ScriptedPickPlace.grasp_diffik_frame_range`, `ScriptedPickPlace.settle2_en
 Before moving to LoRA fine-tuning:
 - **Data volume**: pi0's own reported results (starting from a pretrained
   checkpoint) use roughly 150 demonstrations per task for strong results.
-  Three dry runs today (15+50+20, see below) total **85 saved episodes**,
-  already past halfway to that target -- but split across THREE separate
-  LeRobot datasets (`smoketest/collect_demos_grasp_diffik_20260928`,
-  `..._batch50_20260928`, `..._tol5mm_20260928`), not one. **Not yet
-  consolidated into a single training-ready dataset** -- needs either a
-  merge step or a real (non-`smoketest/`) `--repo_id` for the next
-  collection run to append to, before Phase 3 can point at "the" dataset.
-  **Before merging**, note the three subsets were NOT collected under
-  identical config -- `PLACE_CORRECTION_TOLERANCE_M` changed mid-session
-  (see the correction-trigger-rate bug below), so the recorded correction
-  sub-trajectories differ structurally between them, not just in success
-  rate:
+  **Consolidated 2026-09-29** (`lerobot-edit-dataset`, see the Merge History
+  table below): three same-day dry runs (15+50+20 = 85 saved episodes)
+  merged into one permanent dataset, **`vla_ur5e_ws/ur5e_pick_place_v1`
+  (82 episodes, 86,646 frames)**, 3 short of 85 after the outlier filter
+  below. Verified by loading it directly (not just trusting the tool's
+  own log): `LeRobotDataset('vla_ur5e_ws/ur5e_pick_place_v1')` reports
+  exactly 82 episodes, correct features/shapes. This is now "the" dataset
+  -- still short of the ~150 target, needs more collection appended (see
+  the `--overwrite` guard just below before doing that).
 
-  | repo_id | episodes | `PLACE_CORRECTION_TOLERANCE_M` | correction shape |
+  **`collect_demos.py` had NO way to append to an existing dataset** -- it
+  unconditionally `shutil.rmtree`'d anything already at `--repo_id`, which
+  would have silently destroyed this merged dataset the next time someone
+  ran it pointed here. Fixed 2026-09-29: refuses to overwrite an existing
+  `--repo_id` unless `--overwrite` is passed. **The actual append workflow
+  going forward is: collect into a fresh throwaway `--repo_id`, then
+  `lerobot-edit-dataset --operation.type merge` it into
+  `vla_ur5e_ws/ur5e_pick_place_v1`** -- same process used to build v1
+  itself, not a rerun with the same `--repo_id`.
+
+  **Outlier filter applied during the merge**: 3 of the 85 episodes had
+  `max_cube_z > 0.25m` (0.286m, 0.297m, 0.339m -- vs the normal ~0.16m),
+  a milder version of the same contact-instability pattern behind 2 other
+  (already-rejected, never-saved) explosion attempts the same day (cube to
+  0.55-0.56m). Investigated live (`check_contact_explosion.py`, forcing the
+  exact failing spawn position) before deciding to filter rather than fix:
+  the depenetration-velocity cap already in place (0.5 m/s,
+  `isaac_sim_common.py`, since 2026-09-14 -- this is NOT a new/unapplied
+  mitigation) clearly isn't sufficient by itself, but reproducing the exact
+  failure at a fixed spawn position instead produced a DIFFERENT, unrelated
+  failure (a marginal grasp that dropped the cube near the start) --
+  **confirming real run-to-run non-determinism in the physics sim** at a
+  fixed scripted input, most likely PhysX's GPU solver. Worth remembering
+  generally: this session's whole verification methodology has relied on
+  "same 5 seeds -> same result," which today's finding shows is not
+  perfectly exact -- doesn't invalidate today's 5-seed checks, but if a
+  fix that tested clean today is later reported as "mostly works, fails
+  occasionally," check this non-determinism before assuming regression.
+  Chasing the root cause further (many repeated trials at one spawn point,
+  since the same position didn't reliably reproduce it) was judged not
+  worth it against just filtering -- outlier exclusion protects the
+  dataset with certainty today; further investigation had no guaranteed
+  payoff given 9+ prior sessions' worth of unresolved contact-instability
+  history (see check_close_lift_dynamics.py-era mentions above).
+
+  **Merge history** (for reconstructing or extending the dataset):
+
+  | step | repo_id | episodes | notes |
   |---|---|---|---|
-  | `smoketest/collect_demos_grasp_diffik_20260928` | 15 | 0.003 (buggy) | when triggered, almost always maxes out at 30 ticks |
-  | `smoketest/collect_demos_batch50_20260928` | 50 | 0.003 (buggy) | same -- all 50 episodes' tick counts were exact multiples of 30 |
-  | `smoketest/collect_demos_tol5mm_20260928` | 20 | 0.005 (fixed) | short, variable correction (3-5 ticks typical), converges and exits early |
+  | source | `smoketest/collect_demos_grasp_diffik_20260928` | 15 | `PLACE_CORRECTION_TOLERANCE_M=0.003` (buggy) |
+  | source | `smoketest/collect_demos_batch50_20260928` | 50 -> 49 | same 0.003; episode 18 (max_cube_z=0.297m) dropped |
+  | source | `smoketest/collect_demos_tol5mm_20260928` | 20 -> 18 | `PLACE_CORRECTION_TOLERANCE_M=0.005` (fixed); episodes 3,5 (0.286m, 0.339m) dropped |
+  | **merged** | **`vla_ur5e_ws/ur5e_pick_place_v1`** | **82** | current canonical dataset |
 
-  Placement accuracy and success/failure labels are healthy in all three
-  (nothing here needs re-collecting), but a policy could plausibly pick up
-  on "same-looking near-target situation, two very different response
-  lengths" as noise rather than signal if trained on the pooled data
-  without knowing this. `collect_demos.py`/`collect_rlds_episodes.py` now
-  print their full gripper/correction config at the start of every run
-  (2026-09-29) specifically so this doesn't need reconstructing from git
-  history again -- carry that line (or the tolerance value) into whatever
-  merge/metadata step combines these.
+  The tolerance heterogeneity itself (noted before the merge) is still
+  present WITHIN the 82 -- 64 episodes recorded under the 0.003-tolerance
+  regime (long, uniform ~30-tick corrections when triggered), 18 under the
+  fixed 0.005 (short, variable 3-5 ticks). Not re-collected/rebalanced;
+  flagged here in case training behaves oddly and this composition split
+  turns out to matter. `collect_demos.py`/`collect_rlds_episodes.py` print
+  their full gripper/correction config at the start of every run so future
+  collection doesn't need this reconstructed from git history again.
 - **extra_delta_transform / action convention**: statically confirmed
   correct AND re-checked against real collected data -- see
   `train_config_snippet.py`'s `LeRobotUR5eDataConfig`
