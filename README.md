@@ -1682,6 +1682,27 @@ Before moving to LoRA fine-tuning:
   consolidated into a single training-ready dataset** -- needs either a
   merge step or a real (non-`smoketest/`) `--repo_id` for the next
   collection run to append to, before Phase 3 can point at "the" dataset.
+  **Before merging**, note the three subsets were NOT collected under
+  identical config -- `PLACE_CORRECTION_TOLERANCE_M` changed mid-session
+  (see the correction-trigger-rate bug below), so the recorded correction
+  sub-trajectories differ structurally between them, not just in success
+  rate:
+
+  | repo_id | episodes | `PLACE_CORRECTION_TOLERANCE_M` | correction shape |
+  |---|---|---|---|
+  | `smoketest/collect_demos_grasp_diffik_20260928` | 15 | 0.003 (buggy) | when triggered, almost always maxes out at 30 ticks |
+  | `smoketest/collect_demos_batch50_20260928` | 50 | 0.003 (buggy) | same -- all 50 episodes' tick counts were exact multiples of 30 |
+  | `smoketest/collect_demos_tol5mm_20260928` | 20 | 0.005 (fixed) | short, variable correction (3-5 ticks typical), converges and exits early |
+
+  Placement accuracy and success/failure labels are healthy in all three
+  (nothing here needs re-collecting), but a policy could plausibly pick up
+  on "same-looking near-target situation, two very different response
+  lengths" as noise rather than signal if trained on the pooled data
+  without knowing this. `collect_demos.py`/`collect_rlds_episodes.py` now
+  print their full gripper/correction config at the start of every run
+  (2026-09-29) specifically so this doesn't need reconstructing from git
+  history again -- carry that line (or the tolerance value) into whatever
+  merge/metadata step combines these.
 - **extra_delta_transform / action convention**: statically confirmed
   correct AND re-checked against real collected data -- see
   `train_config_snippet.py`'s `LeRobotUR5eDataConfig`

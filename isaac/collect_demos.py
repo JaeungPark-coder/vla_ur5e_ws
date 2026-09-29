@@ -111,6 +111,19 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.utils.constants import HF_LEROBOT_HOME
 
+    # 2026-09-28: print the config every run stores its data under, not just
+    # the code -- three same-day datasets (grasp_diffik/batch50/tol5mm) were
+    # collected under two different PLACE_CORRECTION_TOLERANCE_M values
+    # (0.003 was a bug, fixed to 0.005 mid-session, see README's Phase 3
+    # checklist) with no way to tell which from the dataset alone, only from
+    # git history. Cheap insurance against needing that archaeology again --
+    # the run's own log now says which config it used.
+    print(f"config: repo_id={repo_id!r} finger_kp={GRIPPER_FINGER_KP} finger_kd={GRIPPER_FINGER_KD} "
+          f"finger_effort_limit={GRIPPER_FINGER_EFFORT_LIMIT} "
+          f"place_correction_tolerance_m={PLACE_CORRECTION_TOLERANCE_M} "
+          f"place_correction_max_ticks={PLACE_CORRECTION_MAX_TICKS} "
+          f"place_tolerance_m={place_tolerance_m}", flush=True)
+
     output_path = HF_LEROBOT_HOME / repo_id
     if output_path.exists():
         shutil.rmtree(output_path)

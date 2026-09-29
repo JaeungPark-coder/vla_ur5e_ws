@@ -217,6 +217,14 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # See collect_demos.py's matching print -- same reasoning (the
+    # PLACE_CORRECTION_TOLERANCE_M 0.003->0.005 fix mid-session left
+    # same-day datasets under different configs with no way to tell which
+    # from the data alone).
+    print(f"config: finger_kp={GRIPPER_FINGER_KP} finger_kd={GRIPPER_FINGER_KD} "
+          f"finger_effort_limit={GRIPPER_FINGER_EFFORT_LIMIT} "
+          f"place_correction_tolerance_m={PLACE_CORRECTION_TOLERANCE_M} "
+          f"place_correction_max_ticks={PLACE_CORRECTION_MAX_TICKS}", flush=True)
     scene = PickPlaceScene(finger_kp=GRIPPER_FINGER_KP, finger_kd=GRIPPER_FINGER_KD)
 
     # CONFIRMED 2026-09-28, load-bearing -- see collect_demos.py's matching
