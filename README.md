@@ -1795,6 +1795,88 @@ Before moving to LoRA fine-tuning:
   retry, nothing worse), but worth a closer look before scaling collection
   much further.
 
+### 2026-09-29 summary: Phase 3's data gate closed -- 152-episode dataset, ready to hand off to the training machine
+
+Continuation of 2026-09-28's momentum, five threads in commit order
+(`8da096b`..`3d46069`):
+
+1. **The same "fix in one file, sibling missed it" pattern, twice more**
+   -- `8da096b`/`e156b04` (done by the user directly, in a separate
+   session, while this session was still wrapping up 2026-09-28).
+   `pick_place_scene_bridge.py` (pi0 eval/real-robot path) and
+   `residual_rl_train_env.py` (residual RL) both still built
+   `PickPlaceScene()` with no gripper override, so anything evaluated or
+   trained through either would have failed on the gripper alone. Fixed
+   both, and deduplicated `GRIPPER_FINGER_KP/KD/EFFORT_LIMIT` into
+   `pick_place_scene.py` as the single source of truth (matching
+   `LIFT_Z_THRESHOLD`'s own earlier deduplication). Laptop-audited, not
+   yet run against Isaac Sim. See "audited every pi0-pipeline caller"
+   below.
+2. **Verified the dedup didn't quietly change the values it moved** --
+   before trusting `collect_demos.py`'s new import, diffed
+   `pick_place_scene.py`'s `GRIPPER_FINGER_*` against the last commit that
+   had them inline: identical (17.0/0.02/1650.0). Cheap, worth doing any
+   time a refactor touches a critical-path constant.
+3. **The 2 contact-explosion rejects from 2026-09-28's 50-episode batch,
+   investigated and then deliberately not chased further** -- built
+   `check_contact_explosion.py` to force the exact failing cube-spawn
+   position and instrument every tick. The existing depenetration-velocity
+   cap (0.5 m/s, already active since 2026-09-14 -- not a missing
+   mitigation) clearly isn't sufficient alone, but reproducing the same
+   scripted input produced a DIFFERENT failure entirely (a marginal grasp
+   dropped near the start), revealing real run-to-run physics
+   non-determinism (most likely PhysX's GPU solver) rather than a
+   deterministic function of spawn position. Decided that chasing the
+   exact mechanism further (many repeated trials, uncertain payoff,
+   against 9+ prior sessions of unresolved contact-instability history)
+   wasn't worth it against just filtering the 3 milder-anomaly episodes
+   (max_cube_z 0.286-0.339m) out at merge time. Worth remembering
+   generally: today's finding puts a small asterisk on this whole
+   project's "fixed 5 seeds -> reproducible result" verification
+   methodology -- not invalidating any of 2026-09-28's checks, but if a
+   fix that tested clean is later reported as "works, but fails
+   occasionally," check this non-determinism before assuming a
+   regression.
+4. **Consolidated all of 2026-09-28's collection into one permanent,
+   growing dataset** -- `68bd85d`, `3d46069`. `lerobot-edit-dataset`
+   (already installed, no new tooling needed) to `delete_episodes` the 3
+   outliers, then `merge` three same-day dry runs into
+   `vla_ur5e_ws/ur5e_pick_place_v1` (82 episodes), then a further clean
+   70-episode batch (95% success, zero outliers) merged on top into
+   **`vla_ur5e_ws/ur5e_pick_place_v2` -- 152 episodes, 158,776 frames**,
+   past pi0's own ~150-demos-per-task guidance. Verified by loading it
+   directly each time, not by trusting the tool's own log. Also found and
+   fixed a real hazard while doing this: `collect_demos.py` unconditionally
+   deleted anything already at `--repo_id`, which would have silently
+   destroyed the merged dataset the next time someone pointed a collection
+   run at it (there is no append mode) -- now refuses without
+   `--overwrite`.
+5. **Phase 3 pre-flight, closed out**: data volume (done, above),
+   `extra_delta_transform`/action-convention re-verified against real
+   collected data (no mismatch), spawn-diversity caveat documented,
+   correction-trigger-rate telemetry added and immediately caught a real
+   tolerance bug (3mm too tight for what the diffIK controller could
+   actually achieve, fixed to 5mm, reverified). **Confirmed this machine
+   cannot run the actual LoRA fine-tune**: `openpi` isn't installed here
+   (only the two integration snippets exist, meant to be pasted into a
+   separate `openpi` checkout), and this machine's GPU (RTX 4080, 16GB) is
+   under README's own documented LoRA memory requirement (>22.5GB, sized
+   for the 2x RTX 3090 machine Phase 3 was always written for). Confirmed
+   the user's own instinct to smoke-test training with a short step count
+   before the full 30k-100k run is already what README's Phase 3 section
+   prescribes -- not new advice, just re-endorsed for the same reason as
+   today's #2 and #3 above (a statically-correct config is a different
+   question from "does the pipeline actually run end-to-end").
+
+**Handoff state for the training machine**: dataset is
+`vla_ur5e_ws/ur5e_pick_place_v2` (152 episodes) in this machine's
+`~/.cache/huggingface/lerobot/`; needs transferring over before `openpi`
+can point `REPO_ID` at it. Everything else in README's existing Phase 3
+section (`git clone openpi`, copy `ur5e_pick_place_policy.py`, append the
+`train_config_snippet.py` TrainConfig, `compute_norm_stats.py`, then a
+short-step smoke train before the full run) is unchanged and ready to
+follow as written.
+
 ### 2026-09-29: audited every pi0-pipeline caller for the same gap -- found it twice more
 
 **The "fix landed in one file, its siblings kept the broken default" pattern
