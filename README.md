@@ -1673,27 +1673,31 @@ New: `ScriptedPickPlace.grasp_diffik_frame_range`, `ScriptedPickPlace.settle2_en
 ### 2026-09-28 (Phase 3 pre-flight checklist)
 
 Before moving to LoRA fine-tuning:
-- **Data volume**: pi0's own reported results (starting from a pretrained
-  checkpoint) use roughly 150 demonstrations per task for strong results.
-  **Consolidated 2026-09-29** (`lerobot-edit-dataset`, see the Merge History
-  table below): three same-day dry runs (15+50+20 = 85 saved episodes)
-  merged into one permanent dataset, **`vla_ur5e_ws/ur5e_pick_place_v1`
-  (82 episodes, 86,646 frames)**, 3 short of 85 after the outlier filter
-  below. Verified by loading it directly (not just trusting the tool's
-  own log): `LeRobotDataset('vla_ur5e_ws/ur5e_pick_place_v1')` reports
-  exactly 82 episodes, correct features/shapes. This is now "the" dataset
-  -- still short of the ~150 target, needs more collection appended (see
-  the `--overwrite` guard just below before doing that).
+- **Data volume: DONE, target reached.** pi0's own reported results
+  (starting from a pretrained checkpoint) use roughly 150 demonstrations
+  per task for strong results. Built up over 2026-09-28/29 via
+  `lerobot-edit-dataset` (see the Merge History table below): 85 episodes
+  (3 dry runs, 3 outliers filtered) merged into `..._v1` (82 episodes),
+  then a further clean 70-episode batch (74 attempts, 95% success, zero
+  outliers this time) merged on top into **`vla_ur5e_ws/ur5e_pick_place_v2`
+  -- 152 episodes, 158,776 frames**, past the ~150 target. Verified by
+  loading it directly (not just trusting the tool's own log):
+  `LeRobotDataset('vla_ur5e_ws/ur5e_pick_place_v2')` reports exactly 152
+  episodes, correct features/shapes. **`v2` is now "the" dataset.** `v1`
+  (82 episodes) still exists on disk but is superseded -- point at `v2`.
 
   **`collect_demos.py` had NO way to append to an existing dataset** -- it
   unconditionally `shutil.rmtree`'d anything already at `--repo_id`, which
-  would have silently destroyed this merged dataset the next time someone
-  ran it pointed here. Fixed 2026-09-29: refuses to overwrite an existing
+  would have silently destroyed the merged dataset the next time someone
+  ran it pointed there. Fixed 2026-09-29: refuses to overwrite an existing
   `--repo_id` unless `--overwrite` is passed. **The actual append workflow
-  going forward is: collect into a fresh throwaway `--repo_id`, then
-  `lerobot-edit-dataset --operation.type merge` it into
-  `vla_ur5e_ws/ur5e_pick_place_v1`** -- same process used to build v1
-  itself, not a rerun with the same `--repo_id`.
+  is: collect into a fresh throwaway `--repo_id`, then `lerobot-edit-dataset
+  --operation.type merge --operation.repo_ids "['vla_ur5e_ws/ur5e_pick_place_v2",
+  '<new throwaway>']"` into a NEW versioned name (`merge` always creates its
+  destination fresh -- `exist_ok=False` -- it cannot write into an existing
+  repo_id in place, which is why this went `v1` -> `v2` rather than growing
+  `v1` itself; expect `v3`, `v4`, ... each time this happens again)** --
+  not a rerun with the same `--repo_id`.
 
   **Outlier filter applied during the merge**: 3 of the 85 episodes had
   `max_cube_z > 0.25m` (0.286m, 0.297m, 0.339m -- vs the normal ~0.16m),
@@ -1727,14 +1731,17 @@ Before moving to LoRA fine-tuning:
   | source | `smoketest/collect_demos_grasp_diffik_20260928` | 15 | `PLACE_CORRECTION_TOLERANCE_M=0.003` (buggy) |
   | source | `smoketest/collect_demos_batch50_20260928` | 50 -> 49 | same 0.003; episode 18 (max_cube_z=0.297m) dropped |
   | source | `smoketest/collect_demos_tol5mm_20260928` | 20 -> 18 | `PLACE_CORRECTION_TOLERANCE_M=0.005` (fixed); episodes 3,5 (0.286m, 0.339m) dropped |
-  | **merged** | **`vla_ur5e_ws/ur5e_pick_place_v1`** | **82** | current canonical dataset |
+  | merged | `vla_ur5e_ws/ur5e_pick_place_v1` | 82 | superseded, kept on disk |
+  | source | `smoketest/collect_demos_batch70_20260929` | 70 | 0.005; 74 attempts, 95% success, zero outliers |
+  | **merged** | **`vla_ur5e_ws/ur5e_pick_place_v2`** | **152** | **current canonical dataset** |
 
-  The tolerance heterogeneity itself (noted before the merge) is still
-  present WITHIN the 82 -- 64 episodes recorded under the 0.003-tolerance
-  regime (long, uniform ~30-tick corrections when triggered), 18 under the
-  fixed 0.005 (short, variable 3-5 ticks). Not re-collected/rebalanced;
-  flagged here in case training behaves oddly and this composition split
-  turns out to matter. `collect_demos.py`/`collect_rlds_episodes.py` print
+  The tolerance heterogeneity itself (noted before the first merge) is
+  still present WITHIN `v2`'s 152 -- 64 episodes recorded under the
+  0.003-tolerance regime (long, uniform ~30-tick corrections when
+  triggered), 88 under the fixed 0.005 (short, variable ticks). Not
+  re-collected/rebalanced; flagged here in case training behaves oddly and
+  this composition split turns out to matter.
+  `collect_demos.py`/`collect_rlds_episodes.py` print
   their full gripper/correction config at the start of every run so future
   collection doesn't need this reconstructed from git history again.
 - **extra_delta_transform / action convention**: statically confirmed
