@@ -48,7 +48,8 @@ class UR5eInputs(_transforms.DataTransformFn):
     def __call__(self, data: dict) -> dict:
         # Concatenate joints + gripper into the state vector (matches
         # collect_demos.py's `joints`(6) + `gripper`(1) = 7-dim state).
-        state = np.concatenate([data["joints"], data["gripper"]])
+        # np.atleast_1d: lerobot>=0.4 returns a (1,)-feature as a 0-d scalar.
+        state = np.concatenate([np.atleast_1d(data["joints"]), np.atleast_1d(data["gripper"])])
 
         base_image = _parse_image(data["base_rgb"])
         wrist_image = _parse_image(data["wrist_rgb"])

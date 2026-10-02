@@ -36,7 +36,8 @@ perception/                Pure Python, no Isaac Sim dependency -- reusable from
   llm_command_parser.py     Claude API: free-form instruction -> {"object", "destination"}
   object_detector.py        Grounding DINO: (image, text description) -> pixel location
 
-openpi_integration/        Files to drop into your openpi checkout (Phase 2 -- grounded against openpi's real source, not yet run)
+openpi_integration/        Files to drop into your openpi checkout (Phase 2 -- loaded through openpi's data path 2026-10-02, norm stats run; training not yet run)
+  openpi_lerobot_0_4_compat.patch   openpi data_loader.py/pyproject.toml fixes needed for lerobot 0.4.x (v3.0 datasets) -- `git apply` in the checkout
   ur5e_pick_place_policy.py    UR5eInputs/UR5eOutputs/LeRobotUR5eDataConfig -> src/openpi/policies/
   train_config_snippet.py      the pi0_ur5e_pick_place TrainConfig -> append to src/openpi/training/config.py
 
@@ -1922,6 +1923,86 @@ exactly, but these two files' own execution through it is untested; next
 Isaac Sim session should confirm `pick_place_scene_bridge.py`-driven
 eval actually grasps now before trusting any go/no-go number it produces.
 
+### 2026-10-02: Phase 3 pre-flight on the training machine -- four openpi-side blockers found and fixed, norm stats computed, smoke training NOT yet run
+
+**Status in one line:** the dataset side is ready; the pipeline has been run as far as
+`compute_norm_stats.py` (finished, validated). **No training step has been run yet** -- the
+smoke train (which also downloads `pi0_base` for the first time and is the first check that
+LoRA fits on one 3090) is the next step.
+
+**Machine.** This machine now has 2x RTX 3090 (24GB each), not the 4080 the 2026-09-29 entry
+describes, so the "this machine cannot run the LoRA fine-tune" statement above is stale. openpi
+is checked out at `/media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/apps/openpi` (lerobot 0.4.4).
+Dataset: `Jaeung12/ur5e_pick_place_v2` -> symlink to `vla_ur5e_ws/ur5e_pick_place_v2` ->
+`<bigdisk>/hf_cache/...` (152 episodes, 158,776 frames, 14GB). An older `projects/jaeung/openpi`
+uses lerobot 0.1.0 and cannot read the v3.0 dataset format -- do not use it.
+
+**Four blockers found by actually loading a sample through openpi's own data path** (the
+integration files had only ever been "grounded against openpi's source", never run). Each one
+fails on the very first batch:
+
+| # | symptom | cause | fix |
+|---|---|---|---|
+| 1 | `ModuleNotFoundError: lerobot.common` | `data_loader.py` imports the pre-0.4 path | `lerobot.datasets.lerobot_dataset` |
+| 2 | `task_index=0 not found in task mapping` | lerobot 0.4 `meta.tasks` is a DataFrame indexed by task string, openpi expects `{index: str}` | `_tasks_to_dict()` in `data_loader.py` |
+| 3 | `np.concatenate` dimension error in `UR5eInputs` | a 1-feature column (`gripper`) comes back as a 0-d scalar | `np.atleast_1d` |
+| 4 | no `actions` key in the sample | `RepackTransform` drops every key it does not list, and `"actions": "actions"` was missing | add the mapping |
+
+Also: the TrainConfig's `repo_id` pointed at `jaeung/ur5e_pick_place_v1`, whose cached parquet is
+corrupt (`Parquet magic bytes not found`) -- now `Jaeung12/ur5e_pick_place_v2`.
+
+Where each fix lives: #3, #4 and the `repo_id` are in `openpi_integration/ur5e_pick_place_policy.py`
+and `train_config_snippet.py` (updated in this commit). #1 and #2 are edits to openpi's own
+`data_loader.py` (plus the `lerobot==0.4.4` pin in `pyproject.toml`) and are saved as
+`openpi_integration/openpi_lerobot_0_4_compat.patch` -- apply with `git apply` in an openpi
+checkout. The working checkout has these applied but **uncommitted** (it is an upstream clone).
+
+**`compute_norm_stats.py`: done, validated.** Output
+`assets/pi0_ur5e_pick_place/Jaeung12/ur5e_pick_place_v2/norm_stats.json`; `state` and `actions` are
+both 7-dim, no NaN. Joint-action means are ~0 (the `DeltaActions` mask is applied; gripper stays
+absolute, mean 0.285, range 0-0.709 -- matches the collection-time range), which also confirms the
+`actions` repack fix end to end. One thing to watch at evaluation: `actions[5]` (wrist_3) has
+std 0.26 and q99 1.38 rad, well above the other joints -- most likely cumulative delta over the
+50-step chunk, but it is the joint with the widest motion.
+
+**Runtime lesson: raise the worker count.** The default `num_workers=2` left both workers pegged at
+100% CPU decoding PNGs (this dataset stores images inside parquet, not as video) with 34 of 36 cores
+idle: ~2.9 s/batch, ETA ~4 h. 16 workers gave ~2.3 batches/s, finished in 35m46s. openpi's
+`compute_norm_stats.py` takes `--max-frames` but no worker option, so it was run through a small
+wrapper that overrides `num_workers` (it needs an `if __name__ == "__main__"` guard because
+DataLoader workers are spawned). Training has the same bottleneck: pass `--num-workers 16`. Note that
+patching lerobot's `_query_videos` would NOT help here -- there is no video, decoding happens on
+row access.
+
+**Disk.** `/` is 92% full (19GB free); bigdisk has ~380GB. Before any download:
+- `OPENPI_DATA_HOME` (default `~/.cache/openpi`, holds the `pi0_base` weights) -> bigdisk.
+- `HF_DATASETS_CACHE` -> bigdisk. `~/.cache/huggingface/datasets/parquet` holds two 14GB Arrow
+  copies of this dataset (one from 2026-09-29, one from the norm-stats run) -- regenerable cache,
+  not the dataset itself. The 2026-09-29 one is a deletion candidate; not deleted yet.
+- `~/.cache/jax` stays on `/` (small).
+- openpi's `wandb_enabled` defaults to `True`: pass `--no-wandb-enabled` on a machine that is not
+  logged in.
+
+**Next (in order):**
+1. Smoke train with the cache variables set:
+   `scripts/train.py pi0_ur5e_pick_place --exp-name=smoke_test --num-train-steps=50 --save-interval 25
+   --num-workers 16 --no-wandb-enabled --overwrite`. First `pi0_base` download; first check that LoRA
+   fits in 24GB (on OOM retry with `--batch-size 16`). Watch `nvidia-smi` GPU utilisation -- low means
+   too few data workers.
+2. Full run (config default 30k steps).
+3. Phase 4 evaluation. Known risks carried forward, none newly measured:
+   - the wrist camera frames mostly show the gripper body, the cube only as a sliver at the top edge;
+     the base camera cube is ~10-24 px -- the policy may underperform even with a clean training run;
+   - `vla_policy_client`'s `control_hz` is 60 but the dataset is 30 fps (`CONTROL_FPS`,
+     `collect_demos.py`) -- reconcile before evaluating;
+   - the gripper-config wiring in `pick_place_scene_bridge.py` / `residual_rl_train_env.py` has still
+     never been run in Isaac Sim;
+   - 64 of the 152 episodes were recorded under the 0.003 correction tolerance, 88 under 0.005.
+
+**Stale text elsewhere in this file:** the table under "What is still unverified" (rows 1-5 marked
+blocked/open) predates 2026-09-28/29, when the grasp, place and data-collection rows were resolved --
+read those rows as historical.
+
 ### Operational note: `check_cameras.py` is unsafe to import from
 
 **CONFIRMED 2026-09-22, the hard way:** `check_cameras.py` calls
@@ -2554,6 +2635,8 @@ new parameters (`n_trials`, `success_xy_tolerance_m`, etc.) in
 `config/params.yaml`.
 
 ## What is still unverified, and what verifies it
+
+> **2026-10-02:** the status column below is historical (last updated 2026-09-21). See "2026-09-29 summary" and "2026-10-02: Phase 3 pre-flight" above for current state.
 
 Nothing in this repository has been run end to end. The perception and
 encoding halves have been checked offline — against analytic geometry,

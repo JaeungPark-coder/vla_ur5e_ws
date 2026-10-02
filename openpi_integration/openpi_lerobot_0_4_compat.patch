@@ -1,0 +1,86 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index 5377e3d..73c27ae 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -17,7 +17,7 @@ dependencies = [
+     "imageio>=2.36.1",
+     "jax[cuda12]==0.5.3",
+     "jaxtyping==0.2.36",
+-    "lerobot",
++    "lerobot==0.4.4",
+     "ml_collections==1.0.0",
+     "numpy>=1.22.4,<2.0.0",
+     "numpydantic>=1.6.6",
+@@ -63,11 +63,33 @@ rlds = [
+ ]
+ 
+ [tool.uv]
+-override-dependencies = ["ml-dtypes==0.4.1", "tensorstore==0.1.74"]
++# rerun-sdk==0.23.1 overrides lerobot==0.4.4's own declared
++# rerun-sdk>=0.24.0,<0.27.0 requirement -- 0.24+ needs numpy>=2, which
++# conflicts with openpi's own numpy<2.0.0 pin above (JAX 0.5.3/flax 0.10.2
++# aren't tested against numpy 2.x). Safe here because this project's actual
++# lerobot usage (LeRobotDataset/LeRobotDatasetMetadata for training data
++# loading) never touches rerun-sdk's own APIs -- it's lerobot's optional
++# visualization/logging path, unused by openpi's training or
++# compute_norm_stats.py scripts.
++override-dependencies = ["ml-dtypes==0.4.1", "tensorstore==0.1.74", "rerun-sdk==0.23.1"]
+ 
+ [tool.uv.sources]
+ openpi-client = { workspace = true }
+-lerobot = { git = "https://github.com/huggingface/lerobot", rev = "0cf864870cf29f4738d3ade893e6fd13fbd7cdb5" }
++# CHANGED (2026-09-07): was git-pinned to an older commit whose on-disk
++# dataset schema is CODEBASE_VERSION="v2.1". collect_demos.py (this
++# project's data collection script) was written against lerobot==0.4.4
++# (installed via plain `pip install lerobot` in the Isaac Sim conda env,
++# since openpi's own venv can't run Isaac Sim), which writes the newer
++# "v3.0" schema (parquet-chunked data/ + no meta/tasks.jsonl) -- confirmed
++# by an actual failed compute_norm_stats.py run: LeRobotDatasetMetadata
++# tried to read meta/tasks.jsonl, which doesn't exist in a v3.0 dataset,
++# then fell through to a Hub-versions lookup that 401'd (dataset was never
++# pushed to the Hub, collect_demos.py's push_to_hub=False). Pinning to the
++# same PyPI release the dataset was written with is simpler and more
++# reliable than trying to force local/offline dataset loading through a
++# lerobot version that doesn't understand this dataset's on-disk format at
++# all. If a future collect_demos.py run uses a different lerobot version,
++# update this pin (and re-run `uv sync`) to match.
+ dlimp = { git = "https://github.com/kvablack/dlimp", rev = "ad72ce3a9b414db2185bc0b38461d4101a65477a" }
+ 
+ [tool.uv.workspace]
+diff --git a/src/openpi/training/data_loader.py b/src/openpi/training/data_loader.py
+index e2ee7dd..de4c624 100644
+--- a/src/openpi/training/data_loader.py
++++ b/src/openpi/training/data_loader.py
+@@ -7,7 +7,7 @@ from typing import Literal, Protocol, SupportsIndex, TypeVar
+ 
+ import jax
+ import jax.numpy as jnp
+-import lerobot.common.datasets.lerobot_dataset as lerobot_dataset
++import lerobot.datasets.lerobot_dataset as lerobot_dataset
+ import numpy as np
+ import torch
+ 
+@@ -127,6 +127,14 @@ class FakeDataset(Dataset):
+         return self._num_samples
+ 
+ 
++def _tasks_to_dict(tasks) -> dict[int, str]:
++    """lerobot<0.4 exposes meta.tasks as {task_index: task}; lerobot>=0.4 (dataset v3.0) exposes a
++    DataFrame indexed by the task string with a "task_index" column."""
++    if isinstance(tasks, dict):
++        return tasks
++    return {int(row["task_index"]): str(task) for task, row in tasks.iterrows()}
++
++
+ def create_torch_dataset(
+     data_config: _config.DataConfig, action_horizon: int, model_config: _model.BaseModelConfig
+ ) -> Dataset:
+@@ -146,7 +154,7 @@ def create_torch_dataset(
+     )
+ 
+     if data_config.prompt_from_task:
+-        dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(dataset_meta.tasks)])
++        dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(_tasks_to_dict(dataset_meta.tasks))])
+ 
+     return dataset
+ 

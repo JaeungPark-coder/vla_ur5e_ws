@@ -79,6 +79,9 @@ class LeRobotUR5eDataConfig(DataConfigFactory):
                         "wrist_rgb": "wrist_image",
                         "joints": "joints",
                         "gripper": "gripper",
+                        # 2026-10-02: this line was MISSING. RepackTransform drops every key it
+                        # doesn't list, so without it the batch had no "actions" at all.
+                        "actions": "actions",
                         "prompt": "prompt",
                     }
                 )
@@ -120,7 +123,7 @@ TrainConfig(
         action_expert_variant="gemma_300m_lora",
     ),
     data=LeRobotUR5eDataConfig(
-        repo_id="jaeung/ur5e_pick_place_v1",  # CHANGE ME if you used a different --repo_id
+        repo_id="Jaeung12/ur5e_pick_place_v2",  # 2026-10-02: v2 (152 episodes). The old jaeung/..._v1 cache has corrupt parquet. CHANGE ME if you used a different --repo_id
         base_config=DataConfig(prompt_from_task=True),  # see module docstring point 3
         # Default AssetsConfig() deliberately NOT overridden -- see module docstring point 4.
     ),
