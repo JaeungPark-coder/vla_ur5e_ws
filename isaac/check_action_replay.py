@@ -71,6 +71,7 @@ from isaac_sim_common import (  # noqa: E402
     GRIPPER_DRIVE_JOINT_NAME, set_joint_max_force, zero_follower_joint_drives)
 from scripted_pick_place import ScriptedPickPlace  # noqa: E402
 from vla_bridge.gripper_command import GripperHysteresis  # noqa: E402
+from vla_bridge.feedforward import chunk_velocities  # noqa: E402
 
 # same values as collect_demos.py (kept in sync by hand -- it cannot be imported,
 # it starts its own SimulationApp at import time)
@@ -154,6 +155,24 @@ def replay(scene, seed, states, actions, cmds, arm_mode, gain, grip_mode, thresh
         achieved.append(q)
         if arm_mode == "abs":
             target = actions[t, :6].astype(float)
+        elif arm_mode.startswith("chunkvn"):
+            # The serving recipe with a noisy policy: at each block start build the next 50 rows
+            # (relative to the block-start state) + AR(1) noise, take the velocities from THOSE
+            # rows with the real vla_bridge.feedforward.chunk_velocities, then execute the first K.
+            block = int(gain)
+            window = int(arm_mode.split("w")[1]) if "w" in arm_mode else 1
+            if t % block == 0:
+                q0, s0 = q.copy(), states[t, :6].astype(float)
+                rows = q0 + (actions[t:t + 50, :6].astype(float) - s0)
+                n_rows = np.zeros_like(rows)
+                nz = noise.copy()
+                for r in range(len(rows)):
+                    nz = rho * nz + np.sqrt(1 - rho ** 2) * noise_sigma * noise_rng.standard_normal(6)
+                    n_rows[r] = nz
+                rows = rows + n_rows
+                chunk_vels = chunk_velocities(rows, scene.physics_dt, window=window, max_speed=3.0)
+            target = rows[t % block]
+            vel = chunk_vels[t % block]
         elif arm_mode == "chunkv":
             # execute_horizon=K with velocity feed-forward: rows are relative to the state at
             # block start (what delta training + AbsoluteActions gives), velocity from the
@@ -177,7 +196,7 @@ def replay(scene, seed, states, actions, cmds, arm_mode, gain, grip_mode, thresh
             target = q0 + (actions[t, :6].astype(float) - s0)
         else:  # delta / deltav, as the policy produces it
             target = q + gain * (actions[t, :6].astype(float) - states[t, :6].astype(float))
-        if noise_sigma > 0:
+        if noise_sigma > 0 and not arm_mode.startswith("chunkvn"):
             noise = rho * noise + np.sqrt(1 - rho ** 2) * noise_sigma * noise_rng.standard_normal(6)
             target = target + noise
         g_rec = float(actions[t, 6])
@@ -189,7 +208,13 @@ def replay(scene, seed, states, actions, cmds, arm_mode, gain, grip_mode, thresh
             cmd = float(np.clip(g_rec / 0.70, 0.0, 1.0))
         else:
             cmd = float(np.clip(g_rec, 0.0, 1.0))
-        if arm_mode in ("cmdposvel", "absvel", "chunkv"):
+        if arm_mode.startswith("chunkvn"):
+            from isaacsim.core.utils.types import ArticulationAction
+            scene.robot.apply_action(ArticulationAction(
+                joint_positions=target, joint_velocities=vel, joint_indices=np.arange(6)))
+            scene.gripper.set_target(cmd)
+            scene.world.step(render=True)
+        elif arm_mode in ("cmdposvel", "absvel", "chunkv"):
             from isaacsim.core.utils.types import ArticulationAction
             if arm_mode == "cmdposvel":
                 vel = cvels[t].astype(float)
@@ -238,6 +263,12 @@ def main():
                          "positions, what serving could send)")
     ap.add_argument("--chunkv", type=int, nargs="*", default=[],
                     help="chunk-block lengths with velocity feed-forward")
+    ap.add_argument("--noisechunkv", type=float, nargs="*", default=[],
+                    help="chunkv variants (the final serving recipe) with AR(1) noise of this sigma on the position targets")
+    ap.add_argument("--noisechunkv_k", type=int, default=25)
+    ap.add_argument("--noisy_vel_windows", type=int, nargs="*", default=[],
+                    help="with --noisechunkv: replace the plain chunkv noise runs by chunkvn runs (noisy rows, velocities "
+                         "from the real serving function) for each smoothing window")
     ap.add_argument("--noisevel", type=float, nargs="*", default=[],
                     help="absvel variants with AR(1) noise of this sigma on the position targets")
     ap.add_argument("--cmd", action="store_true",
@@ -304,6 +335,11 @@ def main():
         plan = [(a, g, sg, gm) for a, g, sg in variants for gm in args.grip_modes]
         plan += [("chunkv", float(k), 0.0, "raw") for k in args.chunkv]
         plan += [("absvel", 1.0, sg, "raw") for sg in args.noisevel]
+        if args.noisy_vel_windows:
+            plan += [(f"chunkvn:w{w}", float(args.noisechunkv_k), sg, "raw")
+                     for sg in args.noisechunkv for w in args.noisy_vel_windows]
+        else:
+            plan += [("chunkv", float(args.noisechunkv_k), sg, "raw") for sg in args.noisechunkv]
         if args.vel:
             plan += [("cmdposvel", 1.0, 0.0, "cmd"), ("absvel", 1.0, 0.0, "raw")]
         if args.cmd:

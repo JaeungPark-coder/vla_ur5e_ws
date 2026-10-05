@@ -2134,10 +2134,26 @@ anything that eventually arrives, hid the lag for most of a day).
 | **blocks of K relative to block start + velocity feed-forward** (= delta training + `execute_horizon=K`) | K=10: 0.0043, K=25: 0.0016, K=50: 0.0009 rad | **placed 4/4 for each K** |
 | absolute + position only + AR(1) noise sigma=0.01 rad | -- | placed 0/3; sigma>=0.02 diverges |
 | absvel + AR(1) noise sigma=0.01 / 0.02 / 0.05 | -- | placed 2/4, 0/4, 0/4 |
+| final recipe (K=25 blocks, velocity from the **noisy rows** with `chunk_velocities`) + AR(1) row noise 0.002 / 0.005 | -- | placed 2/3 and 2/3 for every smoothing window (the same episode blows up each time) |
+| same, noise 0.01, smoothing window 1 / 5 / 11 | -- | placed 0/3, 1/3, 2/3 |
+| same, noise 0.02 | -- | 0/3 for every window |
+| same, **no noise**, window 1 vs 11 | 0.0018 / 0.0017 rad | placed 7/7 and 7/7 |
 
-Gripper (absolute arm targets, 6+4 episodes): recorded value sent as-is **10/10**, continuous `clip(v/0.7)`
-6/6, `gripper_hysteresis` 8/10 with larger place errors (8-21 mm vs ~6 mm) -- snapping the command to 1.0
-behaves worse than the ramp the demonstrations used. So the raw value is the default.
+Gripper (absolute arm targets, recorded values, 6+4 episodes): sent as-is **10/10**, continuous `clip(v/0.7)`
+6/6, `gripper_hysteresis` 8/10 with larger place errors (8-21 mm vs ~6 mm). With samples this small 8/10 vs
+10/10 may be chance, so the honest reading is "no benefit from the hysteresis, and the raw value is
+sufficient" -- not "the hysteresis is worse". These are recorded (noise-free) gripper values; a trained
+policy's output was not tested. The raw value is the default.
+
+**Noise sensitivity is the open risk.** Position-target noise of ~0.005 rad (about 4 mm at the gripper) already
+costs episodes and 0.02 rad fails everything, sometimes with a PhysX blow-up (cube thrown metres away). The
+likely reason is the scene, not the serving code: the grasp targets the cube's top face with zero
+clearance (README 2026-09-16) and the arm drives are stiff, so a few mm of error becomes a large contact
+force. A velocity target built from a plain row difference makes it worse (it amplifies row noise), which is
+why `velocity_smoothing_window` (default 11) and `velocity_clip_rad_s` (3.0) exist. How a trained policy's
+real output noise compares is unknown until there is a checkpoint; if evaluation shows contact blow-ups
+the levers are arm drive compliance and grasp clearance in the data. The sample is small (3 episodes per
+cell, one of them an unlucky one) -- read the table as a warning, not a measurement.
 
 Reading it: (1) the demonstrated motion needs the velocity target; with it the arm reproduces the dataset to
 0.0003 rad. (2) Re-inferring every tick on relative targets (the old `execute_horizon=1`) is unstable once a
@@ -2180,6 +2196,27 @@ wall time plus inference -- publishing images only at chunk boundaries would be 
 This machine has system ROS 2 Humble; the shell's PYTHONPATH points at its Python 3.10 packages, so the test
 used `env -i` plus Isaac's bundled `humble/rclpy` and a throw-away `cv_bridge` stand-in (no py3.11 build exists
 here); nothing in the user's environment was installed or changed.
+
+**Client-node check with a fake policy (2026-10-05, no checkpoint needed).** `test/fakes/openpi_client` is a drop-in
+for `openpi_client.websocket_client_policy.WebsocketClientPolicy` that plays a "perfect policy" from a recorded
+dataset episode (nearest recorded state, returns the next 50 recorded actions as absolute rows). With the REAL
+`vla_policy_client` node (Isaac's bundled Humble `rclpy`, `env -i`, throw-away `cv_bridge`/`rtde_*` stand-ins) against
+the lockstep bridge: inference N advanced exactly `execute_horizon` rows (match index 0, 25, 50, ...), the arm was
+within 0.0001-0.0004 rad of the recording at every inference, `max_steps` stops at exactly the count, and
+`eval_mode` with 3 trials wrote 3 CSV rows with `steps=100` and started every trial at the home pose. It cannot
+succeed at the task (the cube is not where the recording had it); it proves the plumbing.
+Run with `PYTHONPATH=test/fakes:...`, `FAKE_POLICY_EPISODE=0 FAKE_POLICY_LOG=<file>`.
+
+That run, and the ROS checks before it, found six real bugs that the unit tests (and a first-time reading of
+the code) had not: `JointState.position` is an `array.array`, so `list + array` raised (the mock used lists);
+a client restarted against a running bridge counted ids from 1 again and every request was silently ignored;
+after an eval reset the first inference of the next trial used a PRE-reset observation (the bridge keeps
+re-publishing it until the reset has run -- fixed with a reset epoch in `header.stamp.nanosec`); `max_steps`
+logged "stopping" on every timer tick forever (now once, timer cancelled); the image topics added ~0.18 s per
+tick; and my own first gripper/serving conclusions above had to be corrected. **Throughput:** with
+`publish_images=False` on all but the last tick of an executed block (`header.frame_id = "noimg"`; the sim still
+steps and renders every tick, so the image-vs-state lag is unchanged) the bridge sustains **~20.7 ticks/s instead
+of ~5.7**, i.e. a 1050-tick episode in ~50 s plus inference (roughly 1 min per episode including ~40 inferences, i.e. ~100 evaluation episodes in ~1.7 h).
 
 **Still unverified:** the policy itself (no checkpoint yet); `vla_policy_client._run_step`'s new code (the
 pure parts and the interface are tested, the node needs a policy server); the real UR5e path (lockstep and

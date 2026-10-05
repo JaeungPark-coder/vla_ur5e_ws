@@ -122,8 +122,9 @@ class VLAPolicyClient(Node):
         # later (~0.7 while holding the cube) but the demonstrator COMMANDED 1.0.
         # gripper_hysteresis turns the policy output into a close/open decision, on
         # the guess that echoing ~0.7 leaves ~0 squeeze force. A replay check in the
-        # simulator (isaac/check_action_replay.py) disproved the guess: raw 10/10,
-        # continuous x1/0.7 scaling 6/6, hysteresis 8/10 (snapping shut is worse).
+        # simulator (isaac/check_action_replay.py) found no benefit: raw 10/10,
+        # continuous x1/0.7 scaling 6/6, hysteresis 8/10 (small n; the difference may
+        # be chance). Recorded values only -- a trained policy's noisy output may differ.
         # So it defaults to OFF (raw clipped value, the original behaviour); the
         # option stays for experiments. Thresholds below only matter when it is on.
         self.declare_parameter('gripper_hysteresis', False)
@@ -146,6 +147,11 @@ class VLAPolicyClient(Node):
         # positions alone made the arm lag the demonstrated motion by ~0.30 rad RMS in
         # offline replay, with the velocity target ~0.0002 rad.
         self.declare_parameter('velocity_feedforward', False)
+        # Smoothing/clipping of that feed-forward (feedforward.py): the plain difference of
+        # consecutive rows amplifies row noise, which made offline replay diverge. 11 = ~0.18 s;
+        # same tracking as 1 on clean rows (7/7 placed both), better at 0.01 rad row noise.
+        self.declare_parameter('velocity_smoothing_window', 11)
+        self.declare_parameter('velocity_clip_rad_s', 3.0)
         self.declare_parameter('action_dt_s', 1.0 / 60.0)  # time between consecutive chunk rows = one sim tick (the data's rate; NOT the dataset's fps=30 label)
         # Residual RL (see isaac/residual_rl_train_env.py / train_residual_policy.py,
         # README Phase 4): 'false' (default) = pi0's action is applied as-is,
@@ -191,6 +197,8 @@ class VLAPolicyClient(Node):
         self.lockstep = bool(self.get_parameter('lockstep').value)
         self.velocity_feedforward = bool(self.get_parameter('velocity_feedforward').value)
         self.action_dt_s = float(self.get_parameter('action_dt_s').value)
+        self.velocity_smoothing_window = int(self.get_parameter('velocity_smoothing_window').value)
+        self.velocity_clip_rad_s = float(self.get_parameter('velocity_clip_rad_s').value)
         self._gripper_filter = None
         if self.get_parameter('gripper_hysteresis').value:
             self._gripper_filter = GripperHysteresis(
@@ -198,6 +206,9 @@ class VLAPolicyClient(Node):
                 open_below=self.get_parameter('gripper_open_threshold').value)
         self._base_ack = 0   # lockstep: request id the latest images belong to
         self._wrist_ack = 0
+        self._base_epoch = 0  # lockstep: scene-reset count the latest images belong to
+        self._wrist_epoch = 0
+        self._min_epoch = 0   # lockstep: after requesting a reset, only observations from a later epoch count
         self.residual_scale = self.get_parameter('residual_scale').value
 
         from openpi_client.websocket_client_policy import WebsocketClientPolicy
@@ -300,10 +311,12 @@ class VLAPolicyClient(Node):
     def _on_base_image(self, msg: Image):
         self._base_image = self.cv_bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
         self._base_ack = int(msg.header.stamp.sec)
+        self._base_epoch = int(msg.header.stamp.nanosec)
 
     def _on_wrist_image(self, msg: Image):
         self._wrist_image = self.cv_bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
         self._wrist_ack = int(msg.header.stamp.sec)
+        self._wrist_epoch = int(msg.header.stamp.nanosec)
 
     def _observation_is_current(self):
         """Lockstep: true once joint_state AND both images carry the id of the
@@ -311,7 +324,9 @@ class VLAPolicyClient(Node):
         produced, not an earlier one still in flight."""
         wanted = self.robot.last_request_id()
         return (self.robot.acked_request_id() >= wanted
-                and self._base_ack >= wanted and self._wrist_ack >= wanted)
+                and self._base_ack >= wanted and self._wrist_ack >= wanted
+                and self.robot.acked_epoch() >= self._min_epoch
+                and self._base_epoch >= self._min_epoch and self._wrist_epoch >= self._min_epoch)
 
     def _gripper_command(self, policy_output):
         if self._gripper_filter is not None:
@@ -328,6 +343,7 @@ class VLAPolicyClient(Node):
                 return
             self.get_logger().info(f'max_steps ({self.max_steps}) reached, stopping.')
             self.robot.stop()
+            self._timer.cancel()  # was: logged again on every timer tick, ~60 lines/s forever
             return
         if self._base_image is None or self._wrist_image is None:
             self.get_logger().warn('waiting for camera images...', throttle_duration_sec=2.0)
@@ -374,7 +390,9 @@ class VLAPolicyClient(Node):
             action_chunk = action_chunk[None, :]
 
         n_apply = max(1, min(self.execute_horizon, len(action_chunk)))
-        velocities = (chunk_velocities(action_chunk[:, :6], self.action_dt_s)
+        velocities = (chunk_velocities(action_chunk[:, :6], self.action_dt_s,
+                                       window=self.velocity_smoothing_window,
+                                       max_speed=self.velocity_clip_rad_s)
                       if (self.lockstep and self.velocity_feedforward) else None)
         for i in range(n_apply):
             action = action_chunk[i]
@@ -394,8 +412,11 @@ class VLAPolicyClient(Node):
                 # joint target, so it has to be queued first (see
                 # IsaacSimRobotInterface.move_joints).
                 self.robot.set_gripper(target_gripper)
+                # Only the last tick of the executed block needs images: the policy looks at
+                # the observation at the START of the next chunk and nothing in between.
                 acked = self.robot.move_joints(
-                    target_joints, joint_velocities=None if velocities is None else velocities[i])
+                    target_joints, joint_velocities=None if velocities is None else velocities[i],
+                    publish_images=(i == n_apply - 1 or self._step_count + 1 >= self.max_steps))
                 if not acked:
                     self.get_logger().error(
                         'lockstep: no acknowledgement from the bridge -- is pick_place_scene_bridge.py '
@@ -463,6 +484,10 @@ class VLAPolicyClient(Node):
             self._timer.cancel()
             return
 
+        if self.lockstep:
+            # Until the bridge has really reset it keeps re-publishing the pre-reset observation;
+            # only accept one from a later epoch.
+            self._min_epoch = max(self.robot.acked_epoch(), self._base_epoch, self._wrist_epoch) + 1
         self._eval_reset_pub.publish(Empty())
         self._step_count = 0
         if self._gripper_filter is not None:

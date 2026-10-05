@@ -71,6 +71,10 @@ class PickPlaceSceneBridge(Node):
         # per request instead of free-running. Default False = unchanged behaviour.
         self.lockstep = lockstep
         self.gate = LockstepGate()
+        # Counts scene resets; carried in header.stamp.nanosec of every lockstep observation so a
+        # client that asked for a reset can tell the post-reset observation from the pre-reset
+        # ones still being re-published while the reset runs.
+        self.reset_count = 0
 
         self.joint_state_pub = self.create_publisher(JointState, JOINT_STATE_TOPIC, 10)
         self.base_image_pub = self.create_publisher(Image, BASE_IMAGE_TOPIC, 10)
@@ -90,7 +94,8 @@ class PickPlaceSceneBridge(Node):
             gripper = float(position[6]) if len(position) >= 7 else None
             velocities = np.array(msg.velocity, dtype=float) if len(msg.velocity) >= 6 else None
             self.gate.submit(msg.header.stamp.sec, position[:6], gripper,
-                             None if velocities is None else velocities[:6])
+                             None if velocities is None else velocities[:6],
+                             publish_images=(msg.header.frame_id != "noimg"))
             return
         self.latest_joint_target = np.array(msg.position, dtype=float)
 
@@ -104,6 +109,14 @@ class PickPlaceSceneBridge(Node):
         pos = scene.get_cube_position()
         self.eval_cube_position_pub.publish(Point(x=float(pos[0]), y=float(pos[1]), z=float(pos[2])))
 
+    def publish_joint_state(self, obs, ack_id):
+        """joint_state only (lockstep ticks that need no images)."""
+        js = JointState()
+        js.position = [float(p) for p in obs["joints"]] + [float(obs["gripper"][0])]
+        js.header.stamp.sec = int(ack_id)
+        js.header.stamp.nanosec = self.reset_count
+        self.joint_state_pub.publish(js)
+
     def publish_observation(self, obs, ack_id=None):
         """ack_id (lockstep only): id of the last request executed, carried in
         header.stamp.sec on all three messages so the client can tell which
@@ -112,6 +125,7 @@ class PickPlaceSceneBridge(Node):
         js.position = [float(p) for p in obs["joints"]] + [float(obs["gripper"][0])]
         if ack_id is not None:
             js.header.stamp.sec = int(ack_id)
+            js.header.stamp.nanosec = self.reset_count
         self.joint_state_pub.publish(js)
 
         base_rgb = np.ascontiguousarray(np.asarray(obs["base_rgb"])[..., :3])
@@ -121,6 +135,8 @@ class PickPlaceSceneBridge(Node):
         if ack_id is not None:
             base_msg.header.stamp.sec = int(ack_id)
             wrist_msg.header.stamp.sec = int(ack_id)
+            base_msg.header.stamp.nanosec = self.reset_count
+            wrist_msg.header.stamp.nanosec = self.reset_count
         self.base_image_pub.publish(base_msg)
         self.wrist_image_pub.publish(wrist_msg)
 
@@ -196,6 +212,7 @@ def main():
                 if bridge.reset_requested:
                     obs = scene.reset()
                     bridge.reset_requested = False
+                    bridge.reset_count += 1
                     bridge.gate.reset()
                     bridge.latest_gripper_target = 0.0
                     last_obs = obs if isinstance(obs, dict) else scene.get_observation()
@@ -204,7 +221,7 @@ def main():
                     last_republish = time.time()
                 request = bridge.gate.take()
                 if request is not None:
-                    request_id, joint_target, gripper_target, joint_velocity = request
+                    request_id, joint_target, gripper_target, joint_velocity, publish_images = request
                     from isaacsim.core.utils.types import ArticulationAction
                     # velocity feed-forward when the client sent one (the expert's own
                     # commands carried a velocity target every tick; positions alone lag)
@@ -221,11 +238,15 @@ def main():
                     if request_id % 100 == 0:
                         print(f"lockstep: request {request_id} executed, world step index "
                               f"{scene.world.current_time_step_index}", flush=True)
-                    last_obs = scene.get_observation()
-                    bridge.publish_observation(last_obs, ack_id=request_id)
-                    bridge.publish_cube_position(scene)
+                    if publish_images:
+                        last_obs = scene.get_observation()
+                        bridge.publish_observation(last_obs, ack_id=request_id)
+                        bridge.publish_cube_position(scene)
+                    else:
+                        bridge.publish_joint_state(scene.get_proprioception(), ack_id=request_id)
+                        last_obs = None  # nothing complete to re-publish while idle until the next image tick
                     last_republish = time.time()
-                elif time.time() - last_republish > 0.5:
+                elif last_obs is not None and time.time() - last_republish > 0.5:
                     bridge.publish_observation(last_obs, ack_id=bridge.gate.last_executed_id)
                     bridge.publish_cube_position(scene)
                     last_republish = time.time()

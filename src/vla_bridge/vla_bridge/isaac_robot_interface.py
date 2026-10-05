@@ -74,6 +74,13 @@ class IsaacSimRobotInterface:
             return 0
         return int(self._latest_joint_state.header.stamp.sec)
 
+    def acked_epoch(self):
+        """Lockstep: number of scene resets the bridge had done when it published the latest
+        joint_state (header.stamp.nanosec). 0 before any joint_state has arrived."""
+        if self._latest_joint_state is None:
+            return 0
+        return int(self._latest_joint_state.header.stamp.nanosec)
+
     def last_request_id(self):
         return self._request_id
 
@@ -92,11 +99,13 @@ class IsaacSimRobotInterface:
         # -- present only for interface-shape parity with robot_interface.UR5eInterface.
         return None, None
 
-    def move_joints(self, joint_positions, speed=None, acceleration=None, joint_velocities=None):
+    def move_joints(self, joint_positions, speed=None, acceleration=None, joint_velocities=None,
+                    publish_images=True):
         """Publishes the target and polls the joint-state subscription
         until it settles within tolerance or settle_timeout_s elapses.
         `joint_velocities` (lockstep only): velocity targets in rad/s sent with the
-        position target -- see feedforward.py. `speed`/`acceleration` accepted for
+        position target -- see feedforward.py. `publish_images=False` (lockstep only) asks the
+        bridge to skip the camera images for this tick (isaac/lockstep_protocol.py). `speed`/`acceleration` accepted for
         interface compatibility but unused -- the sim's target-tracking rate is fixed in
         pick_place_scene_bridge.py.
         """
@@ -109,13 +118,19 @@ class IsaacSimRobotInterface:
             # One request = one sim tick. The gripper command rides in the same
             # message (7th value) so it is applied on the same tick -- two
             # separate topics give no ordering guarantee.
-            self._request_id += 1
+            # Continue from whatever the bridge has already executed: a client restarted
+            # against a running bridge would otherwise count from 1 again, and the bridge
+            # ignores ids it has already run -- every request would time out.
+            self._request_id = max(self._request_id, self.acked_request_id()) + 1
             # (build a list: a real JointState.position is an array.array, which cannot be
             # concatenated with a list)
             msg.position = arm_targets[:6] + [float(self._pending_gripper)]
             msg.header.stamp.sec = self._request_id
             if joint_velocities is not None:
                 msg.velocity = [float(v) for v in np.asarray(joint_velocities, dtype=float)[:6]]
+            if not publish_images:
+                msg.header.frame_id = 'noimg'
+
             self.joint_target_pub.publish(msg)
             t0 = time.time()
             while time.time() - t0 < self.lockstep_timeout_s:

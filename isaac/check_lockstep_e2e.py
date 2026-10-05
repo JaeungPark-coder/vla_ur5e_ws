@@ -69,6 +69,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticks", type=int, default=300)
     ap.add_argument("--close_ticks", type=int, default=60)
+    ap.add_argument("--horizon", type=int, default=1,
+                    help="publish camera images only every HORIZON-th tick (what the client does with execute_horizon); "
+                         "1 = every tick")
     ap.add_argument("--no_velocity", action="store_true",
                     help="send positions only (the old serving behaviour) instead of position + velocity feed-forward")
     args = ap.parse_args()
@@ -111,7 +114,9 @@ def main():
     t_play = time.time()
     for t in range(n):
         robot.set_gripper(0.0)
-        if not robot.move_joints(actions_rec[t, :6], joint_velocities=None if velocities is None else velocities[t]):
+        want_images = (t % args.horizon == args.horizon - 1) or t == n - 1
+        if not robot.move_joints(actions_rec[t, :6], joint_velocities=None if velocities is None else velocities[t],
+                                 publish_images=want_images):
             ok_acks = False
             print(f"request {t + 1}: no ack within the timeout", flush=True)
             break

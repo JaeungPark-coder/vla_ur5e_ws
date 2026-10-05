@@ -44,10 +44,10 @@ vla_policy_client:
     # 2026-10-05: the dataset's gripper action is the MEASURED position (~0.7 while
     # holding) although the demonstrator commanded 1.0. A close/open hysteresis was
     # added on the guess that echoing ~0.7 gives ~0 squeeze force -- the replay
-    # check (isaac/check_action_replay.py, README 2026-10-05) showed the opposite:
-    # sending the recorded value as-is succeeded 10/10, a continuous x1/0.7 scaling
-    # 6/6, the hysteresis (which snaps the gripper shut) only 8/10 with larger place
-    # errors. So it is OFF by default. See vla_bridge/gripper_command.py.
+    # check (isaac/check_action_replay.py, README 2026-10-05) found no benefit:
+    # the recorded value as-is succeeded 10/10, a continuous x1/0.7 scaling 6/6,
+    # the hysteresis 8/10 (small n; may be chance), with larger place errors. So it
+    # is OFF by default. See vla_bridge/gripper_command.py.
     gripper_hysteresis: false
     gripper_close_threshold: 0.45
     gripper_open_threshold: 0.25
@@ -62,6 +62,9 @@ vla_policy_client:
     # (offline replay, README 2026-10-05); with velocity ~0.0002 rad. action_dt_s is the time
     # between consecutive chunk rows = one 60 Hz sim tick (NOT the dataset's fps=30 label).
     velocity_feedforward: false
+    # smoothing of that feed-forward over this many ticks, and a speed clip (feedforward.py)
+    velocity_smoothing_window: 11
+    velocity_clip_rad_s: 3.0
     action_dt_s: 0.016666666666666666
     # Phase 4 (optional) -- see ../../isaac/train_residual_policy.py and
     # README.md. 'false' (default) = pi0's action applied as-is.

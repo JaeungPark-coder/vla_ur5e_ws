@@ -23,14 +23,23 @@ Wire format (sensor_msgs/JointState on /vla/joint_target):
   velocity[0:6]      joint velocity targets in rad/s (optional; position-only
                      when absent). The expert's own commands carried them --
                      see vla_bridge/feedforward.py
+  header.frame_id    "noimg" = do not read back / publish the camera images for this
+                     tick (joint_state is still published, stamped with k). The client
+                     uses it for all but the last tick of an executed chunk, since the
+                     policy only looks at the observation at a chunk start. The sim
+                     still steps AND renders every tick, so the image-vs-state lag of
+                     the images that ARE published is unchanged.
 and every observation the bridge publishes in lockstep mode carries the id of
-the last request it executed in header.stamp.sec (0 before the first one).
+the last request it executed in header.stamp.sec (0 before the first one) and the
+number of scene resets so far in header.stamp.nanosec (the "epoch"). After asking for a
+reset the client must wait for an observation with a higher epoch: until the reset has
+actually run the bridge keeps re-publishing the old one, with the old epoch.
 """
 
 
 from collections import namedtuple
 
-LockstepRequest = namedtuple("LockstepRequest", "id joints gripper velocities")
+LockstepRequest = namedtuple("LockstepRequest", "id joints gripper velocities publish_images")
 
 
 class LockstepGate:
@@ -38,7 +47,7 @@ class LockstepGate:
         self.last_executed_id = 0
         self._pending = None  # (id, joints, gripper) -- only the newest is kept
 
-    def submit(self, request_id, joints, gripper=None, velocities=None):
+    def submit(self, request_id, joints, gripper=None, velocities=None, publish_images=True):
         """Called from the subscription callback. Returns True if the request
         is new; stale or repeated ids (a DDS redelivery, a request older than
         what was already executed) are ignored so a tick is never run twice."""
@@ -47,12 +56,12 @@ class LockstepGate:
             return False
         if self._pending is not None and request_id <= self._pending.id:
             return False
-        self._pending = LockstepRequest(request_id, joints, gripper, velocities)
+        self._pending = LockstepRequest(request_id, joints, gripper, velocities, publish_images)
         return True
 
     def take(self):
         """Called from the sim loop. Returns a LockstepRequest(id, joints, gripper,
-        velocities) when there is a request to execute -- the caller must then step
+        velocities, publish_images) when there is a request to execute -- the caller must then step
         exactly one tick -- else None. Marks it executed."""
         if self._pending is None:
             return None

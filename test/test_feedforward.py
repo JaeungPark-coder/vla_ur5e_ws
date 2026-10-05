@@ -28,3 +28,30 @@ def test_each_joint_is_differenced_independently_and_sign_is_kept():
 @pytest.mark.parametrize('rows', [np.zeros((1, 6)), np.zeros(6), np.zeros((0, 6))])
 def test_nothing_to_difference_returns_none(rows):
     assert chunk_velocities(rows, 1 / 60) is None
+
+
+def test_a_window_averages_neighbouring_differences_and_leaves_constant_speed_alone():
+    dt = 1.0
+    rows = np.stack([np.full(6, 0.1 * i) for i in range(9)])
+    assert np.allclose(chunk_velocities(rows, dt, window=5), 0.1)
+
+
+def test_a_window_smooths_a_noisy_chunk():
+    rng = np.random.default_rng(0)
+    clean = np.stack([np.full(6, 0.01 * i) for i in range(60)])
+    noisy = clean + rng.normal(0, 0.005, clean.shape)
+    err_raw = np.abs(chunk_velocities(noisy, 1 / 60) - 0.6).mean()
+    err_smooth = np.abs(chunk_velocities(noisy, 1 / 60, window=11) - 0.6).mean()
+    assert err_smooth < err_raw / 3
+
+
+def test_the_ends_use_the_differences_that_exist():
+    rows = np.array([[0.0] * 6, [1.0] * 6, [3.0] * 6])
+    v = chunk_velocities(rows, 1.0, window=3)
+    assert np.allclose(v[0], 1.5) and np.allclose(v[1], 5.0 / 3) and np.allclose(v[2], 2.0)
+
+
+def test_speeds_are_clipped_symmetrically():
+    rows = np.array([[0.0] * 6, [10.0, -10.0, 0, 0, 0, 0], [20.0, -20.0, 0, 0, 0, 0]])
+    v = chunk_velocities(rows, 1.0, max_speed=3.0)
+    assert np.allclose(v[:, 0], 3.0) and np.allclose(v[:, 1], -3.0)

@@ -13,11 +13,12 @@ force is ~0 and the grasp slips.
 Measured 2026-10-05 (isaac/check_action_replay.py: 6 + 4 recorded episodes replayed
 through the bridge's physics path with absolute arm targets): recorded value sent
 as-is ("raw") lifted and placed 10/10; a continuous clip(v/0.7) ("scale") 6/6; this
-hysteresis 8/10, with larger place errors (8-21 mm vs ~6 mm). The hysteresis jumps
-the command to 1.0 the moment the output crosses `close_above`, i.e. it snaps the
-gripper shut instead of ramping it as the demonstrations did (README, 2026-09-14:
-snapping shut makes contact non-deterministic). The guess was therefore wrong for
-this simulator; the raw value is fine. Only if a trained policy is later seen to
+hysteresis 8/10, with larger place errors (8-21 mm vs ~6 mm) -- a difference that small
+samples cannot separate from chance. The hysteresis jumps the command to 1.0 the moment
+the output crosses `close_above`, i.e. it snaps the gripper shut instead of ramping it as
+the demonstrations did (README, 2026-09-14: snapping shut makes contact non-deterministic),
+which may be why. So: no evidence the guess was right, and the raw value is fine for
+recorded values (a trained policy's noisy output was not tested). Only if a trained policy is later seen to
 hover or chatter near the stall value is it worth turning this on, and then
 prefer a smooth mapping over a snap.
 

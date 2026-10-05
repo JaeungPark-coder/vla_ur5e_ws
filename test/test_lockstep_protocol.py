@@ -23,7 +23,7 @@ from lockstep_protocol import LockstepGate
 def test_a_new_request_is_taken_once():
     gate = LockstepGate()
     assert gate.submit(1, [0.0] * 6, 0.0) is True
-    assert gate.take() == (1, [0.0] * 6, 0.0, None)
+    assert gate.take() == (1, [0.0] * 6, 0.0, None, True)
     assert gate.take() is None
     assert gate.last_executed_id == 1
 
@@ -65,6 +65,7 @@ class _Stamp:
 class _Header:
     def __init__(self):
         self.stamp = _Stamp()
+        self.frame_id = ''
 
 
 class _JointState:
@@ -134,7 +135,8 @@ class _MockBridge:
         position = list(msg.position)
         gripper = position[6] if len(position) >= 7 else None
         velocities = list(msg.velocity)[:6] if len(msg.velocity) >= 6 else None
-        self.gate.submit(msg.header.stamp.sec, position[:6], gripper, velocities)
+        self.gate.submit(msg.header.stamp.sec, position[:6], gripper, velocities,
+                         publish_images=(msg.header.frame_id != 'noimg'))
         if not self.responsive:
             return
         request = self.gate.take()
@@ -245,3 +247,42 @@ def test_the_gate_keeps_velocities_with_the_request():
     gate.submit(1, [0.0] * 6, 1.0, [0.1] * 6)
     request = gate.take()
     assert request.id == 1 and request.gripper == 1.0 and list(request.velocities) == [0.1] * 6
+
+
+def test_images_can_be_skipped_for_all_but_the_last_tick_of_a_block(interface_module):
+    robot, bridge, _ = _make(interface_module)
+    for k in range(5):
+        robot.move_joints([0.0] * 6, publish_images=(k == 4))
+    assert [r.publish_images for r in bridge.executed] == [False, False, False, False, True]
+    assert bridge.ticks == 5          # skipping images never skips a tick
+
+
+def test_images_are_published_by_default():
+    gate = LockstepGate()
+    gate.submit(1, [0.0] * 6)
+    assert gate.take().publish_images is True
+
+
+def test_a_client_restarted_against_a_running_bridge_is_not_ignored(interface_module):
+    robot, bridge, _ = _make(interface_module)
+    for _ in range(7):
+        assert robot.move_joints([0.0] * 6)
+    # a NEW client (ids restart at 0) attaches to the same bridge, which has executed 7
+    fresh = interface_module.IsaacSimRobotInterface(
+        _Node(bridge), lockstep=True, lockstep_timeout_s=0.05)
+    bridge.interface = fresh
+    reply = _JointState()
+    reply.header.stamp.sec = bridge.gate.last_executed_id   # the idle republish it would see
+    fresh._on_joint_state(reply)
+    assert fresh.move_joints([0.0] * 6) is True
+    assert bridge.gate.last_executed_id == 8 and bridge.ticks == 8
+
+
+def test_the_reset_epoch_is_read_from_the_joint_state_stamp(interface_module):
+    robot, _, _ = _make(interface_module)
+    assert robot.acked_epoch() == 0
+    reply = _JointState()
+    reply.header.stamp.sec = 5
+    reply.header.stamp.nanosec = 3
+    robot._on_joint_state(reply)
+    assert robot.acked_epoch() == 3 and robot.acked_request_id() == 5

@@ -953,6 +953,14 @@ class PickPlaceScene:
             "tool_quat": tool_quat,
         }
 
+    def get_proprioception(self):
+        """get_observation() without the two annotator readbacks and the USD pose queries:
+        just joints[6] and the gripper position, read exactly as get_observation reads
+        them. For the lockstep bridge's ticks that need no images."""
+        joint_pos = np.asarray(self.robot.get_joint_positions())[:6]
+        return {"joints": joint_pos.astype(np.float32),
+                "gripper": np.array([self.gripper.get_normalized_position()], dtype=np.float32)}
+
     def get_cube_position(self):
         pos, _ = prim_world_pose(self.stage.GetPrimAtPath(CUBE_PRIM_PATH))
         return pos
