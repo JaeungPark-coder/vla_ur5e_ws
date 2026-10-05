@@ -1993,8 +1993,10 @@ row access.
    too few data workers.
 2. Full run (config default 30k steps).
 3. Phase 4 evaluation. Known risks carried forward, none newly measured:
-   - ~~the wrist camera mostly shows the gripper~~ -- **corrected 2026-10-05, measured** (20 dataset episodes,
-     red-cube pixels in the 256x256 images): the two cameras are complementary. Approach: wrist 0 px, base
+   - ~~the wrist camera mostly shows the gripper~~ -- **corrected 2026-10-05, measured** (20 dataset episodes;
+     all numbers below are AREAS = counts of red-cube pixels in the 256x256 image, so side length ~ sqrt(area):
+     240 px ~ 15x15, 1200 px ~ 35x35. Elsewhere in this file '10-24 px' / '23.8 px' / '30 px across' are SIDE
+     LENGTHS, not areas): the two cameras are complementary. Approach: wrist 0 px, base
      ~240 px (~15x15). 40 ticks before the grasp: wrist 834 px (563-895), base 0 (the arm hides the cube).
      At the grasp: wrist 1202 px (~35x35), base 0. Lift/transport/place: wrist 770-1330, base 135-270. The earlier
      claim came from a handful of frames that included approach/end phases. No evidence that the camera layout
@@ -2186,17 +2188,32 @@ Two knobs only, never mixed: arm drive stiffness x0.5 (damping untouched; live c
 | stiffness x0.5 | 10/12 (83%) | 18.9 mm | 10/10 | 3/10, 2 blow-ups | 0/10, 5 blow-ups |
 | `GRASP_HEIGHT` 0.03 | 10/11 (91%) | 8.4 mm | 10/10 | **7/10**, 1 blow-up | 1/10, 4 blow-ups |
 
-("blow-up" = cube above 0.25 m, non-finite or runaway joints.) Reading: (1) softer drives do **not** help and cost
-place accuracy and expert success; (2) a 1 cm higher grasp point keeps the expert at 91% and **may** help at
-0.005 rad (7/10 vs 3/9, 95% Wilson intervals 40-89% vs 12-65% overlap -- suggestive, not significant, and
-the shards used different seeds, so it is not a paired comparison) with fewer blow-ups (1 vs 5); (3) nothing
-helps at 0.01 rad. So the noise fragility is mostly about task precision (a 4 cm cube, ~mm-level error budget),
-not about drive stiffness. Whether to re-collect with a higher grasp point is a judgement call: it is cheap
-evidence, not proof; the first real policy's evaluation (how noisy its output actually is) should decide.
+("blow-up" = cube above 0.25 m, non-finite or runaway joints.) Reading: (1) softer drives do **not** help (3/10 vs 3/9 placed at 0.005 rad, Fisher p=1.0) and cost place
+accuracy and expert success. (2) The +1 cm grasp point is a **hypothesis, not a finding**: placed 7/10 vs 3/9 at
+0.005 rad has Fisher two-sided p=0.18 (Wilson intervals 40-89% vs 12-65% overlap), at 0.01 rad it is 1/10 vs 1/9
+(p=1.0), and the shards used different seeds, so it is not a paired comparison. What stands out more is the
+failure type: at 0.005 rad 5 of 9 baseline replays and 1 of 10 at +1 cm ended in a **blow-up** (p=0.057), i.e.
+the simulator went unstable rather than the grasp missing. The cube's `maxDepenetrationVelocity` cap (0.5 m/s,
+since 2026-09-14) is already in place, so it is not what stops them. (3) Nothing helps at 0.01 rad. The noise
+fragility therefore looks like a task-precision problem (a 4 cm cube, ~mm-level error budget) more than a drive
+stiffness one. **Next diagnostic, before varying more knobs: find where a blow-up starts** -- replay the baseline
+at 0.005 rad and log, for the ticks before the blow-up, the contact pairs (finger-cube, finger-table, arm-table),
+penetration depth and gripper height. With zero grasp clearance a single noise excursion may drive a finger into the
+table; that is a guess until it is logged. Re-collecting with a higher grasp point should wait for a real policy's
+evaluation.
+
+**Limits of this study (read before using the numbers):** the noise is AR(1) with rho=0.95 **per joint,
+independent across the six joints**, added to every row of a 50-row chunk and restarted from zero at each block
+start -- so it is correlated in time within a chunk but not across chunks or joints. A trained policy's error is
+probably correlated differently (across joints, and across consecutive chunks), which can change the result
+either way. The replay is open loop (the recorded actions are fixed), so the corrective effect a closed-loop
+policy gets from seeing the arm drift is missing; this makes the numbers pessimistic about recovery and says nothing
+about how noisy a real policy is. 9-11 recordings per cell, unpaired across the shards. Together that is too
+weak to decide a re-collection, which is why the decision waits for the first policy evaluation.
 Not tried: drive stiffness x0.25 or x2, damping changes, other grasp heights, a wider cube/gripper tolerance.
 
 Camera view (measured the same day, no GPU): see the corrected bullet above -- the wrist camera sees the cube from
-~40 ticks before the grasp through the place (~800-1300 px of 65536), the base camera sees it during approach and
+~40 ticks before the grasp through the place (~800-1300 px AREA of 65536, ~30-36 px per side), the base camera sees it during approach and
 transport but not at the grasp; no evidence the layout needs changing.
 
 **Recommended evaluation recipe (once a checkpoint exists):**
