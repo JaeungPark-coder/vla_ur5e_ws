@@ -1993,8 +1993,12 @@ row access.
    too few data workers.
 2. Full run (config default 30k steps).
 3. Phase 4 evaluation. Known risks carried forward, none newly measured:
-   - the wrist camera frames mostly show the gripper body, the cube only as a sliver at the top edge;
-     the base camera cube is ~10-24 px -- the policy may underperform even with a clean training run;
+   - ~~the wrist camera mostly shows the gripper~~ -- **corrected 2026-10-05, measured** (20 dataset episodes,
+     red-cube pixels in the 256x256 images): the two cameras are complementary. Approach: wrist 0 px, base
+     ~240 px (~15x15). 40 ticks before the grasp: wrist 834 px (563-895), base 0 (the arm hides the cube).
+     At the grasp: wrist 1202 px (~35x35), base 0. Lift/transport/place: wrist 770-1330, base 135-270. The earlier
+     claim came from a handful of frames that included approach/end phases. No evidence that the camera layout
+     needs changing; the base camera's blind spot at the grasp is covered by the wrist;
    - ~~`control_hz` 60 vs 30 fps dataset~~ -- **corrected 2026-10-05**: the data really is one frame per
      60 Hz tick and `fps=30` is only a label; the real serving mismatches are listed in the 2026-10-05
      audit below (sim not in lockstep with the client, `max_steps`, gripper/arm action semantics);
@@ -2165,6 +2169,35 @@ written and removed again: the replay does not support the argument it was based
 
 Also: the dataset's `actions[t]` equals `joints[t+1]` exactly (max diff 0.0000), and dataset episodes follow the
 same trajectories as freshly recorded ones, so the simulator dynamics have not drifted since collection.
+
+#### 2026-10-05: does a different simulator setting buy noise tolerance? (check_noise_robustness.py)
+
+Question: the recipe breaks at ~0.005-0.01 rad of target noise; is that the stiff arm drives or the
+zero-clearance grasp? Design: ONE setting per process, the scripted expert **re-recorded under that setting**
+(the data's actions are measured next positions, so they carry the drive dynamics -- changing the drive only at
+serving time would break tracking before noise matters), then each successful recording replayed with the serving
+recipe (K=25 blocks, velocity from the noisy rows, smoothing window 11) at AR(1) noise 0 / 0.005 / 0.01 rad.
+Two knobs only, never mixed: arm drive stiffness x0.5 (damping untouched; live controller confirmed 538609 ->
+269304) and `GRASP_HEIGHT` 0.02 -> 0.03 (the grip point 1 cm higher on the cube).
+
+| setting | expert placed | place error (median) | noise 0 | noise 0.005 | noise 0.01 |
+|---|---|---|---|---|---|
+| baseline | 10/11 (91%) | 9.6 mm | 9/9 | 3/9, 5 blow-ups | 1/9, 5 blow-ups |
+| stiffness x0.5 | 10/12 (83%) | 18.9 mm | 10/10 | 3/10, 2 blow-ups | 0/10, 5 blow-ups |
+| `GRASP_HEIGHT` 0.03 | 10/11 (91%) | 8.4 mm | 10/10 | **7/10**, 1 blow-up | 1/10, 4 blow-ups |
+
+("blow-up" = cube above 0.25 m, non-finite or runaway joints.) Reading: (1) softer drives do **not** help and cost
+place accuracy and expert success; (2) a 1 cm higher grasp point keeps the expert at 91% and **may** help at
+0.005 rad (7/10 vs 3/9, 95% Wilson intervals 40-89% vs 12-65% overlap -- suggestive, not significant, and
+the shards used different seeds, so it is not a paired comparison) with fewer blow-ups (1 vs 5); (3) nothing
+helps at 0.01 rad. So the noise fragility is mostly about task precision (a 4 cm cube, ~mm-level error budget),
+not about drive stiffness. Whether to re-collect with a higher grasp point is a judgement call: it is cheap
+evidence, not proof; the first real policy's evaluation (how noisy its output actually is) should decide.
+Not tried: drive stiffness x0.25 or x2, damping changes, other grasp heights, a wider cube/gripper tolerance.
+
+Camera view (measured the same day, no GPU): see the corrected bullet above -- the wrist camera sees the cube from
+~40 ticks before the grasp through the place (~800-1300 px of 65536), the base camera sees it during approach and
+transport but not at the grasp; no evidence the layout needs changing.
 
 **Recommended evaluation recipe (once a checkpoint exists):**
 

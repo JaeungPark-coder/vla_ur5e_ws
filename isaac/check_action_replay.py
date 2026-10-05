@@ -164,6 +164,8 @@ def replay(scene, seed, states, actions, cmds, arm_mode, gain, grip_mode, thresh
             if t % block == 0:
                 q0, s0 = q.copy(), states[t, :6].astype(float)
                 rows = q0 + (actions[t:t + 50, :6].astype(float) - s0)
+                if len(rows) < 50:  # end of the episode: pad like the policy server does (repeat the last row)
+                    rows = np.concatenate([rows, np.repeat(rows[-1:], 50 - len(rows), axis=0)])
                 n_rows = np.zeros_like(rows)
                 nz = noise.copy()
                 for r in range(len(rows)):

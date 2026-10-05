@@ -38,6 +38,9 @@ from vla_bridge.gripper_command import GripperHysteresis
 from vla_bridge.feedforward import chunk_velocities
 
 
+# Same cut-off collect_demos.py filters demonstrations on (normal peak ~0.16 m).
+CONTACT_BLOWUP_CUBE_Z_M = 0.25
+
 class VLAPolicyClient(Node):
     def __init__(self):
         super().__init__('vla_policy_client')
@@ -278,6 +281,7 @@ class VLAPolicyClient(Node):
             self._trial_idx = 0
             self._trial_successes = 0
             self._was_holding = False
+            self._trial_max_cube_z = 0.0  # see _finish_trial: a cube far above its normal ~0.16 m peak means a contact blow-up
             self._latest_cube_position = None
             self._eval_reset_pub = self.create_publisher(Empty, '/vla/eval/reset', 10)
             self.create_subscription(
@@ -453,6 +457,7 @@ class VLAPolicyClient(Node):
             holding_position = settled.position if settled.measured else target_gripper
             is_holding = (holding_position >= self.holding_gripper_threshold
                           and self._latest_cube_position[2] > self.lifted_z_threshold)
+            self._trial_max_cube_z = max(self._trial_max_cube_z, float(self._latest_cube_position[2]))
             xy_error_mm = 1000.0 * float(np.linalg.norm(
                 self._latest_cube_position[:2] - self.eval_target_position[:2]))
             released_here = self._was_holding and not is_holding
@@ -473,6 +478,11 @@ class VLAPolicyClient(Node):
         self._trial_successes += int(success)
         with open(self.results_csv_path, 'a', newline='') as f:
             csv.writer(f).writerow([self._trial_idx, success, self._step_count, xy_error_mm])
+        if self._trial_max_cube_z > CONTACT_BLOWUP_CUBE_Z_M:
+            self.get_logger().warn(
+                f'trial {self._trial_idx}: the cube reached z={self._trial_max_cube_z:.2f} m (a normal episode '
+                f'peaks near 0.16 m) -- most likely a PhysX contact blow-up, not a policy result; consider '
+                f'excluding or re-running it (collect_demos.py drops such episodes at > {CONTACT_BLOWUP_CUBE_Z_M} m).')
         self.get_logger().info(
             f'trial {self._trial_idx}/{self.n_trials}: '
             f'{"SUCCESS" if success else "FAILURE"} (steps={self._step_count}, xy_error_mm={xy_error_mm:.1f})')
@@ -490,6 +500,7 @@ class VLAPolicyClient(Node):
             self._min_epoch = max(self.robot.acked_epoch(), self._base_epoch, self._wrist_epoch) + 1
         self._eval_reset_pub.publish(Empty())
         self._step_count = 0
+        self._trial_max_cube_z = 0.0
         if self._gripper_filter is not None:
             self._gripper_filter.reset()
         self._was_holding = False
