@@ -24,6 +24,7 @@ isaac/                    Isaac Sim scene + scripted demo collection (Phase 1 --
   check_near_field_visibility.py 2026-09-21: places the cube at controlled 5-100mm standoffs on the wrist camera's own axis, checks near-clip/exposure/stale-frame separately
   collect_demos.py         runs episodes, scores each against ground truth, writes a LeRobot dataset
   pick_place_scene_bridge.py   ROS2-facing sim bridge for policy INFERENCE (Phase 3's Isaac Sim side)
+  lockstep_protocol.py         request/ack bookkeeping for the bridge's --lockstep mode (pure Python, unit-tested)
   residual_rl_train_env.py     Gymnasium env for Residual RL on top of the frozen pi0 policy (Phase 5, optional)
   train_residual_policy.py     SB3 PPO training script for the residual policy (Phase 5)
   object_configs.py            small (color, shape) object vocabulary for the hybrid pipeline (Phase 6, optional)
@@ -1992,10 +1993,11 @@ row access.
 3. Phase 4 evaluation. Known risks carried forward, none newly measured:
    - the wrist camera frames mostly show the gripper body, the cube only as a sliver at the top edge;
      the base camera cube is ~10-24 px -- the policy may underperform even with a clean training run;
-   - `vla_policy_client`'s `control_hz` is 60 but the dataset is 30 fps (`CONTROL_FPS`,
-     `collect_demos.py`) -- reconcile before evaluating;
-   - the gripper-config wiring in `pick_place_scene_bridge.py` / `residual_rl_train_env.py` has still
-     never been run in Isaac Sim;
+   - ~~`control_hz` 60 vs 30 fps dataset~~ -- **corrected 2026-10-05**: the data really is one frame per
+     60 Hz tick and `fps=30` is only a label; the real serving mismatches are listed in the 2026-10-05
+     audit below (sim not in lockstep with the client, `max_steps`, gripper/arm action semantics);
+   - the gripper-config wiring in `pick_place_scene_bridge.py` / `residual_rl_train_env.py` was checked
+     against `collect_demos.py` by reading (identical), but has still never been run in Isaac Sim;
    - 64 of the 152 episodes were recorded under the 0.003 correction tolerance, 88 under 0.005.
 
 **Stale text elsewhere in this file:** the table under "What is still unverified" (rows 1-5 marked
@@ -2045,7 +2047,58 @@ dataset's Arrow conversion; the 2026-09-29 one is still a deletion candidate.
 
 **Next:** evaluate the 4-6k and final checkpoints in Isaac Sim (Phase 4); only extend training if
 performance is still rising. Before that, the Phase 4 items listed in the 2026-10-02 entry are still
-open (`control_hz` 60 vs 30 fps dataset, wrist-camera view, never-run gripper config in the bridge).
+open (wrist-camera view, never-run bridge; the `control_hz` item was a mislabel, see the 2026-10-05 audit).
+
+**2026-10-05 restart note:** run1 was restarted as `run1b_10k` after ~35 min. Under `nohup ... > log`
+Python block-buffers stdout, and openpi prints `Step N: loss=...` through `tqdm.write` (stdout), so
+the first run showed no loss lines at all (0 after 394 steps; `log_interval=50`). Fix: export
+`PYTHONUNBUFFERED=1` -- confirmed, `Step 0` now appears immediately. The aborted run left no
+checkpoint (first save is at step 1000); its log is `apps/openpi/run1_10k_aborted.log`.
+
+#### 2026-10-05: serving-path audit against the recorded data (code reading only, no simulator)
+
+Read `collect_demos.py`, `pick_place_scene_bridge.py`, `vla_policy_client.py`,
+`isaac_robot_interface.py` and openpi's `AbsoluteActions` against each other. Result:
+
+| item | verdict |
+|---|---|
+| data rate | **Correction:** one dataset frame = one 60 Hz sim physics tick (`collect_demos.py` logs every tick; ~1044 frames = 17 s per episode). The dataset's `fps=30` is a **label error**. It is harmless for training (openpi only uses it to turn chunk offsets into consecutive frames; a chunk of 50 steps is really 0.83 s) and was deliberately NOT changed. The earlier "`control_hz` 60 vs 30 fps" worry was wrong. |
+| observation format | match: uint8 RGB, same camera path and resolution, gripper is the measured normalised position, prompt string identical in dataset / `params.yaml` / code |
+| action chunk / delta | match: `AbsoluteActions` adds the inference-time state to every row (after `Unnormalize`), so `chunk[0]`, or any first-K rows applied open loop, are valid |
+| gripper config in the bridge | match: `collect_demos`, `pick_place_scene_bridge`, `residual_rl_train_env` use the same constants, same call order |
+| **sim not synchronised to the client** | **mismatch.** The bridge free-runs `world.step(render=True)`; the client blocks on `infer()` per action, so one action spans an unknown number of sim ticks while the demonstrations are one action per tick. `move_joints` also returns at once (0.02 rad tolerance vs ~1-4 mrad of motion per tick). |
+| **`max_steps=300`** | **mismatch (certain).** A demonstration is ~1044 actions, so every eval trial would end at ~29% of the task and log FAILURE regardless of the policy. |
+| **gripper action space** | **mismatch (inferred, not yet measured).** The dataset's gripper action is the MEASURED position one tick later (~0.63-0.73 while holding, max 0.75) but the demonstrator COMMANDED 1.0. Echoing ~0.7 back as the command makes the joint target about where the finger already stalled, so the squeeze force is ~0. |
+| arm action space | **same pattern, confirmed in code, effect unmeasured.** `collect_demos.py:250` records `action = next_obs["joints"]`, i.e. the arm's MEASURED next-tick position, not the commanded target. A position drive moves less than the gap it is given, so serving `q + delta` as the target should advance the arm slower than the demonstration, possibly stalling. |
+
+**Changes made (all behind parameters; defaults keep the old behaviour except where noted):**
+- `max_steps` 300 -> 1800 (counted in actions, not inferences) in `params.yaml` and the node.
+- `gripper_command.py` + params `gripper_hysteresis` (default **true**), `gripper_close_threshold` 0.45,
+  `gripper_open_threshold` 0.25: the policy's gripper output becomes close/open with a dead band, so a
+  value hovering near one threshold cannot make the gripper chatter. `gripper_hysteresis:=false` restores
+  the raw clipped value. The thresholds are a first guess from the recorded range.
+- `lockstep` (default **false**) on `vla_policy_client` / `IsaacSimRobotInterface`, and `--lockstep` (or
+  `VLA_BRIDGE_LOCKSTEP=1`) on `pick_place_scene_bridge.py`: the client sends request k, the bridge applies it
+  and steps EXACTLY ONE tick, then stamps the next observation with k. The gripper command rides in the
+  same message. Protocol and rationale: `isaac/lockstep_protocol.py`. Both sides must be switched on
+  together. Use headless: the idle wait deliberately does not render (an extra render would change the
+  image-vs-state lag the data was recorded with).
+- `execute_horizon` (default 1): apply the first K rows of each chunk before re-inferring; forced to 1 with
+  the residual policy.
+- Tests (laptop-runnable, 148 passed): `test_gripper_command.py`, `test_lockstep_protocol.py` (real protocol
+  class and real client interface against a mock bridge that counts ticks).
+
+**Not verified -- needs the simulator (do NOT start Isaac Sim while run1b holds both GPUs at
+`MEM_FRACTION=0.9`):**
+1. that the new bridge loop and the client's `_run_step` changes run at all (only the pure parts are tested);
+2. whether 0.45/0.25 are good gripper thresholds;
+3. **the arm-action question above.** Suggested first live test once training is done: replay a recorded
+   episode's `actions` through the lockstep bridge open loop (target = recorded next-tick joints) and compare
+   the achieved trajectory with the recorded one. If the arm falls behind, options in order of cost: scale the
+   delta (`q + k*delta`), stiffen the arm drive in the bridge, or re-collect with the commanded target as the
+   action.
+4. the 30 Hz sub-sampled dataset is a fallback only if the policy turns out to barely move (1-4 mrad per tick).
+
 
 ### Operational note: `check_cameras.py` is unsafe to import from
 

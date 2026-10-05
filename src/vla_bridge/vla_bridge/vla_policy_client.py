@@ -34,6 +34,7 @@ from cv_bridge import CvBridge
 from vla_bridge.gripper_state import grasp_disagreement
 from vla_bridge.robot_interface import UR5eInterface
 from vla_bridge.isaac_robot_interface import IsaacSimRobotInterface
+from vla_bridge.gripper_command import GripperHysteresis
 
 
 class VLAPolicyClient(Node):
@@ -110,7 +111,33 @@ class VLAPolicyClient(Node):
         # relay (e.g. bring-up with the gripper not yet wired).
         self.declare_parameter('gripper_driver', 'robotiq_socket')
         self.declare_parameter('gripper_socket_port', 63352)
-        self.declare_parameter('max_steps', 300)  # safety cap -- stop after this many control ticks regardless of task completion
+        # 2026-10-05: was 300. Demonstrations are ~1044 actions long (one action
+        # per 60 Hz sim tick, 17 s -- see isaac/collect_demos.py), so a cap of 300
+        # ended every trial at ~29% of the task and logged it FAILURE no matter how
+        # good the policy was. Counted in ACTIONS applied (execute_horizon per
+        # inference), not inferences.
+        self.declare_parameter('max_steps', 1800)  # safety cap -- stop after this many actions regardless of task completion
+        # 2026-10-05: the dataset's gripper action is the MEASURED position one tick
+        # later (~0.7 while holding the cube, because the cube stalls the finger),
+        # but the demonstrator COMMANDED 1.0. Sending the policy's ~0.7 straight
+        # back leaves the PD drive with ~0 squeeze force. With gripper_hysteresis
+        # the output is turned into a close/open decision instead -- see
+        # gripper_command.py. Set it false to send the raw clipped value (the old
+        # behaviour). Thresholds are a first guess; tune on the first evaluation.
+        self.declare_parameter('gripper_hysteresis', True)
+        self.declare_parameter('gripper_close_threshold', 0.45)
+        self.declare_parameter('gripper_open_threshold', 0.25)
+        # 2026-10-05: apply this many actions of each inferred chunk before
+        # re-inferring. 1 = the original behaviour (re-infer every action). Every
+        # action in a chunk is absolute and relative to the state at inference
+        # time (AbsoluteActions), so open-loop execution of the first K is valid.
+        # Forced to 1 when use_residual_policy is on (its observation is per-action).
+        self.declare_parameter('execute_horizon', 1)
+        # 2026-10-05: isaac_sim backend only. true = one action <-> exactly one sim
+        # tick (the bridge must be started with --lockstep), so inference latency no
+        # longer changes how much sim time an action covers. false = the original
+        # free-running bridge. See isaac/lockstep_protocol.py for why.
+        self.declare_parameter('lockstep', False)
         # Residual RL (see isaac/residual_rl_train_env.py / train_residual_policy.py,
         # README Phase 4): 'false' (default) = pi0's action is applied as-is,
         # unchanged from the rest of this node. 'true' = a small trained
@@ -151,6 +178,15 @@ class VLAPolicyClient(Node):
         self.prompt = self.get_parameter('prompt').value
         self.control_period_s = 1.0 / self.get_parameter('control_hz').value
         self.max_steps = self.get_parameter('max_steps').value
+        self.execute_horizon = max(1, int(self.get_parameter('execute_horizon').value))
+        self.lockstep = bool(self.get_parameter('lockstep').value)
+        self._gripper_filter = None
+        if self.get_parameter('gripper_hysteresis').value:
+            self._gripper_filter = GripperHysteresis(
+                close_above=self.get_parameter('gripper_close_threshold').value,
+                open_below=self.get_parameter('gripper_open_threshold').value)
+        self._base_ack = 0   # lockstep: request id the latest images belong to
+        self._wrist_ack = 0
         self.residual_scale = self.get_parameter('residual_scale').value
 
         from openpi_client.websocket_client_policy import WebsocketClientPolicy
@@ -168,12 +204,19 @@ class VLAPolicyClient(Node):
             self.get_logger().info(f'use_residual_policy=true, loaded {residual_model_path}')
         else:
             self.residual_policy = None
+        if self.residual_policy is not None and self.execute_horizon != 1:
+            self.get_logger().warn('use_residual_policy needs a fresh observation per action; forcing execute_horizon=1')
+            self.execute_horizon = 1
 
         self.backend = self.get_parameter('robot_backend').value
         if self.backend == 'isaac_sim':
-            self.robot = IsaacSimRobotInterface(self, callback_group=self._cb_group)
+            self.robot = IsaacSimRobotInterface(
+                self, callback_group=self._cb_group, lockstep=self.lockstep)
             image_topics = ('/vla/base_image', '/vla/wrist_image')
         else:
+            if self.lockstep:
+                self.get_logger().warn('lockstep only applies to robot_backend=isaac_sim -- ignoring.')
+                self.lockstep = False
             robot_ip = self.get_parameter('robot_ip').value
             gripper_driver_name = self.get_parameter('gripper_driver').value
             gripper_driver = None
@@ -245,9 +288,24 @@ class VLAPolicyClient(Node):
 
     def _on_base_image(self, msg: Image):
         self._base_image = self.cv_bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
+        self._base_ack = int(msg.header.stamp.sec)
 
     def _on_wrist_image(self, msg: Image):
         self._wrist_image = self.cv_bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
+        self._wrist_ack = int(msg.header.stamp.sec)
+
+    def _observation_is_current(self):
+        """Lockstep: true once joint_state AND both images carry the id of the
+        last request sent -- i.e. all three are from the tick that request
+        produced, not an earlier one still in flight."""
+        wanted = self.robot.last_request_id()
+        return (self.robot.acked_request_id() >= wanted
+                and self._base_ack >= wanted and self._wrist_ack >= wanted)
+
+    def _gripper_command(self, policy_output):
+        if self._gripper_filter is not None:
+            return self._gripper_filter.update(policy_output)
+        return float(np.clip(policy_output, 0.0, 1.0))
 
     def _on_cube_position(self, msg: Point):
         self._latest_cube_position = np.array([msg.x, msg.y, msg.z])
@@ -262,6 +320,11 @@ class VLAPolicyClient(Node):
             return
         if self._base_image is None or self._wrist_image is None:
             self.get_logger().warn('waiting for camera images...', throttle_duration_sec=2.0)
+            return
+        if self.lockstep and not self._observation_is_current():
+            self.get_logger().warn(
+                'lockstep: waiting for the observation produced by the last request...',
+                throttle_duration_sec=2.0)
             return
 
         joints = self.robot.get_joint_positions()
@@ -292,24 +355,40 @@ class VLAPolicyClient(Node):
         # convert the model's predicted deltas back to absolute joint
         # positions -- what comes back here is a ready-to-execute action
         # (chunk_len, 7) or (7,), NOT something this client needs to
-        # de-delta itself.
+        # de-delta itself. Every row is absolute and relative to the state at
+        # inference time, so applying the first `execute_horizon` rows in a row
+        # (open loop) is valid; execute_horizon=1 is the original behaviour.
         action_chunk = np.asarray(result["actions"])
-        action = action_chunk[0] if action_chunk.ndim == 2 else action_chunk
+        if action_chunk.ndim == 1:
+            action_chunk = action_chunk[None, :]
 
-        target_joints = action[:6]
-        target_gripper = float(np.clip(action[6], 0.0, 1.0))
+        n_apply = max(1, min(self.execute_horizon, len(action_chunk)))
+        for i in range(n_apply):
+            action = action_chunk[i]
+            target_joints = action[:6]
+            target_gripper = self._gripper_command(float(action[6]))
 
-        if self.residual_policy is not None:
-            # Same 14-dim observation residual_rl_train_env.py trains
-            # against: proprioception + pi0's own proposed action -- no
-            # object-pose info, so this works identically in sim and here.
-            residual_obs = np.concatenate([obs["joints"], obs["gripper"], action]).astype(np.float32)
-            residual_action, _ = self.residual_policy.predict(residual_obs, deterministic=True)
-            target_joints = target_joints + self.residual_scale * np.clip(residual_action, -1.0, 1.0)
+            if self.residual_policy is not None:
+                # Same 14-dim observation residual_rl_train_env.py trains
+                # against: proprioception + pi0's own proposed action -- no
+                # object-pose info, so this works identically in sim and here.
+                residual_obs = np.concatenate([obs["joints"], obs["gripper"], action]).astype(np.float32)
+                residual_action, _ = self.residual_policy.predict(residual_obs, deterministic=True)
+                target_joints = target_joints + self.residual_scale * np.clip(residual_action, -1.0, 1.0)
 
-        self.robot.move_joints(target_joints)
-        self.robot.set_gripper(target_gripper)
-        self._last_commanded_gripper = target_gripper
+            if self.lockstep:
+                # The bridge applies the gripper command on the same tick as the
+                # joint target, so it has to be queued first (see
+                # IsaacSimRobotInterface.move_joints).
+                self.robot.set_gripper(target_gripper)
+                self.robot.move_joints(target_joints)
+            else:
+                self.robot.move_joints(target_joints)
+                self.robot.set_gripper(target_gripper)
+            self._last_commanded_gripper = target_gripper
+            self._step_count += 1
+            if self._step_count >= self.max_steps:
+                break
 
         # The observation that the command echo made impossible: the gripper
         # is somewhere other than where it was sent. On a closing command
@@ -324,8 +403,6 @@ class VLAPolicyClient(Node):
                 + ('' if settled.object_detected is None else
                    f', object {"detected" if settled.object_detected else "NOT detected"}'),
                 throttle_duration_sec=1.0)
-
-        self._step_count += 1
 
         if self.eval_mode and self._latest_cube_position is not None:
             # Scored on where the gripper IS, not where it was told to go.
@@ -369,6 +446,8 @@ class VLAPolicyClient(Node):
 
         self._eval_reset_pub.publish(Empty())
         self._step_count = 0
+        if self._gripper_filter is not None:
+            self._gripper_filter.reset()
         self._was_holding = False
         # Reused as the "not ready yet" gate: without this, _run_step keeps
         # scoring against the previous trial's stale cache while the bridge

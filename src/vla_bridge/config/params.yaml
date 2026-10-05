@@ -37,7 +37,24 @@ vla_policy_client:
     # explicitly for bring-up before the gripper is wired.
     gripper_driver: "robotiq_socket"
     gripper_socket_port: 63352
-    max_steps: 300
+    # 2026-10-05: was 300 -- ~29% of a demonstration (~1044 actions at one per
+    # 60 Hz sim tick), so every eval trial ended in FAILURE at max_steps. Counted
+    # in actions applied, not inferences. Keep in sync with the Python default.
+    max_steps: 1800
+    # 2026-10-05: the dataset's gripper action is the MEASURED position (~0.7 while
+    # holding, since the cube stalls the finger) but the demonstrator commanded
+    # 1.0 -- sending ~0.7 back leaves ~0 squeeze force. With hysteresis on the
+    # output becomes a close/open decision (close above 0.45, open below 0.25).
+    # See vla_bridge/gripper_command.py. false = send the raw clipped value.
+    gripper_hysteresis: true
+    gripper_close_threshold: 0.45
+    gripper_open_threshold: 0.25
+    # Actions applied per inference. 1 = re-infer every action (original).
+    execute_horizon: 1
+    # isaac_sim backend only: true = exactly one sim tick per action. Start the
+    # bridge with `--lockstep` (or VLA_BRIDGE_LOCKSTEP=1) as well -- the two must
+    # match. See isaac/lockstep_protocol.py.
+    lockstep: false
     # Phase 4 (optional) -- see ../../isaac/train_residual_policy.py and
     # README.md. 'false' (default) = pi0's action applied as-is.
     use_residual_policy: false

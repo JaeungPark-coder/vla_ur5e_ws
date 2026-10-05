@@ -19,7 +19,9 @@ Written and reasoned about WITHOUT the ability to run Isaac Sim/ROS2 in the
 environment this was authored in -- treat as a solid first draft, not
 verified to run.
 """
+import argparse
 import os
+import time
 
 import numpy as np
 
@@ -45,6 +47,7 @@ from pick_place_scene import (  # noqa: E402
     GRIPPER_FINGER_EFFORT_LIMIT)
 from isaac_sim_common import (  # noqa: E402
     GRIPPER_DRIVE_JOINT_NAME, set_joint_max_force, zero_follower_joint_drives)
+from lockstep_protocol import LockstepGate  # noqa: E402
 
 JOINT_TARGET_TOPIC = "/vla/joint_target"
 GRIPPER_TARGET_TOPIC = "/vla/gripper_target"
@@ -61,9 +64,13 @@ EVAL_RESET_TOPIC = "/vla/eval/reset"
 
 
 class PickPlaceSceneBridge(Node):
-    def __init__(self):
+    def __init__(self, lockstep=False):
         super().__init__("pick_place_scene_bridge")
         self.bridge = CvBridge()
+        # See lockstep_protocol.py: when True the sim advances exactly one tick
+        # per request instead of free-running. Default False = unchanged behaviour.
+        self.lockstep = lockstep
+        self.gate = LockstepGate()
 
         self.joint_state_pub = self.create_publisher(JointState, JOINT_STATE_TOPIC, 10)
         self.base_image_pub = self.create_publisher(Image, BASE_IMAGE_TOPIC, 10)
@@ -78,6 +85,11 @@ class PickPlaceSceneBridge(Node):
         self.create_subscription(Empty, EVAL_RESET_TOPIC, self._on_reset_request, 10)
 
     def _on_joint_target(self, msg: JointState):
+        if self.lockstep:
+            position = np.array(msg.position, dtype=float)
+            gripper = float(position[6]) if len(position) >= 7 else None
+            self.gate.submit(msg.header.stamp.sec, position[:6], gripper)
+            return
         self.latest_joint_target = np.array(msg.position, dtype=float)
 
     def _on_gripper_target(self, msg: Float32):
@@ -90,15 +102,34 @@ class PickPlaceSceneBridge(Node):
         pos = scene.get_cube_position()
         self.eval_cube_position_pub.publish(Point(x=float(pos[0]), y=float(pos[1]), z=float(pos[2])))
 
-    def publish_observation(self, obs):
+    def publish_observation(self, obs, ack_id=None):
+        """ack_id (lockstep only): id of the last request executed, carried in
+        header.stamp.sec on all three messages so the client can tell which
+        tick an observation belongs to. None = leave the stamps untouched."""
         js = JointState()
         js.position = [float(p) for p in obs["joints"]] + [float(obs["gripper"][0])]
+        if ack_id is not None:
+            js.header.stamp.sec = int(ack_id)
         self.joint_state_pub.publish(js)
 
         base_rgb = np.ascontiguousarray(np.asarray(obs["base_rgb"])[..., :3])
         wrist_rgb = np.ascontiguousarray(np.asarray(obs["wrist_rgb"])[..., :3])
-        self.base_image_pub.publish(self.bridge.cv2_to_imgmsg(base_rgb, encoding="rgb8"))
-        self.wrist_image_pub.publish(self.bridge.cv2_to_imgmsg(wrist_rgb, encoding="rgb8"))
+        base_msg = self.bridge.cv2_to_imgmsg(base_rgb, encoding="rgb8")
+        wrist_msg = self.bridge.cv2_to_imgmsg(wrist_rgb, encoding="rgb8")
+        if ack_id is not None:
+            base_msg.header.stamp.sec = int(ack_id)
+            wrist_msg.header.stamp.sec = int(ack_id)
+        self.base_image_pub.publish(base_msg)
+        self.wrist_image_pub.publish(wrist_msg)
+
+
+def _lockstep_requested():
+    """`--lockstep` or VLA_BRIDGE_LOCKSTEP=1 (the env var is the fallback in case
+    Kit objects to an unknown argv entry)."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--lockstep", action="store_true")
+    args, _ = parser.parse_known_args()
+    return args.lockstep or os.environ.get("VLA_BRIDGE_LOCKSTEP", "0") == "1"
 
 
 def main():
@@ -133,14 +164,60 @@ def main():
     scene.reset()
 
     rclpy.init()
-    bridge = PickPlaceSceneBridge()
+    lockstep = _lockstep_requested()
+    bridge = PickPlaceSceneBridge(lockstep=lockstep)
 
     print("pick_place_scene_bridge.py running -- publishing joint_state/base_image/wrist_image, "
           "subscribed to joint_target/gripper_target. Ctrl+C (or close the Isaac Sim window) to stop. "
           "Run vla_policy_client.py (robot_backend:=isaac_sim) in another terminal.")
+    if lockstep:
+        print("LOCKSTEP mode: the simulator advances exactly one tick per /vla/joint_target request "
+              "(client must run with lockstep:=true). See lockstep_protocol.py. Prefer "
+              "ISAAC_PICK_PLACE_HEADLESS=1: the idle wait deliberately does not render, so the "
+              "window will not refresh between requests.", flush=True)
+    last_obs = scene.get_observation() if lockstep else None
+    last_republish = time.time()
 
     try:
         while simulation_app.is_running():
+            if lockstep:
+                # One tick per request; between requests nothing steps and nothing
+                # renders (an extra render would change the image-vs-state lag the
+                # demonstrations were recorded with). The last observation is
+                # re-published every 0.5 s so a client that connects late, or
+                # right after a reset, still gets a starting observation.
+                rclpy.spin_once(bridge, timeout_sec=0.005)
+                if bridge.reset_requested:
+                    obs = scene.reset()
+                    bridge.reset_requested = False
+                    bridge.gate.reset()
+                    bridge.latest_gripper_target = 0.0
+                    last_obs = obs if isinstance(obs, dict) else scene.get_observation()
+                    bridge.publish_observation(last_obs, ack_id=bridge.gate.last_executed_id)
+                    bridge.publish_cube_position(scene)
+                    last_republish = time.time()
+                request = bridge.gate.take()
+                if request is not None:
+                    request_id, joint_target, gripper_target = request
+                    from isaacsim.core.utils.types import ArticulationAction
+                    scene.robot.apply_action(
+                        ArticulationAction(
+                            joint_positions=np.asarray(joint_target, dtype=float),
+                            joint_indices=np.arange(6)))
+                    if gripper_target is None:
+                        gripper_target = bridge.latest_gripper_target
+                    scene.gripper.set_target(gripper_target)
+                    scene.world.step(render=True)  # exactly one tick
+                    last_obs = scene.get_observation()
+                    bridge.publish_observation(last_obs, ack_id=request_id)
+                    bridge.publish_cube_position(scene)
+                    last_republish = time.time()
+                elif time.time() - last_republish > 0.5:
+                    bridge.publish_observation(last_obs, ack_id=bridge.gate.last_executed_id)
+                    bridge.publish_cube_position(scene)
+                    last_republish = time.time()
+                continue
+
             rclpy.spin_once(bridge, timeout_sec=0.0)
 
             if bridge.reset_requested:

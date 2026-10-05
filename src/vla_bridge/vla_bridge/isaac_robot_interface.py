@@ -32,7 +32,7 @@ class IsaacSimRobotInterface:
                  gripper_target_topic='/vla/gripper_target',
                  joint_state_topic='/vla/joint_state',
                  settle_timeout_s=3.0, joint_tolerance_rad=0.02,
-                 callback_group=None):
+                 callback_group=None, lockstep=False, lockstep_timeout_s=10.0):
         """callback_group: pass a ReentrantCallbackGroup shared with the
         calling node's timer, spun via a MultiThreadedExecutor -- move_joints
         below blocks polling get_joint_positions() from inside that timer
@@ -46,6 +46,15 @@ class IsaacSimRobotInterface:
         self.node = node
         self.settle_timeout_s = settle_timeout_s
         self.joint_tolerance_rad = joint_tolerance_rad
+        # Lockstep (see isaac/lockstep_protocol.py): each move_joints is one
+        # request that the bridge executes as EXACTLY ONE sim tick and
+        # acknowledges by stamping its next joint_state with the request id.
+        # Off by default -- the original tolerance-polling behaviour is
+        # untouched. The bridge must be started with --lockstep as well.
+        self.lockstep = lockstep
+        self.lockstep_timeout_s = lockstep_timeout_s
+        self._request_id = 0
+        self._pending_gripper = 0.0
 
         self.joint_target_pub = node.create_publisher(JointState, joint_target_topic, 10)
         self.gripper_target_pub = node.create_publisher(Float32, gripper_target_topic, 10)
@@ -57,6 +66,16 @@ class IsaacSimRobotInterface:
 
     def _on_joint_state(self, msg: JointState):
         self._latest_joint_state = msg
+
+    def acked_request_id(self):
+        """Lockstep: id of the last request the bridge has executed (0 before
+        the first one, or before any joint_state has arrived)."""
+        if self._latest_joint_state is None:
+            return 0
+        return int(self._latest_joint_state.header.stamp.sec)
+
+    def last_request_id(self):
+        return self._request_id
 
     def get_joint_positions(self):
         if self._latest_joint_state is None:
@@ -83,6 +102,22 @@ class IsaacSimRobotInterface:
         import time
         msg = JointState()
         msg.position = [float(p) for p in np.asarray(joint_positions, dtype=float)]
+
+        if self.lockstep:
+            # One request = one sim tick. The gripper command rides in the same
+            # message (7th value) so it is applied on the same tick -- two
+            # separate topics give no ordering guarantee.
+            self._request_id += 1
+            msg.position = msg.position[:6] + [float(self._pending_gripper)]
+            msg.header.stamp.sec = self._request_id
+            self.joint_target_pub.publish(msg)
+            t0 = time.time()
+            while time.time() - t0 < self.lockstep_timeout_s:
+                if self.acked_request_id() >= self._request_id:
+                    return True
+                time.sleep(0.001)
+            return False
+
         self.joint_target_pub.publish(msg)
 
         target = np.asarray(joint_positions, dtype=float)
@@ -96,6 +131,7 @@ class IsaacSimRobotInterface:
 
     def set_gripper(self, position: float):
         self._last_commanded_gripper = float(position)
+        self._pending_gripper = float(position)  # lockstep: sent with the next move_joints
         self.gripper_target_pub.publish(Float32(data=float(position)))
 
     def get_gripper_state(self):
