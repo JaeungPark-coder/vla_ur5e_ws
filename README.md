@@ -25,6 +25,8 @@ isaac/                    Isaac Sim scene + scripted demo collection (Phase 1 --
   collect_demos.py         runs episodes, scores each against ground truth, writes a LeRobot dataset
   pick_place_scene_bridge.py   ROS2-facing sim bridge for policy INFERENCE (Phase 3's Isaac Sim side)
   lockstep_protocol.py         request/ack bookkeeping for the bridge's --lockstep mode (pure Python, unit-tested)
+  check_action_replay.py       replay recorded actions through the bridge's physics path -- how the arm/gripper commands were chosen
+  check_lockstep_e2e.py        end-to-end ROS 2 check of the lockstep bridge (needs the bridge running)
   residual_rl_train_env.py     Gymnasium env for Residual RL on top of the frozen pi0 policy (Phase 5, optional)
   train_residual_policy.py     SB3 PPO training script for the residual policy (Phase 5)
   object_configs.py            small (color, shape) object vocabulary for the hybrid pipeline (Phase 6, optional)
@@ -2055,6 +2057,20 @@ the first run showed no loss lines at all (0 after 394 steps; `log_interval=50`)
 `PYTHONUNBUFFERED=1` -- confirmed, `Step 0` now appears immediately. The aborted run left no
 checkpoint (first save is at step 1000); its log is `apps/openpi/run1_10k_aborted.log`.
 
+**2026-10-05, later: run1b was stopped at ~step 170 (loss 0.036 at step 150) because ~14 h of both GPUs did
+not fit the week; it left no checkpoint.** The full run is planned for the following weekend with the same
+command, plus `PYTHONUNBUFFERED=1` (loss lines) and the cache variables:
+
+```bash
+export HF_DATASETS_CACHE=<bigdisk>/hf_cache/datasets OPENPI_DATA_HOME=<bigdisk>/openpi_cache UV_CACHE_DIR=<bigdisk>/uv_cache PYTHONUNBUFFERED=1
+CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run --no-sync scripts/train.py pi0_ur5e_pick_place \
+  --exp-name=run1b_10k --num-train-steps=10000 --lr-schedule.decay-steps=10000 \
+  --save-interval=1000 --keep-period=2000 --log-interval=50 --num-workers=16 --no-wandb-enabled
+```
+
+The 5 h in between went into the serving path instead -- see the next two subsections; the weekend run needs
+no change to the training config or the dataset.
+
 #### 2026-10-05: serving-path audit against the recorded data (code reading only, no simulator)
 
 Read `collect_demos.py`, `pick_place_scene_bridge.py`, `vla_policy_client.py`,
@@ -2068,37 +2084,107 @@ Read `collect_demos.py`, `pick_place_scene_bridge.py`, `vla_policy_client.py`,
 | gripper config in the bridge | match: `collect_demos`, `pick_place_scene_bridge`, `residual_rl_train_env` use the same constants, same call order |
 | **sim not synchronised to the client** | **mismatch.** The bridge free-runs `world.step(render=True)`; the client blocks on `infer()` per action, so one action spans an unknown number of sim ticks while the demonstrations are one action per tick. `move_joints` also returns at once (0.02 rad tolerance vs ~1-4 mrad of motion per tick). |
 | **`max_steps=300`** | **mismatch (certain).** A demonstration is ~1044 actions, so every eval trial would end at ~29% of the task and log FAILURE regardless of the policy. |
-| **gripper action space** | **mismatch (inferred, not yet measured).** The dataset's gripper action is the MEASURED position one tick later (~0.63-0.73 while holding, max 0.75) but the demonstrator COMMANDED 1.0. Echoing ~0.7 back as the command makes the joint target about where the finger already stalled, so the squeeze force is ~0. |
-| arm action space | **same pattern, confirmed in code, effect unmeasured.** `collect_demos.py:250` records `action = next_obs["joints"]`, i.e. the arm's MEASURED next-tick position, not the commanded target. A position drive moves less than the gap it is given, so serving `q + delta` as the target should advance the arm slower than the demonstration, possibly stalling. |
+| gripper action space | **hypothesis disproved by measurement.** The dataset's gripper action is the MEASURED position one tick later (~0.63-0.73 while holding) although the demonstrator COMMANDED 1.0; the guess was that echoing ~0.7 back leaves ~0 squeeze force. Replayed in the simulator the recorded value works (see "Simulator replay" below). |
+| **arm action space** | **confirmed and measured -- the real serving problem.** `collect_demos.py:250` records `action = next_obs["joints"]` (measured next-tick position), and the expert's drive command also carried a **velocity** target every tick (RMPflow, up to 2.2 rad/s); the serving path sends positions only. Position-only playback lags the recording by **~0.30 rad RMS** over an episode. Fixed by a velocity feed-forward (below). |
 
-**Changes made (all behind parameters; defaults keep the old behaviour except where noted):**
+(The two rows above replace what an earlier version of this audit said -- "inferred, not yet measured" -- both
+were then measured, and one of the two guesses turned out wrong.)
+
+**Changes made (defaults keep the old behaviour; the recommended evaluation recipe is below):**
 - `max_steps` 300 -> 1800 (counted in actions, not inferences) in `params.yaml` and the node.
-- `gripper_command.py` + params `gripper_hysteresis` (default **true**), `gripper_close_threshold` 0.45,
-  `gripper_open_threshold` 0.25: the policy's gripper output becomes close/open with a dead band, so a
-  value hovering near one threshold cannot make the gripper chatter. `gripper_hysteresis:=false` restores
-  the raw clipped value. The thresholds are a first guess from the recorded range.
-- `lockstep` (default **false**) on `vla_policy_client` / `IsaacSimRobotInterface`, and `--lockstep` (or
+- `lockstep` (default off) on `vla_policy_client` / `IsaacSimRobotInterface`, and `--lockstep` (or
   `VLA_BRIDGE_LOCKSTEP=1`) on `pick_place_scene_bridge.py`: the client sends request k, the bridge applies it
-  and steps EXACTLY ONE tick, then stamps the next observation with k. The gripper command rides in the
-  same message. Protocol and rationale: `isaac/lockstep_protocol.py`. Both sides must be switched on
-  together. Use headless: the idle wait deliberately does not render (an extra render would change the
-  image-vs-state lag the data was recorded with).
+  and steps EXACTLY ONE tick, then stamps the next observation (joint_state and both images) with k. The
+  gripper command (and optional velocity targets) ride in the same message. Both sides must be switched on
+  together; the client logs an error when no ack arrives. Protocol: `isaac/lockstep_protocol.py`. Use headless:
+  the idle wait deliberately does not render (an extra render would change the image-vs-state lag the data was
+  recorded with).
+- `velocity_feedforward` (default off, lockstep only) + `action_dt_s` (1/60): sends a joint-velocity target
+  with every position target, `v_i = (row_{i+1} - row_i) / dt` from the policy's own chunk
+  (`vla_bridge/feedforward.py`). The bridge passes it to `ArticulationAction(joint_velocities=...)`.
 - `execute_horizon` (default 1): apply the first K rows of each chunk before re-inferring; forced to 1 with
   the residual policy.
-- Tests (laptop-runnable, 148 passed): `test_gripper_command.py`, `test_lockstep_protocol.py` (real protocol
-  class and real client interface against a mock bridge that counts ticks).
+- `gripper_hysteresis` (default **off**) + thresholds: kept as an experiment only; measured WORSE than sending
+  the raw value (see below).
+- `PickPlaceScene` records what it last sent to the drives (`last_command_joints`, `last_command_velocities`,
+  `last_command_gripper`); nothing reads it except the check scripts.
+- New scripts: `isaac/check_action_replay.py` (offline replay study, below) and `isaac/check_lockstep_e2e.py`
+  (end-to-end ROS 2 check of the lockstep path).
+- Tests (laptop-runnable, 156 passed): `test_gripper_command.py`, `test_lockstep_protocol.py` (real protocol
+  class and real client interface against a mock bridge whose `JointState` stores `position`/`velocity` as
+  `array.array` like the real message -- a plain-list stand-in had hidden a real `TypeError` until the first
+  ROS run), `test_feedforward.py`.
 
-**Not verified -- needs the simulator (do NOT start Isaac Sim while run1b holds both GPUs at
-`MEM_FRACTION=0.9`):**
-1. that the new bridge loop and the client's `_run_step` changes run at all (only the pure parts are tested);
-2. whether 0.45/0.25 are good gripper thresholds;
-3. **the arm-action question above.** Suggested first live test once training is done: replay a recorded
-   episode's `actions` through the lockstep bridge open loop (target = recorded next-tick joints) and compare
-   the achieved trajectory with the recorded one. If the arm falls behind, options in order of cost: scale the
-   delta (`q + k*delta`), stiffen the arm drive in the bridge, or re-collect with the commanded target as the
-   action.
-4. the 30 Hz sub-sampled dataset is a fallback only if the policy turns out to barely move (1-4 mrad per tick).
+#### 2026-10-05: simulator replay study (check_action_replay.py) -- what actually moves the arm like the demos
 
+Method: record scripted-expert episodes exactly as `collect_demos.py` does, then replay the recorded actions
+through the bridge's own physics path (`apply_action` + one `world.step`) at the SAME cube spawn, with no ROS
+and no policy. "placed" = lifted and within 30 mm of the target. mean_rms = RMS joint error vs the recording
+over the whole episode (not just the end state -- looking only at the final error, which is ~0.0002 rad for
+anything that eventually arrives, hid the lag for most of a day).
+
+| arm command during replay | mean joint RMS | outcome |
+|---|---|---|
+| absolute target = recorded next position, **position only** (today's serving) | **0.30 rad** (11 episodes) | placed 10/10 -- it lags during fast motion and catches up when the motion slows |
+| same, + velocity target `(x[t+1]-x[t])/dt` (`absvel`) | **0.0002 rad** | placed 5/6 (the miss is an episode whose own expert grasp is marginal: the expert's exact commands, `cmdposvel`, lift it only to 0.12 m) |
+| the expert's own position+velocity commands (`cmdposvel`, control) | 0.0002 rad | placed 6/6 |
+| relative target `q_now + delta` every tick (`execute_horizon=1`, position only) | arm falls ~14% behind per tick, drifts ~1 rad | placed 0/all tried (gains 1.0, 1.15, 1.3) |
+| same + velocity feed-forward (`deltav`/`chunkv K=1`) | **diverges** (cube flung metres away) | 0/4 |
+| blocks of K ticks relative to the block-start state, position only (K=5..50) | ~1 rad | placed 0/4 |
+| **blocks of K relative to block start + velocity feed-forward** (= delta training + `execute_horizon=K`) | K=10: 0.0043, K=25: 0.0016, K=50: 0.0009 rad | **placed 4/4 for each K** |
+| absolute + position only + AR(1) noise sigma=0.01 rad | -- | placed 0/3; sigma>=0.02 diverges |
+| absvel + AR(1) noise sigma=0.01 / 0.02 / 0.05 | -- | placed 2/4, 0/4, 0/4 |
+
+Gripper (absolute arm targets, 6+4 episodes): recorded value sent as-is **10/10**, continuous `clip(v/0.7)`
+6/6, `gripper_hysteresis` 8/10 with larger place errors (8-21 mm vs ~6 mm) -- snapping the command to 1.0
+behaves worse than the ramp the demonstrations used. So the raw value is the default.
+
+Reading it: (1) the demonstrated motion needs the velocity target; with it the arm reproduces the dataset to
+0.0003 rad. (2) Re-inferring every tick on relative targets (the old `execute_horizon=1`) is unstable once a
+velocity target is added, and drifts without one. (3) Open-loop replay is a harsher test than a policy with
+vision feedback, and the noise rows say the task needs ~<0.01 rad accuracy at the grasp -- they do NOT predict
+how a trained policy will do. Nothing here compares a delta-trained with an absolute-trained policy; that is
+not decidable without training, so the existing delta configuration was kept. (An `abs` TrainConfig was
+written and removed again: the replay does not support the argument it was based on.)
+
+Also: the dataset's `actions[t]` equals `joints[t+1]` exactly (max diff 0.0000), and dataset episodes follow the
+same trajectories as freshly recorded ones, so the simulator dynamics have not drifted since collection.
+
+**Recommended evaluation recipe (once a checkpoint exists):**
+
+```bash
+# 1. bridge: lockstep, headless, Isaac's bundled Humble (NOT the system ROS 2 -- mixing crashes it)
+VLA_BRIDGE_LOCKSTEP=1 ISAAC_PICK_PLACE_HEADLESS=1 ROS_DISTRO=humble RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
+  LD_LIBRARY_PATH=<isaacsim>/exts/isaacsim.ros2.bridge/humble/lib LD_PRELOAD=$ISAAC_ENV/lib/libstdc++.so.6 \
+  $ISAAC_ENV/bin/python isaac/pick_place_scene_bridge.py
+# 2. client with the validated settings
+ros2 run ... vla_policy_client --ros-args -p lockstep:=true -p velocity_feedforward:=true -p execute_horizon:=25
+```
+
+`execute_horizon` 10-50 all worked in replay (a smaller K re-infers more often but is less smooth; 25 is the
+middle). Keep `execute_horizon>=10` with the feed-forward -- `1` diverges.
+
+Before the first policy evaluation, re-run the end-to-end check (needs the bridge running as above, in the same
+ROS environment; no GPU for the client):
+
+```bash
+env -i ... PYTHONPATH=<isaacsim>/exts/isaacsim.ros2.bridge/humble/rclpy python isaac/check_lockstep_e2e.py --ticks 300
+```
+
+Result 2026-10-05 on the real ROS 2 path (dataset episode 0, 300 ticks): every request acknowledged with its
+own id; images carry the tick id; the arm tracks the recording to **0.0003 rad mean** (1.14 rad mean with
+`--no_velocity`); the gripper command in the joint-target message closes the gripper; and the bridge's world
+step index advanced by exactly the number of requests (103 / 203 / 303 at requests 100 / 200 / 300). The round
+trip sustained only ~5.5 ticks/s (two 256x256 images per tick through ROS), so one 1050-tick episode is ~3 min of
+wall time plus inference -- publishing images only at chunk boundaries would be the first speed-up.
+This machine has system ROS 2 Humble; the shell's PYTHONPATH points at its Python 3.10 packages, so the test
+used `env -i` plus Isaac's bundled `humble/rclpy` and a throw-away `cv_bridge` stand-in (no py3.11 build exists
+here); nothing in the user's environment was installed or changed.
+
+**Still unverified:** the policy itself (no checkpoint yet); `vla_policy_client._run_step`'s new code (the
+pure parts and the interface are tested, the node needs a policy server); the real UR5e path (lockstep and
+velocity feed-forward are isaac_sim-only; a real controller would need `speedJ`/`servoJ` with velocities).
+The 30 Hz sub-sampled dataset remains a fallback only if a policy turns out to barely move.
 
 ### Operational note: `check_cameras.py` is unsafe to import from
 

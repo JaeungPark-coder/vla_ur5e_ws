@@ -35,6 +35,7 @@ from vla_bridge.gripper_state import grasp_disagreement
 from vla_bridge.robot_interface import UR5eInterface
 from vla_bridge.isaac_robot_interface import IsaacSimRobotInterface
 from vla_bridge.gripper_command import GripperHysteresis
+from vla_bridge.feedforward import chunk_velocities
 
 
 class VLAPolicyClient(Node):
@@ -118,13 +119,14 @@ class VLAPolicyClient(Node):
         # inference), not inferences.
         self.declare_parameter('max_steps', 1800)  # safety cap -- stop after this many actions regardless of task completion
         # 2026-10-05: the dataset's gripper action is the MEASURED position one tick
-        # later (~0.7 while holding the cube, because the cube stalls the finger),
-        # but the demonstrator COMMANDED 1.0. Sending the policy's ~0.7 straight
-        # back leaves the PD drive with ~0 squeeze force. With gripper_hysteresis
-        # the output is turned into a close/open decision instead -- see
-        # gripper_command.py. Set it false to send the raw clipped value (the old
-        # behaviour). Thresholds are a first guess; tune on the first evaluation.
-        self.declare_parameter('gripper_hysteresis', True)
+        # later (~0.7 while holding the cube) but the demonstrator COMMANDED 1.0.
+        # gripper_hysteresis turns the policy output into a close/open decision, on
+        # the guess that echoing ~0.7 leaves ~0 squeeze force. A replay check in the
+        # simulator (isaac/check_action_replay.py) disproved the guess: raw 10/10,
+        # continuous x1/0.7 scaling 6/6, hysteresis 8/10 (snapping shut is worse).
+        # So it defaults to OFF (raw clipped value, the original behaviour); the
+        # option stays for experiments. Thresholds below only matter when it is on.
+        self.declare_parameter('gripper_hysteresis', False)
         self.declare_parameter('gripper_close_threshold', 0.45)
         self.declare_parameter('gripper_open_threshold', 0.25)
         # 2026-10-05: apply this many actions of each inferred chunk before
@@ -138,6 +140,13 @@ class VLAPolicyClient(Node):
         # longer changes how much sim time an action covers. false = the original
         # free-running bridge. See isaac/lockstep_protocol.py for why.
         self.declare_parameter('lockstep', False)
+        # 2026-10-05: lockstep only. Send a joint-VELOCITY target with every position
+        # target, taken from the difference of consecutive rows of the policy's chunk
+        # (see feedforward.py). The expert's RMPflow commands carried one every tick;
+        # positions alone made the arm lag the demonstrated motion by ~0.30 rad RMS in
+        # offline replay, with the velocity target ~0.0002 rad.
+        self.declare_parameter('velocity_feedforward', False)
+        self.declare_parameter('action_dt_s', 1.0 / 60.0)  # time between consecutive chunk rows = one sim tick (the data's rate; NOT the dataset's fps=30 label)
         # Residual RL (see isaac/residual_rl_train_env.py / train_residual_policy.py,
         # README Phase 4): 'false' (default) = pi0's action is applied as-is,
         # unchanged from the rest of this node. 'true' = a small trained
@@ -180,6 +189,8 @@ class VLAPolicyClient(Node):
         self.max_steps = self.get_parameter('max_steps').value
         self.execute_horizon = max(1, int(self.get_parameter('execute_horizon').value))
         self.lockstep = bool(self.get_parameter('lockstep').value)
+        self.velocity_feedforward = bool(self.get_parameter('velocity_feedforward').value)
+        self.action_dt_s = float(self.get_parameter('action_dt_s').value)
         self._gripper_filter = None
         if self.get_parameter('gripper_hysteresis').value:
             self._gripper_filter = GripperHysteresis(
@@ -363,6 +374,8 @@ class VLAPolicyClient(Node):
             action_chunk = action_chunk[None, :]
 
         n_apply = max(1, min(self.execute_horizon, len(action_chunk)))
+        velocities = (chunk_velocities(action_chunk[:, :6], self.action_dt_s)
+                      if (self.lockstep and self.velocity_feedforward) else None)
         for i in range(n_apply):
             action = action_chunk[i]
             target_joints = action[:6]
@@ -381,7 +394,13 @@ class VLAPolicyClient(Node):
                 # joint target, so it has to be queued first (see
                 # IsaacSimRobotInterface.move_joints).
                 self.robot.set_gripper(target_gripper)
-                self.robot.move_joints(target_joints)
+                acked = self.robot.move_joints(
+                    target_joints, joint_velocities=None if velocities is None else velocities[i])
+                if not acked:
+                    self.get_logger().error(
+                        'lockstep: no acknowledgement from the bridge -- is pick_place_scene_bridge.py '
+                        'running with --lockstep (or VLA_BRIDGE_LOCKSTEP=1)? Both sides must match.',
+                        throttle_duration_sec=5.0)
             else:
                 self.robot.move_joints(target_joints)
                 self.robot.set_gripper(target_gripper)

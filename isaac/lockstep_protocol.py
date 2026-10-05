@@ -20,9 +20,17 @@ Wire format (sensor_msgs/JointState on /vla/joint_target):
   position[0:6]      arm joint targets
   position[6]        gripper command 0..1 (optional; falls back to the
                      separate gripper topic when absent)
+  velocity[0:6]      joint velocity targets in rad/s (optional; position-only
+                     when absent). The expert's own commands carried them --
+                     see vla_bridge/feedforward.py
 and every observation the bridge publishes in lockstep mode carries the id of
 the last request it executed in header.stamp.sec (0 before the first one).
 """
+
+
+from collections import namedtuple
+
+LockstepRequest = namedtuple("LockstepRequest", "id joints gripper velocities")
 
 
 class LockstepGate:
@@ -30,27 +38,27 @@ class LockstepGate:
         self.last_executed_id = 0
         self._pending = None  # (id, joints, gripper) -- only the newest is kept
 
-    def submit(self, request_id, joints, gripper=None):
+    def submit(self, request_id, joints, gripper=None, velocities=None):
         """Called from the subscription callback. Returns True if the request
         is new; stale or repeated ids (a DDS redelivery, a request older than
         what was already executed) are ignored so a tick is never run twice."""
         request_id = int(request_id)
         if request_id <= self.last_executed_id:
             return False
-        if self._pending is not None and request_id <= self._pending[0]:
+        if self._pending is not None and request_id <= self._pending.id:
             return False
-        self._pending = (request_id, joints, gripper)
+        self._pending = LockstepRequest(request_id, joints, gripper, velocities)
         return True
 
     def take(self):
-        """Called from the sim loop. Returns (id, joints, gripper) when there
-        is a request to execute -- the caller must then step exactly one
-        tick -- else None. Marks it executed."""
+        """Called from the sim loop. Returns a LockstepRequest(id, joints, gripper,
+        velocities) when there is a request to execute -- the caller must then step
+        exactly one tick -- else None. Marks it executed."""
         if self._pending is None:
             return None
         request = self._pending
         self._pending = None
-        self.last_executed_id = request[0]
+        self.last_executed_id = request.id
         return request
 
     def reset(self):

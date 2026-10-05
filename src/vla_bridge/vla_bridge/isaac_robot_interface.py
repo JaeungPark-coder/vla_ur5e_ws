@@ -92,24 +92,30 @@ class IsaacSimRobotInterface:
         # -- present only for interface-shape parity with robot_interface.UR5eInterface.
         return None, None
 
-    def move_joints(self, joint_positions, speed=None, acceleration=None):
+    def move_joints(self, joint_positions, speed=None, acceleration=None, joint_velocities=None):
         """Publishes the target and polls the joint-state subscription
         until it settles within tolerance or settle_timeout_s elapses.
-        `speed`/`acceleration` accepted for interface compatibility but
-        unused -- the sim's target-tracking rate is fixed in
+        `joint_velocities` (lockstep only): velocity targets in rad/s sent with the
+        position target -- see feedforward.py. `speed`/`acceleration` accepted for
+        interface compatibility but unused -- the sim's target-tracking rate is fixed in
         pick_place_scene_bridge.py.
         """
         import time
         msg = JointState()
-        msg.position = [float(p) for p in np.asarray(joint_positions, dtype=float)]
+        arm_targets = [float(p) for p in np.asarray(joint_positions, dtype=float)]
+        msg.position = arm_targets
 
         if self.lockstep:
             # One request = one sim tick. The gripper command rides in the same
             # message (7th value) so it is applied on the same tick -- two
             # separate topics give no ordering guarantee.
             self._request_id += 1
-            msg.position = msg.position[:6] + [float(self._pending_gripper)]
+            # (build a list: a real JointState.position is an array.array, which cannot be
+            # concatenated with a list)
+            msg.position = arm_targets[:6] + [float(self._pending_gripper)]
             msg.header.stamp.sec = self._request_id
+            if joint_velocities is not None:
+                msg.velocity = [float(v) for v in np.asarray(joint_velocities, dtype=float)[:6]]
             self.joint_target_pub.publish(msg)
             t0 = time.time()
             while time.time() - t0 < self.lockstep_timeout_s:

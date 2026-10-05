@@ -88,7 +88,9 @@ class PickPlaceSceneBridge(Node):
         if self.lockstep:
             position = np.array(msg.position, dtype=float)
             gripper = float(position[6]) if len(position) >= 7 else None
-            self.gate.submit(msg.header.stamp.sec, position[:6], gripper)
+            velocities = np.array(msg.velocity, dtype=float) if len(msg.velocity) >= 6 else None
+            self.gate.submit(msg.header.stamp.sec, position[:6], gripper,
+                             None if velocities is None else velocities[:6])
             return
         self.latest_joint_target = np.array(msg.position, dtype=float)
 
@@ -177,6 +179,10 @@ def main():
               "window will not refresh between requests.", flush=True)
     last_obs = scene.get_observation() if lockstep else None
     last_republish = time.time()
+    if lockstep:
+        # Diagnostics for check_lockstep_e2e.py: the world step index must advance by
+        # exactly the number of requests executed, and not at all while idle.
+        print(f"lockstep: world step index after reset = {scene.world.current_time_step_index}", flush=True)
 
     try:
         while simulation_app.is_running():
@@ -198,16 +204,23 @@ def main():
                     last_republish = time.time()
                 request = bridge.gate.take()
                 if request is not None:
-                    request_id, joint_target, gripper_target = request
+                    request_id, joint_target, gripper_target, joint_velocity = request
                     from isaacsim.core.utils.types import ArticulationAction
+                    # velocity feed-forward when the client sent one (the expert's own
+                    # commands carried a velocity target every tick; positions alone lag)
                     scene.robot.apply_action(
                         ArticulationAction(
                             joint_positions=np.asarray(joint_target, dtype=float),
+                            joint_velocities=(None if joint_velocity is None
+                                              else np.asarray(joint_velocity, dtype=float)),
                             joint_indices=np.arange(6)))
                     if gripper_target is None:
                         gripper_target = bridge.latest_gripper_target
                     scene.gripper.set_target(gripper_target)
                     scene.world.step(render=True)  # exactly one tick
+                    if request_id % 100 == 0:
+                        print(f"lockstep: request {request_id} executed, world step index "
+                              f"{scene.world.current_time_step_index}", flush=True)
                     last_obs = scene.get_observation()
                     bridge.publish_observation(last_obs, ack_id=request_id)
                     bridge.publish_cube_position(scene)
@@ -263,6 +276,9 @@ def main():
         print("pick_place_scene_bridge.py: unhandled exception, shutting down:\n"
               + traceback.format_exc(), flush=True)
     finally:
+        if lockstep:
+            print(f"lockstep: shutting down after {bridge.gate.last_executed_id} requests, world step index "
+                  f"{scene.world.current_time_step_index}", flush=True)
         bridge.destroy_node()
         rclpy.shutdown()
         simulation_app.close()

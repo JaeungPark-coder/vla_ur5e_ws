@@ -458,6 +458,14 @@ class PickPlaceScene:
             self.gripper = NullGripper()
 
         self.rmpflow, self.articulation_policy = setup_rmpflow(self.robot)
+        # 2026-10-05: what step_towards / apply_joint_targets last SENT to the drives
+        # (6 arm joint position targets, and the gripper command 0..1). Recording only --
+        # nothing reads these except collect_demos.py's `--action_mode commanded` and
+        # check_action_replay.py. See collect_demos.py for why the commanded target and
+        # not the measured next position is the right action label.
+        self.last_command_joints = None
+        self.last_command_gripper = None
+        self.last_command_velocities = None  # joint_velocities of the same action (None when it carried none)
         self._sync_gripper_to_flange()
         self.physics_dt = 1.0 / 60.0
 
@@ -793,9 +801,30 @@ class PickPlaceScene:
         self.rmpflow.update_world()
         action = self.articulation_policy.get_next_articulation_action(self.physics_dt)
         self.robot.apply_action(action)
+        self.last_command_joints = self._arm_command_from_action(action)
+        self.last_command_velocities = self._arm_command_from_action(action, field='joint_velocities')
+        self.last_command_gripper = float(target_gripper)
         self.gripper.set_target(target_gripper)
         self.world.step(render=True)
         self._sync_gripper_to_flange()
+
+    @staticmethod
+    def _arm_command_from_action(action, field='joint_positions'):
+        """The 6 arm joint position (or velocity) targets inside an ArticulationAction,
+        in joint order. RMPflow returns them for the active (arm) joints;
+        `joint_indices` says which."""
+        pos = getattr(action, field)
+        if pos is None:
+            return None
+        pos = np.asarray(pos, dtype=float).reshape(-1)
+        idx = action.joint_indices
+        if idx is None:
+            return pos[:6].copy()
+        out = np.full(6, np.nan)
+        for value, joint in zip(pos, np.asarray(idx).reshape(-1)):
+            if 0 <= joint < 6:
+                out[joint] = value
+        return out
 
     def apply_joint_targets(self, joint_positions, gripper_target):
         """Low-level control primitive for policies that already output
@@ -826,6 +855,9 @@ class PickPlaceScene:
         self.robot.apply_action(
             ArticulationAction(joint_positions=np.asarray(joint_positions, dtype=float)[:6],
                                 joint_indices=np.arange(6)))
+        self.last_command_joints = np.asarray(joint_positions, dtype=float)[:6].copy()
+        self.last_command_velocities = None  # position-only action
+        self.last_command_gripper = float(gripper_target)
         self.gripper.set_target(gripper_target)
         self.world.step(render=True)
         self._sync_gripper_to_flange()

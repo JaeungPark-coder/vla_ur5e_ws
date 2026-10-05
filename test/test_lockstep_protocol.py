@@ -8,6 +8,7 @@ isaac_robot_interface.py, with the ROS message modules stubbed) against a mock
 bridge that counts ticks. They cannot say anything about Isaac Sim itself --
 the actual bridge loop in pick_place_scene_bridge.py needs a live run.
 """
+import array
 import sys
 import time
 import types
@@ -22,7 +23,7 @@ from lockstep_protocol import LockstepGate
 def test_a_new_request_is_taken_once():
     gate = LockstepGate()
     assert gate.submit(1, [0.0] * 6, 0.0) is True
-    assert gate.take() == (1, [0.0] * 6, 0.0)
+    assert gate.take() == (1, [0.0] * 6, 0.0, None)
     assert gate.take() is None
     assert gate.last_executed_id == 1
 
@@ -67,9 +68,30 @@ class _Header:
 
 
 class _JointState:
+    """Like a real sensor_msgs/JointState: `position`/`velocity` are stored as array.array('d'),
+    so slicing one gives an array that cannot be concatenated with a list. (A plain-list
+    stand-in hid exactly that bug until the first real ROS run.)"""
+
     def __init__(self):
         self.header = _Header()
-        self.position = []
+        self._position = array.array('d')
+        self._velocity = array.array('d')
+
+    @property
+    def position(self):
+        return self._position
+
+    @position.setter
+    def position(self, value):
+        self._position = array.array('d', value)
+
+    @property
+    def velocity(self):
+        return self._velocity
+
+    @velocity.setter
+    def velocity(self, value):
+        self._velocity = array.array('d', value)
 
 
 class _Float32:
@@ -111,7 +133,8 @@ class _MockBridge:
     def on_joint_target(self, msg):
         position = list(msg.position)
         gripper = position[6] if len(position) >= 7 else None
-        self.gate.submit(msg.header.stamp.sec, position[:6], gripper)
+        velocities = list(msg.velocity)[:6] if len(msg.velocity) >= 6 else None
+        self.gate.submit(msg.header.stamp.sec, position[:6], gripper, velocities)
         if not self.responsive:
             return
         request = self.gate.take()
@@ -204,3 +227,21 @@ def test_with_lockstep_off_nothing_about_the_old_message_changes(interface_modul
     assert len(sent.position) == 6
     assert sent.header.stamp.sec == 0
     assert robot.last_request_id() == 0
+
+
+def test_velocity_targets_travel_with_the_request_and_are_optional(interface_module):
+    robot, bridge, node = _make(interface_module)
+    robot.move_joints([0.1] * 6, joint_velocities=[0.5, -0.5, 0.0, 1.0, 2.0, -1.0])
+    robot.move_joints([0.2] * 6)                                  # no feed-forward this time
+    first, second = bridge.executed[0], bridge.executed[1]
+    assert list(first.velocities) == [0.5, -0.5, 0.0, 1.0, 2.0, -1.0]
+    assert second.velocities is None
+    sent = node.publishers['/vla/joint_target'].sent
+    assert len(sent[0].velocity) == 6 and len(sent[1].velocity) == 0
+
+
+def test_the_gate_keeps_velocities_with_the_request():
+    gate = LockstepGate()
+    gate.submit(1, [0.0] * 6, 1.0, [0.1] * 6)
+    request = gate.take()
+    assert request.id == 1 and request.gripper == 1.0 and list(request.velocities) == [0.1] * 6

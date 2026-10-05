@@ -42,11 +42,13 @@ vla_policy_client:
     # in actions applied, not inferences. Keep in sync with the Python default.
     max_steps: 1800
     # 2026-10-05: the dataset's gripper action is the MEASURED position (~0.7 while
-    # holding, since the cube stalls the finger) but the demonstrator commanded
-    # 1.0 -- sending ~0.7 back leaves ~0 squeeze force. With hysteresis on the
-    # output becomes a close/open decision (close above 0.45, open below 0.25).
-    # See vla_bridge/gripper_command.py. false = send the raw clipped value.
-    gripper_hysteresis: true
+    # holding) although the demonstrator commanded 1.0. A close/open hysteresis was
+    # added on the guess that echoing ~0.7 gives ~0 squeeze force -- the replay
+    # check (isaac/check_action_replay.py, README 2026-10-05) showed the opposite:
+    # sending the recorded value as-is succeeded 10/10, a continuous x1/0.7 scaling
+    # 6/6, the hysteresis (which snaps the gripper shut) only 8/10 with larger place
+    # errors. So it is OFF by default. See vla_bridge/gripper_command.py.
+    gripper_hysteresis: false
     gripper_close_threshold: 0.45
     gripper_open_threshold: 0.25
     # Actions applied per inference. 1 = re-infer every action (original).
@@ -55,6 +57,12 @@ vla_policy_client:
     # bridge with `--lockstep` (or VLA_BRIDGE_LOCKSTEP=1) as well -- the two must
     # match. See isaac/lockstep_protocol.py.
     lockstep: false
+    # lockstep only: send a velocity target (difference of consecutive chunk rows / action_dt_s)
+    # with every position target. Positions alone lag the demonstrated motion by ~0.30 rad RMS
+    # (offline replay, README 2026-10-05); with velocity ~0.0002 rad. action_dt_s is the time
+    # between consecutive chunk rows = one 60 Hz sim tick (NOT the dataset's fps=30 label).
+    velocity_feedforward: false
+    action_dt_s: 0.016666666666666666
     # Phase 4 (optional) -- see ../../isaac/train_residual_policy.py and
     # README.md. 'false' (default) = pi0's action applied as-is.
     use_residual_policy: false

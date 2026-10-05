@@ -1,24 +1,29 @@
-"""Turns the policy's gripper output into an open/close COMMAND.
+"""Optional: turns the policy's gripper output into an open/close COMMAND.
 
-Why this exists (found 2026-10-05 by reading collect_demos.py against the
-serving path -- not yet confirmed in the simulator):
+STATUS: OFF by default (vla_policy_client `gripper_hysteresis: false`). Written on a
+guess that turned out wrong, kept for experiments. History, so nobody re-derives it:
 
-The demonstrations COMMANDED the gripper fully closed (1.0, i.e. the
-GRIPPER_CLOSED_POS joint target) while holding the cube, but the dataset's
-gripper ACTION is the MEASURED position one tick later. A closed finger stalls
-on the cube, so that reads ~0.63-0.73 (max over all 152 episodes: 0.75), and
-the policy learns to output ~0.7. Sending 0.7 straight back as the command
-makes the joint target about where the finger already stalled, so the PD
-drive's squeeze force is ~0 and the grasp can slip.
+The demonstrations COMMANDED the gripper fully closed (1.0) while holding the cube,
+but the dataset's gripper ACTION is the MEASURED position one tick later. A closed
+finger stalls on the cube, so that reads ~0.63-0.73 (max over all 152 episodes:
+0.75), and the policy learns to output ~0.7. The guess: sending ~0.7 straight back
+makes the joint target about where the finger already stalled, so the PD squeeze
+force is ~0 and the grasp slips.
 
-The fix is to treat the output as a decision, not a position: close when it
-rises above `close_above`, open when it falls below `open_below`, and hold the
-last command in between. The gap between the two thresholds is the hysteresis
--- a value hovering around one number cannot make the gripper chatter.
+Measured 2026-10-05 (isaac/check_action_replay.py: 6 + 4 recorded episodes replayed
+through the bridge's physics path with absolute arm targets): recorded value sent
+as-is ("raw") lifted and placed 10/10; a continuous clip(v/0.7) ("scale") 6/6; this
+hysteresis 8/10, with larger place errors (8-21 mm vs ~6 mm). The hysteresis jumps
+the command to 1.0 the moment the output crosses `close_above`, i.e. it snaps the
+gripper shut instead of ramping it as the demonstrations did (README, 2026-09-14:
+snapping shut makes contact non-deterministic). The guess was therefore wrong for
+this simulator; the raw value is fine. Only if a trained policy is later seen to
+hover or chatter near the stall value is it worth turning this on, and then
+prefer a smooth mapping over a snap.
 
-The defaults are a first guess, chosen from the recorded range (0.0 open,
-~0.7 holding); tune them on the first evaluation. They are parameters of
-vla_policy_client (`gripper_close_threshold` / `gripper_open_threshold`).
+The thresholds are a first guess from the recorded range (0.0 open, ~0.7 holding):
+close when the output rises above `close_above`, open when it falls below
+`open_below`, hold the last command in between.
 """
 
 
