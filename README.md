@@ -1925,10 +1925,9 @@ eval actually grasps now before trusting any go/no-go number it produces.
 
 ### 2026-10-02: Phase 3 pre-flight on the training machine -- four openpi-side blockers found and fixed, norm stats computed, smoke training NOT yet run
 
-**Status in one line:** the dataset side is ready; the pipeline has been run as far as
-`compute_norm_stats.py` (finished, validated). **No training step has been run yet** -- the
-smoke train (which also downloads `pi0_base` for the first time and is the first check that
-LoRA fits on one 3090) is the next step.
+**Status in one line (as of 2026-10-02):** the dataset side is ready; the pipeline had been run as
+far as `compute_norm_stats.py` (finished, validated). Smoke training and run1 followed on
+2026-10-05 -- see that entry below.
 
 **Machine.** This machine now has 2x RTX 3090 (24GB each), not the 4080 the 2026-09-29 entry
 describes, so the "this machine cannot run the LoRA fine-tune" statement above is stale. openpi
@@ -2002,6 +2001,51 @@ row access.
 **Stale text elsewhere in this file:** the table under "What is still unverified" (rows 1-5 marked
 blocked/open) predates 2026-09-28/29, when the grasp, place and data-collection rows were resolved --
 read those rows as historical.
+
+### 2026-10-05: smoke training passed; run1 (10k steps, 2x3090) launched
+
+**Smoke train (50 steps, GPU 0 only, batch 32, `XLA_PYTHON_CLIENT_MEM_FRACTION=0.9`): passed.** No OOM, so
+LoRA fits on one 3090 at batch 32 (actual peak not measured -- JAX preallocates, so `nvidia-smi`
+shows ~22GB regardless). Data loading, transforms, forward/backward and checkpointing all ran.
+
+| measured | value |
+|---|---|
+| `pi0_base` download | 11.2 GiB (~11 MB/s, ~17 min), into `$OPENPI_DATA_HOME/openpi-assets/` |
+| step time, 1x3090 | ~8.6 s/step (steady) -> 30k steps ~70 h |
+| step time, 2x3090 | ~4.7 s/step (data-parallel, `fsdp_devices=1`) |
+| checkpoint size | 8.7 GB each (`params`, `train_state`, `assets`) |
+| first-step loss | 0.1398 (`grad_norm` 2.71) -- smoke only logged step 0 (`log_interval=100`), so no trend |
+
+Checkpoint retention: `max_to_keep=1` plus `keep_period` (default 5000) -- anything else is deleted
+as training goes (the smoke run's step-25 folder was gone by the end). Set `--keep-period` explicitly.
+
+**run1 command** (env: `HF_DATASETS_CACHE`, `OPENPI_DATA_HOME`, `UV_CACHE_DIR` all on bigdisk):
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
+uv run --no-sync scripts/train.py pi0_ur5e_pick_place \
+  --exp-name=run1_10k --num-train-steps=10000 --lr-schedule.decay-steps=10000 \
+  --save-interval=1000 --keep-period=2000 --log-interval=50 \
+  --num-workers=16 --no-wandb-enabled
+```
+
+Why these flags: the default cosine schedule is warmup 1,000 then decay over `decay_steps=30000`
+(`optimizer.py`), so cutting only `--num-train-steps` would stop with the LR still high; hence
+`--lr-schedule.decay-steps=10000`. `--keep-period=2000` keeps 2k/4k/6k/8k plus the latest (~9GB each).
+10k steps x batch 32 = ~2 passes over the 158,776 frames, versus ~6 for the 30k default.
+openpi has no validation split, so closed-loop evaluation in Isaac Sim is the only way to tell
+under- from over-fitting -- compare an early (4-6k) and the final checkpoint.
+
+Launched 2026-10-05 09:55 KST; ETA ~13 h at 4.7 s/step. Log: `apps/openpi/run1_10k.log`;
+checkpoints: `apps/openpi/checkpoints/pi0_ur5e_pick_place/run1_10k/`.
+
+**Disk moves done while getting here:** the 27GB HF Arrow cache moved from `~/.cache/huggingface/datasets`
+to `<bigdisk>/hf_cache/datasets` (root went 91% -> 79%). It holds two regenerable copies of this
+dataset's Arrow conversion; the 2026-09-29 one is still a deletion candidate.
+
+**Next:** evaluate the 4-6k and final checkpoints in Isaac Sim (Phase 4); only extend training if
+performance is still rising. Before that, the Phase 4 items listed in the 2026-10-02 entry are still
+open (`control_hz` 60 vs 30 fps dataset, wrist-camera view, never-run gripper config in the bridge).
 
 ### Operational note: `check_cameras.py` is unsafe to import from
 
