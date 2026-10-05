@@ -2012,6 +2012,130 @@ row access.
 blocked/open) predates 2026-09-28/29, when the grasp, place and data-collection rows were resolved --
 read those rows as historical.
 
+### 2026-10-05 DAY SUMMARY -- what went wrong, how it was found and fixed, what was NOT done, and what to do tomorrow
+
+**State in one paragraph.** The dataset (`Jaeung12/ur5e_pick_place_v2`, 152 episodes) loads and trains through openpi;
+norm stats exist; a 50-step smoke train passed; **no real training has been done** (a 10k run was stopped at ~170 steps
+for lack of time, no checkpoint). The serving side was the big finding: the policy's actions cannot be executed the old
+way, and a lockstep bridge + chunk execution + velocity feed-forward reproduces the demonstrations in the simulator
+(validated offline and over real ROS 2 with a fake policy). Nothing has been evaluated with a real policy.
+All of today's code is committed on `master`; the openpi changes are on the local branch `vla-ur5e-ws` of the openpi
+checkout (also saved as `openpi_integration/openpi_lerobot_0_4_compat.patch`).
+
+#### A. Problems found today, in the order met
+
+| # | problem | how it was found | fix / outcome |
+|---|---|---|---|
+| 1 | openpi could not read the dataset: 4 failures at the first batch (`lerobot.common` import path, `meta.tasks` is a DataFrame in lerobot 0.4, a 1-feature column arrives as a 0-d scalar, `actions` missing from the repack) + `repo_id` pointed at a corrupt cache | pushing ONE sample through openpi's own data path (the integration files had only been "grounded" against its source, never run) | patched (`data_loader.py`, `ur5e_pick_place_policy.py`, `train_config_snippet.py`); openpi branch `vla-ur5e-ws` `ddc7834` |
+| 2 | `compute_norm_stats` ETA ~4 h | progress bar + `top`: 2 loader workers pegged at 100% decoding PNGs, 34 of 36 cores idle | 16 workers through a wrapper (needs an `if __name__ == "__main__"` guard: workers are spawned) -> 36 min. The dataset stores PNGs inside parquet, NOT video, so skipping video decode would not have helped |
+| 3 | root disk 92% full | `df` | moved the 27 GB HF Arrow cache to bigdisk (root 79%); `OPENPI_DATA_HOME`, `HF_DATASETS_CACHE`, `UV_CACHE_DIR` all on bigdisk |
+| 4 | no loss lines in the training log | 0 `Step N:` lines after 394 steps | stdout is block-buffered when redirected; `PYTHONUNBUFFERED=1`. The first run was restarted for this |
+| 5 | training too long for the week | 5 s/step x 10k steps = ~14 h on 2 GPUs | run stopped at ~170 steps (loss 0.139 -> 0.036), planned for a later slot |
+| 6 | dataset `fps=30` is wrong | reading `collect_demos.py`: one frame per 60 Hz sim tick | label left alone (harmless: openpi only uses it to index consecutive frames; chunk of 50 = 0.83 s) |
+| 7 | `max_steps=300` ended every eval trial at ~29% of the task | code reading (an episode is ~1044 actions) | default 1800 |
+| 8 | sim free-runs while the client blocks on `infer()`: one action spans an unknown number of ticks | code reading of bridge vs client | **lockstep**: one request = exactly one tick (world step index +1 per request, verified over ROS 2) |
+| 9 | the arm lags the recorded motion by ~0.30 rad RMS when fed positions only | replay of recorded actions through the bridge's physics path; the expert's own RMPflow commands carry a **velocity** target every tick (up to 2.2 rad/s), serving sent none | velocity feed-forward `v = (row[i+1]-row[i])/dt` from the policy's own chunk: 0.0002 rad. Delta rows + `execute_horizon` K >= 10 + feed-forward placed 4/4 for K=10/25/50; **K=1 (re-infer every tick) diverges** |
+| 10 | feed-forward amplifies row noise | noise study of the final recipe | smoothing window (default 11) + speed clip 3 rad/s: 2/3 vs 0/3 placed at 0.01 rad; identical on clean rows |
+| 11 | six bugs only a real run found | real ROS 2 client + bridge, fake policy | `JointState.position` is an `array.array` (`list + array` raised; the list-based mock hid it); a restarted client's ids were silently ignored; after an eval reset the first inference of the next trial used a PRE-reset observation (reset epoch in `stamp.nanosec`); `max_steps` logged on every tick forever; image topics cost ~0.18 s/tick; and see B below |
+| 12 | throughput 5.7 ticks/s | measuring the ROS 2 path | images only on the last tick of an executed block (`header.frame_id="noimg"`; sim still steps and renders every tick): ~20 ticks/s, ~1 min per episode |
+| 13 | tiny target noise ends episodes | noise replay | 0.005 rad -> 3/9 placed (5 blow-ups), 0.01 -> 1/9, 0.02 -> 0. Softer drives do not help; a 1 cm higher grasp point *may* (7/10, Fisher p=0.18). See the noise study above |
+
+#### B. My wrong turns today (so nobody repeats them)
+- Added a gripper hysteresis on a guess ("echoing the measured ~0.7 gives no squeeze force"); the simulator says the raw
+  value works (10/10) and the hysteresis was no better (8/10). Now off by default.
+- Judged "absolute targets reproduce the demo to 0.0002 rad" from the FINAL error only; the mean error over the episode
+  was 0.30 rad (it only converges when the motion slows). Always look at the whole trajectory.
+- Said "the wrist camera shows only the gripper" from a 6-frame montage; measured over 20 episodes the cameras are
+  complementary (see the corrected bullet above).
+- A list-based mock of `JointState` hid a real `TypeError`; the mock now stores `array.array` like the real message.
+- Process hygiene: `pkill -f <pattern>` kills your own shell when the pattern is in the command line (use `kill $(pgrep ... | grep -vx $$)`);
+  an unneeded `git stash`/`pop` was run once (nothing lost).
+
+#### C. NOT done
+
+1. **No policy has been trained or evaluated.** No checkpoint exists. Whether the delta labels work closed-loop, whether
+   absolute labels would be better, and the real success rate are all unknown.
+2. **Where blow-ups start is not diagnosed.** At 0.005 rad noise 5 of 9 baseline replays ended in a PhysX blow-up (cube thrown
+   metres away) although the cube's `maxDepenetrationVelocity` cap (0.5 m/s) is on. The guess (zero grasp clearance: a finger driven
+   into the table) is unlogged. Needs contact pairs / penetration depth / gripper height for the ticks before the blow-up.
+3. **The offline "how noisy is a real policy" measurement was not written.** Idea: after a short training run, feed dataset
+   observations to the policy and compare its chunk with the recorded actions in rad (and look at the correlation over time);
+   it is optimistic (training data) but is the only way to tell whether 0.005 rad is realistic.
+4. **Re-collection undecided.** Hypothesis only: a 1 cm higher grasp point (`scripted_pick_place.GRASP_HEIGHT` 0.02 -> 0.03).
+   Decide after the first policy evaluation. If re-collecting, use ONE correction tolerance (the current 152 mix 64 episodes at
+   0.003 and 88 at 0.005; keep the old data as a separate comparison set).
+5. **The real openpi server was never connected to the client node.** The client imports (`openpi_client` works in the Isaac
+   env via `PYTHONPATH`; `dm-tree` is not installed there -- only matters if something outside the websocket client needs it),
+   but `infer()` against a real server, the real `UR5eOutputs` row format and timing are unverified.
+6. **Real UR5e not supported:** lockstep and velocity feed-forward are Isaac-only; a real controller needs `speedJ`/`servoJ` with
+   velocities and chunk execution at a rate it can sustain.
+7. **Other pipelines' gripper config unverified live:** `residual_rl_train_env.py`, OpenVLA collector/eval, the hybrid LLM pipeline.
+8. **Evaluation protocol not fixed:** number of trials, success definition (lift > 0.08 m and place error < 30 mm are the
+   current ones), how blow-up trials (`cube z > 0.25 m`, now warned in `eval_mode`) are reported. Single-cell noise numbers had
+   9-11 samples; plan the trial count for the confidence you need.
+9. Cleanup: the old Arrow cache `<bigdisk>/hf_cache/datasets/parquet/default-4907ebec...` (14 GB, from 2026-09-29) is a
+   deletion candidate (not deleted); the "What is still unverified" table further down is historical; the openpi branch is
+   local (an upstream clone: pushing needs your own fork).
+
+#### D. Tomorrow, in this order
+
+Everything runs from the repo root; the scripts live in `scripts/` and work on a clean `env -i` (no system-ROS mixing):
+
+```bash
+python -m pytest test -q                                   # 164 passed expected
+nvidia-smi --query-gpu=index,memory.used --format=csv      # both GPUs free?
+
+# 0. (optional, ~30 min, one GPU, BEFORE training takes the GPUs) find where a blow-up starts -- item C2.
+#    Extend isaac/check_action_replay.py's chunkvn replay with contact logging, run with --noisechunkv 0.005
+GPU=0 scripts/isaac_py.sh check_action_replay.py --episodes 5 --no_abs --chunks --noisechunkv 0.005 --noisy_vel_windows 11 --out /tmp/blowup.json
+
+# 1. TRAIN. Pick one (both write checkpoints under apps/openpi/checkpoints/pi0_ur5e_pick_place/<exp-name>/):
+export HF_DATASETS_CACHE=/media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/hf_cache/datasets \
+       OPENPI_DATA_HOME=/media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/openpi_cache \
+       UV_CACHE_DIR=/media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/uv_cache PYTHONUNBUFFERED=1
+cd /media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/apps/openpi        # branch vla-ur5e-ws
+#  (a) short run, ~3 h at ~4.7 s/step on 2 GPUs -- answers "how noisy is the policy" (item C3):
+CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 nohup uv run --no-sync scripts/train.py pi0_ur5e_pick_place \
+  --exp-name=short_3k --num-train-steps=3000 --lr-schedule.decay-steps=3000 --save-interval=1000 --keep-period=3000 \
+  --log-interval=50 --num-workers=16 --no-wandb-enabled > short_3k.log 2>&1 &
+#  (b) full run, ~14 h:
+CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 nohup uv run --no-sync scripts/train.py pi0_ur5e_pick_place \
+  --exp-name=run1b_10k --num-train-steps=10000 --lr-schedule.decay-steps=10000 --save-interval=1000 --keep-period=2000 \
+  --log-interval=50 --num-workers=16 --no-wandb-enabled > run1b_10k.log 2>&1 &
+#  check `grep "Step " <log> | tail` after ~5 min: Step 0 loss ~0.139, Step 50 ~0.108, Step 150 ~0.036 were seen. Do NOT start Isaac Sim
+#  while training holds both GPUs at MEM_FRACTION=0.9.
+#  Before the first launch, check the root disk (`df -h /`, was 79%) and that checkpoints (~8.7 GB each) have room.
+
+# 2. EVALUATE a checkpoint (after training; ~1 min per episode):
+cd /media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/apps/openpi
+uv run --no-sync scripts/serve_policy.py policy:checkpoint --policy.config=pi0_ur5e_pick_place \
+  --policy.dir=checkpoints/pi0_ur5e_pick_place/run1b_10k/<STEP> --port 8000        # terminal 1 (GPU)
+cd /home/icrs/projects/jaeung/vla_ur5e_ws
+GPU=1 scripts/run_lockstep_bridge.sh                                              # terminal 2 (Isaac Sim, lockstep, headless)
+scripts/run_lockstep_e2e.sh --ticks 300 --horizon 25   # optional sanity check on a FRESH bridge, then restart the bridge
+scripts/run_client_node.sh -p eval_mode:=true -p n_trials:=20 -p results_csv_path:=$PWD/eval_step<STEP>.csv   # terminal 3
+#   the recipe (lockstep, velocity feed-forward, execute_horizon 25, smoothing 11) is the default of run_client_node.sh.
+#   Compare an early checkpoint (4-6k) with the last one -- openpi has no validation set, this is the only overfitting check.
+#   Watch the client log for "possible contact blow-up" warnings and report such trials separately.
+
+# 3. Without a model, any time (regression checks; both prove plumbing only, not task success):
+GPU=0 scripts/run_lockstep_bridge.sh &  sleep 60;  scripts/run_lockstep_e2e.sh --ticks 300 --horizon 25
+FAKE_POLICY=1 scripts/run_client_node.sh -p max_steps:=200        # on a fresh bridge
+```
+
+Decision points for tomorrow: (i) short run first or straight to 10k (the short run costs ~3 h and gives item C3, which
+decides whether re-collection is needed; the 10k run needs both GPUs for ~14 h); (ii) whether to do the blow-up diagnostic before
+training; (iii) after the first evaluation: re-collect with a higher grasp point (C4) or not.
+
+#### E. Where things are
+- Scripts: `scripts/` (`isaac_py.sh`, `run_lockstep_bridge.sh`, `run_client_node.sh`, `run_lockstep_e2e.sh`, `lib_isaac_env.sh`);
+  stand-ins for the missing Python-3.11 `cv_bridge` / `rtde_*` and the fake policy: `test/fakes/`.
+- Studies: `isaac/check_action_replay.py` (replay of recorded actions, all arm/gripper variants), `isaac/check_noise_robustness.py`
+  (settings x noise), `isaac/check_lockstep_e2e.py` (ROS 2 end-to-end).
+- Serving: `src/vla_bridge/vla_bridge/` (`feedforward.py`, `gripper_command.py`, `isaac_robot_interface.py`, `vla_policy_client.py`),
+  `isaac/lockstep_protocol.py`, `isaac/pick_place_scene_bridge.py`.
+- Commits of the day (oldest first): `ea5b92e`, `5dbffc0`, `7dd87e7`, `b88079b`, `4a49a03`, `d889bef`, `16a1bad`, and the summary commit.
+
 ### 2026-10-05: smoke training passed; run1 (10k steps, 2x3090) launched
 
 **Smoke train (50 steps, GPU 0 only, batch 32, `XLA_PYTHON_CLIENT_MEM_FRACTION=0.9`): passed.** No OOM, so
@@ -2740,7 +2864,7 @@ in the per-episode log:
 **4. Serve + evaluate in Isaac Sim (the real go/no-go checkpoint)**
 ```bash
 # terminal 1, GPU machine:
-uv run scripts/serve_policy.py --config pi0_ur5e_pick_place --checkpoint <path-to-your-checkpoint>
+uv run scripts/serve_policy.py policy:checkpoint --policy.config=pi0_ur5e_pick_place --policy.dir=<path-to-your-checkpoint>   # (corrected 2026-10-05: the old --config/--checkpoint form is not openpi's CLI)
 
 # terminal 2, Isaac Sim machine:
 cd isaac && python3 pick_place_scene_bridge.py
