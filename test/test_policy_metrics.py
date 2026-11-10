@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from vla_bridge.policy_metrics import chunk_comparison
+from vla_bridge.policy_metrics import chunk_comparison, summarize_windows
 
 
 def _ramp(n=50, speed=0.002):
@@ -50,3 +50,22 @@ def test_a_stationary_recording_gives_nan_not_a_division_error():
 def test_too_short_a_chunk_is_rejected():
     with pytest.raises(ValueError):
         chunk_comparison(np.zeros((3, 7)), np.zeros((3, 7)))
+
+
+def _win(step_rec, jr_model, jr_rec, err=0.01):
+    return {"step_mean_rec": step_rec, "step_mean_model": step_rec * 1.1, "jerk_ratio_model": jr_model,
+            "jerk_ratio_rec": jr_rec, "err_row0": err, "err_row24": err, "err_rms": err, "gripper_mean_abs_err": 0.0}
+
+
+def test_stationary_windows_are_left_out_of_the_jitter_summary_but_not_the_error_summary():
+    ws = [_win(0.002, 0.4, 0.2), _win(0.003, 0.6, 0.2), _win(0.00008, 500.0, float("nan"), err=0.5)]
+    s = summarize_windows(ws)
+    assert s["windows"] == 3 and s["windows_moving"] == 2
+    assert s["jerk_ratio_model"] == pytest.approx(0.5)          # the exploded stationary value is not in it
+    assert s["jerk_ratio_pair"] == pytest.approx(2.5)           # median of 2.0 and 3.0, paired per window
+    assert s["err_rms"] == pytest.approx(0.01)                  # errors still use every window
+
+
+def test_no_moving_windows_gives_nan_not_an_exception():
+    s = summarize_windows([_win(0.0001, 1.0, 1.0)])
+    assert s["windows_moving"] == 0 and np.isnan(s["jerk_ratio_pair"])

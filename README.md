@@ -2027,10 +2027,13 @@ dataset sent exactly like the ROS client node sends them):
 - **the documented command was wrong**: `--port` must come BEFORE `policy:checkpoint` (tyro: "Arguments are applied to
   the directly preceding subcommand"). Fixed in the README. Rule for this file from now on: a command that is written down
   here is typed once for real first (two commands in this file had been wrong before this check).
-- **withdrawn:** an earlier remark that the smoke model's chunk is "24x jerkier than the recording" compared the model at t=900
-  with the recorded window at t=900, a near-stationary stretch (0.00008 rad/tick; the recording averages 0.00249). It carries
-  no information. The comparison now lives in `src/vla_bridge/vla_bridge/policy_metrics.py` (same-t windows, scale-free
-  jerk ratio, tested) and `scripts/probe_policy_server.py` (needs a running server; untested against one yet).
+- **smoke-model jitter: no information (corrected twice).** At t=900 the 50-step model's chunk moved 0.0019 rad/tick per joint
+  and the recording at the same t moved 0.00008 -- same definition (absolute-joint |row[i+1]-row[i]|), same window, so the ~24x
+  difference is real for THAT model; but a model with 50 training steps says nothing about a trained one. A first "correction" that
+  called 0.0019 "an ordinary magnitude" was wrong too: it set the model's value at a quiet moment against the recording's
+  whole-episode mean (0.00249). The right reading is neither "bad" nor "normal". The same-t comparison now lives in
+  `src/vla_bridge/vla_bridge/policy_metrics.py` (tested) and `scripts/probe_policy_server.py` (needs a running server; untested
+  against one yet).
 
 **Training launched 2026-11-10 16:46 KST: `short_3k`, 2 GPUs, ~4.5-5 s/step, ETA ~20:35 KST.**
 
@@ -2056,7 +2059,9 @@ Live check when the GPUs are free: run `scripts/run_lockstep_bridge.sh` and the 
 1. Serve checkpoint 3000 (`--port` first!) and run `scripts/probe_policy_server.py`: it prints latency, `err_row0/err_row24/err_rms`
    against the recorded chunk and `jerk_ratio_model` vs `jerk_ratio_rec`. These are TRAINING episodes (openpi has no validation split),
    so they are optimistic -- a hold-out would need an `episodes` filter in openpi's data config (not done). Compare `err_rms` with the
-   noise-study levels (0.002/0.005/0.01 rad): below 0.005 is encouraging, above 0.01 predicts trouble.
+   noise-study levels (0.002/0.005/0.01 rad). It is a lower bound (training data, open loop): above 0.01 is a strong sign the
+   recipe's noise tolerance is structurally insufficient; below 0.005 is still not reassuring because closed-loop errors accumulate.
+   Probe all of 1000/2000/3000 and read the trend.
 2. Blow-up diagnosis (30 min, one GPU, independent of the training): replay the baseline at 0.005 rad row noise and log contact
    pairs, penetration depth and gripper height before each blow-up.
 3. Closed-loop evaluation of the 3000 checkpoint with `scripts/run_client_node.sh` (README below) -- the unbiased number.
@@ -2129,12 +2134,16 @@ checkout (also saved as `openpi_integration/openpi_lerobot_0_4_compat.patch`).
    deletion candidate (not deleted); the "What is still unverified" table further down is historical; the openpi branch is
    local (an upstream clone: pushing needs your own fork).
 
-**Correction 2026-11-10 -- the "policy chunk is 24x jerkier than the recording" remark (smoke checkpoint) was a bad comparison and is withdrawn.**
-It compared the model's chunk at t=900 with the recorded 50-row window at t=900, which is a near-stationary stretch of the
-episode (mean |row-to-row step| 0.00008 rad). The whole-episode mean of the recording is 0.00249 rad per joint per tick (windows
-range 0.0001-0.0096), so the smoke model's 0.0019 is an ordinary magnitude. Metric to use after the 3k run: both quantities are
-absolute-joint row-to-row differences |row[i+1]-row[i]| per joint; compare a model chunk with the recorded window at the SAME t,
-and judge jitter by the ratio mean|second difference| / mean|first difference| for model vs recording, over many t.
+**Correction 2026-11-10 (second version) -- the smoke checkpoint's chunk jitter says nothing either way.**
+At t=900 the 50-step model's chunk moved 0.0019 rad/tick per joint, the recording at the same t 0.00008 (the arm is nearly
+stationary there; the whole-episode recording mean is 0.00249, windows range 0.0001-0.0096). Same definition, same window: the
+~24x gap is genuine for that untrained model but is not evidence about a trained policy. Do not quote it, and do not call 0.0019
+"normal" either (that compared a quiet-moment model value with the recording's average).
+Metric for the 3k checkpoints: absolute-joint row-to-row differences per joint; compare a model chunk with the recording at the
+SAME t (pairs, many t). The jerk ratio mean|second difference| / mean|first difference| blows up in stationary windows (tiny
+denominator), so `policy_metrics.summarize_windows` only uses windows whose recorded step is >= `min_motion` (5e-4 rad/tick)
+and reports the paired model/recording ratio. Do this for the 1000, 2000 and 3000 checkpoints and look at the trend; one
+checkpoint cannot show whether training is converging.
 
 #### D. Tomorrow, in this order
 

@@ -10,7 +10,7 @@ Run with the openpi venv (it has lerobot and openpi_client), against a running s
 
 It sends the same observation format the ROS client node sends (uint8 RGB x2, joints, gripper, prompt). The episodes are
 TRAINING episodes (openpi has no validation split), so errors are optimistic; the closed-loop simulator evaluation is
-the unbiased number. Metrics: src/vla_bridge/vla_bridge/policy_metrics.py (same-t comparison, scale-free jerk ratio).
+the unbiased number. Metrics: src/vla_bridge/vla_bridge/policy_metrics.py (same-t pairs; the jerk ratio only over windows with enough recorded motion).
 The first request takes ~20 s (JAX compile) and is excluded from the latency statistics.
 """
 import argparse
@@ -22,7 +22,7 @@ import time
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "vla_bridge"))
-from vla_bridge.policy_metrics import chunk_comparison  # noqa: E402
+from vla_bridge.policy_metrics import chunk_comparison, summarize_windows  # noqa: E402
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--host", default="localhost")
@@ -30,6 +30,7 @@ ap.add_argument("--port", type=int, default=8000)
 ap.add_argument("--repo_id", default="Jaeung12/ur5e_pick_place_v2")
 ap.add_argument("--episodes", type=int, nargs="*", default=[0, 25, 50, 75, 100, 125, 150])
 ap.add_argument("--stride", type=int, default=100, help="ticks between probed windows")
+ap.add_argument("--min_motion", type=float, default=5e-4, help="only windows whose recorded step is >= this (rad/tick) enter the jitter summary")
 ap.add_argument("--out", default=None)
 args = ap.parse_args()
 
@@ -63,12 +64,7 @@ for e in args.episodes:
         r.update(episode=e, t=t)
         rows.append(r)
 
-def med(k):
-    return float(np.nanmedian([r[k] for r in rows]))
-
-summary = {"windows": len(rows), "latency_ms_median": 1000 * float(np.median(lat)) if lat else None,
-           **{k: med(k) for k in ("err_row0", "err_row24", "err_rms", "gripper_mean_abs_err", "step_mean_model", "step_mean_rec",
-                                  "jerk_ratio_model", "jerk_ratio_rec")}}
+summary = {**summarize_windows(rows, args.min_motion), "latency_ms_median": 1000 * float(np.median(lat)) if lat else None}
 print(json.dumps(summary, indent=1))
 print("compare with the noise study: it used AR(1) row noise of 0.002 / 0.005 / 0.01 rad (per joint, independent); "
       "err_rms / err_row0 here are the policy's own deviation from the recording (training data -> optimistic).")
