@@ -2043,7 +2043,7 @@ CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run --no-sync scr
   --save-interval=1000 --keep-period=1000 --log-interval=50 --num-workers=16 --no-wandb-enabled
 ```
 Step 0 loss 0.1394 (identical to the 10/5 runs). Warm-up was cut to 300 (default 1000 would be a third of a 3k run);
-checkpoints at 1000/2000/3000 are kept (~8.7 GB each) in `apps/openpi/checkpoints/pi0_ur5e_pick_place/short_3k/`. The
+checkpoints 1000, 2000 and **2999** are kept (~8.8 GB each; openpi's last save is at step `num_train_steps-1`, so the final folder is `2999`, not `3000`) in `apps/openpi/checkpoints/pi0_ur5e_pick_place/short_3k/`. The
 `smoke_test` checkpoint is the only other one: keep it until the 3k checkpoint has been served successfully.
 
 **Per-tick cube height for evaluation (code written, NOT yet run in Isaac Sim -- GPUs were busy):** eval_mode looked at the cube
@@ -2056,18 +2056,47 @@ Live check when the GPUs are free: run `scripts/run_lockstep_bridge.sh` and the 
 -p n_trials:=2` and confirm in the bridge/client logs that `cube_max_z` messages arrive and the trial maximum is non-zero.
 
 **After the 3k run (in this order):**
-1. Serve checkpoint 3000 (`--port` first!) and run `scripts/probe_policy_server.py`: it prints latency, `err_row0/err_row24/err_rms`
+1. Serve checkpoint 2999 (`--port` first!) and run `scripts/probe_policy_server.py`: it prints latency, `err_row0/err_row24/err_rms`
    against the recorded chunk and `jerk_ratio_model` vs `jerk_ratio_rec`. These are TRAINING episodes (openpi has no validation split),
    so they are optimistic -- a hold-out would need an `episodes` filter in openpi's data config (not done). Compare `err_rms` with the
    noise-study levels (0.002/0.005/0.01 rad). It is a lower bound (training data, open loop): above 0.01 is a strong sign the
    recipe's noise tolerance is structurally insufficient; below 0.005 is still not reassuring because closed-loop errors accumulate.
-   Probe all of 1000/2000/3000 and read the trend.
+   Probe all of 1000/2000/2999 and read the trend.
 2. Blow-up diagnosis (30 min, one GPU, independent of the training): replay the baseline at 0.005 rad row noise and log contact
    pairs, penetration depth and gripper height before each blow-up.
 3. Closed-loop evaluation of the 3000 checkpoint with `scripts/run_client_node.sh` (README below) -- the unbiased number.
 4. Decide: 10k run, absolute labels, re-collection with a higher grasp point.
 Not addressed: an asynchronous client (infer the next chunk while the current one executes) -- irrelevant in lockstep, needed for
 a real robot because a ~170 ms round trip is ~10 ticks at 60 Hz; real UR5e support; the artifact page's stale items.
+
+#### 2026-11-10 evening: `short_3k` finished; offline probe of the 1000 / 2000 / 2999 checkpoints
+
+Training ran 16:46-21:00 KST, no errors/NaN, final loss 0.0034 (Step 0: 0.139, 200: 0.017, 700: 0.009, 1650: 0.0053).
+Probe (`scripts/probe_policy_server.py`, served over websocket, 72 windows from 7 TRAINING episodes -> optimistic, open loop;
+52 windows with enough recorded motion for the jitter columns; latency 167 ms median, first request ~22 s):
+
+| ckpt | err_row0 | err_row24 | err_rms | gripper abs err | step ratio model/rec | jerk ratio model | jerk ratio rec | paired model/rec |
+|---|---|---|---|---|---|---|---|---|
+| 1000 | 0.0040 | 0.0147 | 0.0122 | 0.0117 | 0.95 | 0.349 | 0.101 | 3.45 |
+| 2000 | 0.0027 | 0.0118 | 0.0067 | 0.0067 | 0.99 | 0.311 | 0.101 | 2.85 |
+| 2999 | 0.0020 | 0.0082 | 0.0069 | 0.0064 | 0.98 | 0.294 | 0.101 | 2.63 |
+
+(errors in rad vs the recorded absolute chunk at the same t; the "rec" jerk ratio is the same for every checkpoint because the
+recorded windows are the same.)
+
+Reading, with the limits stated: (1) the policy reproduces the recorded motion at about the right speed (step ratio ~0.98) and the
+error falls with training but is flattening between 2000 and 2999 (err_rms 0.0067 -> 0.0069, row24 0.0118 -> 0.0082). (2) The error
+GROWS along the chunk: ~0.002 rad at row 0, ~0.008 at row 24, and the replay recipe executes 25 rows per inference, so the relevant
+level is the row-24 one. That puts the policy in the 0.005-0.01 rad band where the noise study succeeded in only 3/9 (0.005) and 1/9
+(0.01) replays -- not reassuring, not the "above 0.01" strong failure sign either. (3) The chunks are ~2.6x more jagged than the
+recording relative to their own speed (paired jerk ratio), falling with training; the velocity feed-forward differentiates the
+rows, so this is the quantity to watch (smoothing window 11 is the default for that reason). (4) Everything above is training
+data, open loop, and the noise study's noise (independent per joint, constant over rows) is a different shape from this error
+(growing along the chunk, probably correlated across joints), so the two are not directly comparable: this says "unclear, check
+closed loop", not "will fail". The closed-loop simulator evaluation of checkpoint 2999 is the next decisive step, and it was not run.
+
+Operational: the final checkpoint is `2999` (openpi saves at `num_train_steps-1`); `--port` goes before `policy:checkpoint`;
+a probe takes ~2.5 min per checkpoint once the JAX compile is cached.
 
 ### 2026-10-05 DAY SUMMARY -- what went wrong, how it was found and fixed, what was NOT done, and what to do tomorrow
 
@@ -2142,7 +2171,7 @@ stationary there; the whole-episode recording mean is 0.00249, windows range 0.0
 Metric for the 3k checkpoints: absolute-joint row-to-row differences per joint; compare a model chunk with the recording at the
 SAME t (pairs, many t). The jerk ratio mean|second difference| / mean|first difference| blows up in stationary windows (tiny
 denominator), so `policy_metrics.summarize_windows` only uses windows whose recorded step is >= `min_motion` (5e-4 rad/tick)
-and reports the paired model/recording ratio. Do this for the 1000, 2000 and 3000 checkpoints and look at the trend; one
+and reports the paired model/recording ratio. Do this for the 1000, 2000 and 2999 checkpoints and look at the trend; one
 checkpoint cannot show whether training is converging.
 
 #### D. Tomorrow, in this order

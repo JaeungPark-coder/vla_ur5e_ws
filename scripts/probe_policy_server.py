@@ -4,7 +4,7 @@ Run with the openpi venv (it has lerobot and openpi_client), against a running s
 
   # terminal 1 (note: --port goes BEFORE policy:checkpoint)
   cd $OPENPI && uv run --no-sync scripts/serve_policy.py --port 8765 policy:checkpoint \
-      --policy.config=pi0_ur5e_pick_place --policy.dir=checkpoints/pi0_ur5e_pick_place/short_3k/3000
+      --policy.config=pi0_ur5e_pick_place --policy.dir=checkpoints/pi0_ur5e_pick_place/short_3k/2999
   # terminal 2
   cd $OPENPI && .venv/bin/python <repo>/scripts/probe_policy_server.py --port 8765 --out /tmp/probe.json
 
