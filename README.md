@@ -2012,6 +2012,58 @@ row access.
 blocked/open) predates 2026-09-28/29, when the grasp, place and data-collection rows were resolved --
 read those rows as historical.
 
+### 2026-11-10: whole-project review, first real openpi-server probe, 3k training launched
+
+**Review result.** Nothing had changed since 2026-10-05 (HEAD `c81a871`, no checkpoint except the 50-step `smoke_test`,
+tests 164 passed, GPUs idle). The remaining problems are listed in "NOT done" below; none is a design blocker, the main one
+is that no policy has been trained or evaluated.
+
+**First time the real server path was exercised** (smoke checkpoint served with `serve_policy.py`, observations from the
+dataset sent exactly like the ROS client node sends them):
+- request/response format accepted; the server returns a `(50, 7)` absolute-joint chunk; the norm stats come from the
+  checkpoint's own `assets/`; inference does NOT apply the dataset repack (so the client's key names are right).
+- latency: model ~20 ms, round trip ~170 ms (the rest is image transfer and preprocessing on the server's CPU); the FIRST request
+  takes ~23 s (JAX compile) -- send one warm-up request before an evaluation.
+- **the documented command was wrong**: `--port` must come BEFORE `policy:checkpoint` (tyro: "Arguments are applied to
+  the directly preceding subcommand"). Fixed in the README. Rule for this file from now on: a command that is written down
+  here is typed once for real first (two commands in this file had been wrong before this check).
+- **withdrawn:** an earlier remark that the smoke model's chunk is "24x jerkier than the recording" compared the model at t=900
+  with the recorded window at t=900, a near-stationary stretch (0.00008 rad/tick; the recording averages 0.00249). It carries
+  no information. The comparison now lives in `src/vla_bridge/vla_bridge/policy_metrics.py` (same-t windows, scale-free
+  jerk ratio, tested) and `scripts/probe_policy_server.py` (needs a running server; untested against one yet).
+
+**Training launched 2026-11-10 16:46 KST: `short_3k`, 2 GPUs, ~4.5-5 s/step, ETA ~20:35 KST.**
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run --no-sync scripts/train.py pi0_ur5e_pick_place \
+  --exp-name=short_3k --num-train-steps=3000 --lr-schedule.decay-steps=3000 --lr-schedule.warmup-steps=300 \
+  --save-interval=1000 --keep-period=1000 --log-interval=50 --num-workers=16 --no-wandb-enabled
+```
+Step 0 loss 0.1394 (identical to the 10/5 runs). Warm-up was cut to 300 (default 1000 would be a third of a 3k run);
+checkpoints at 1000/2000/3000 are kept (~8.7 GB each) in `apps/openpi/checkpoints/pi0_ur5e_pick_place/short_3k/`. The
+`smoke_test` checkpoint is the only other one: keep it until the 3k checkpoint has been served successfully.
+
+**Per-tick cube height for evaluation (code written, NOT yet run in Isaac Sim -- GPUs were busy):** eval_mode looked at the cube
+once per executed block (up to 25 ticks), so a blow-up that throws the cube up and lets it fall inside a block was invisible.
+In lockstep the bridge now keeps the maximum cube height over EVERY tick and publishes `[epoch, max_z]` on `/vla/eval/cube_max_z`
+(Float32MultiArray) before each observation; the client keeps it per trial with an epoch filter so the previous trial's value
+cannot leak in (`vla_bridge/eval_tracking.py`, tested). The cube messages are also published BEFORE the observation now, because
+the client treats the observation as the "tick done" signal and reads the cube values right after it.
+Live check when the GPUs are free: run `scripts/run_lockstep_bridge.sh` and the fake-policy client with `-p eval_mode:=true
+-p n_trials:=2` and confirm in the bridge/client logs that `cube_max_z` messages arrive and the trial maximum is non-zero.
+
+**After the 3k run (in this order):**
+1. Serve checkpoint 3000 (`--port` first!) and run `scripts/probe_policy_server.py`: it prints latency, `err_row0/err_row24/err_rms`
+   against the recorded chunk and `jerk_ratio_model` vs `jerk_ratio_rec`. These are TRAINING episodes (openpi has no validation split),
+   so they are optimistic -- a hold-out would need an `episodes` filter in openpi's data config (not done). Compare `err_rms` with the
+   noise-study levels (0.002/0.005/0.01 rad): below 0.005 is encouraging, above 0.01 predicts trouble.
+2. Blow-up diagnosis (30 min, one GPU, independent of the training): replay the baseline at 0.005 rad row noise and log contact
+   pairs, penetration depth and gripper height before each blow-up.
+3. Closed-loop evaluation of the 3000 checkpoint with `scripts/run_client_node.sh` (README below) -- the unbiased number.
+4. Decide: 10k run, absolute labels, re-collection with a higher grasp point.
+Not addressed: an asynchronous client (infer the next chunk while the current one executes) -- irrelevant in lockstep, needed for
+a real robot because a ~170 ms round trip is ~10 ticks at 60 Hz; real UR5e support; the artifact page's stale items.
+
 ### 2026-10-05 DAY SUMMARY -- what went wrong, how it was found and fixed, what was NOT done, and what to do tomorrow
 
 **State in one paragraph.** The dataset (`Jaeung12/ur5e_pick_place_v2`, 152 episodes) loads and trains through openpi;

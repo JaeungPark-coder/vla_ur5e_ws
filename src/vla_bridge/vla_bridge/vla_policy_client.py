@@ -27,7 +27,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from sensor_msgs.msg import Image
-from std_msgs.msg import Empty
+from std_msgs.msg import Empty, Float32MultiArray
 from geometry_msgs.msg import Point
 from cv_bridge import CvBridge
 
@@ -36,6 +36,7 @@ from vla_bridge.robot_interface import UR5eInterface
 from vla_bridge.isaac_robot_interface import IsaacSimRobotInterface
 from vla_bridge.gripper_command import GripperHysteresis
 from vla_bridge.feedforward import chunk_velocities
+from vla_bridge.eval_tracking import MaxHeightTracker
 
 
 # Same cut-off collect_demos.py filters demonstrations on (normal peak ~0.16 m).
@@ -283,9 +284,13 @@ class VLAPolicyClient(Node):
             self._was_holding = False
             self._trial_max_cube_z = 0.0  # see _finish_trial: a cube far above its normal ~0.16 m peak means a contact blow-up
             self._latest_cube_position = None
+            self._max_height = MaxHeightTracker()  # lockstep bridge: max cube z over every tick (eval_tracking.py)
             self._eval_reset_pub = self.create_publisher(Empty, '/vla/eval/reset', 10)
             self.create_subscription(
                 Point, '/vla/eval/cube_position', self._on_cube_position, 10,
+                callback_group=self._cb_group)
+            self.create_subscription(
+                Float32MultiArray, '/vla/eval/cube_max_z', self._on_cube_max_z, 10,
                 callback_group=self._cb_group)
             with open(self.results_csv_path, 'w', newline='') as f:
                 csv.writer(f).writerow(['trial', 'success', 'steps', 'xy_error_mm'])
@@ -339,6 +344,10 @@ class VLAPolicyClient(Node):
 
     def _on_cube_position(self, msg: Point):
         self._latest_cube_position = np.array([msg.x, msg.y, msg.z])
+
+    def _on_cube_max_z(self, msg: Float32MultiArray):
+        if len(msg.data) >= 2:
+            self._max_height.update(msg.data[0], msg.data[1])
 
     def _run_step(self):
         if self._step_count >= self.max_steps:
@@ -458,6 +467,7 @@ class VLAPolicyClient(Node):
             is_holding = (holding_position >= self.holding_gripper_threshold
                           and self._latest_cube_position[2] > self.lifted_z_threshold)
             self._trial_max_cube_z = max(self._trial_max_cube_z, float(self._latest_cube_position[2]))
+            self._trial_max_cube_z = max(self._trial_max_cube_z, self._max_height.value)
             xy_error_mm = 1000.0 * float(np.linalg.norm(
                 self._latest_cube_position[:2] - self.eval_target_position[:2]))
             released_here = self._was_holding and not is_holding
@@ -478,6 +488,7 @@ class VLAPolicyClient(Node):
         self._trial_successes += int(success)
         with open(self.results_csv_path, 'a', newline='') as f:
             csv.writer(f).writerow([self._trial_idx, success, self._step_count, xy_error_mm])
+        self._trial_max_cube_z = max(self._trial_max_cube_z, self._max_height.value)
         if self._trial_max_cube_z > CONTACT_BLOWUP_CUBE_Z_M:
             self.get_logger().warn(
                 f'trial {self._trial_idx}: the cube reached z={self._trial_max_cube_z:.2f} m (a normal episode '
@@ -501,6 +512,7 @@ class VLAPolicyClient(Node):
         self._eval_reset_pub.publish(Empty())
         self._step_count = 0
         self._trial_max_cube_z = 0.0
+        self._max_height.start_trial(self._min_epoch)  # 0 unless lockstep (then: ignore pre-reset messages)
         if self._gripper_filter is not None:
             self._gripper_filter.reset()
         self._was_holding = False

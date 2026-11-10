@@ -38,7 +38,7 @@ enable_extension("isaacsim.ros2.bridge")  # makes rclpy importable/usable in thi
 import rclpy  # noqa: E402
 from rclpy.node import Node  # noqa: E402
 from sensor_msgs.msg import JointState, Image  # noqa: E402
-from std_msgs.msg import Float32, Empty  # noqa: E402
+from std_msgs.msg import Float32, Float32MultiArray, Empty  # noqa: E402
 from geometry_msgs.msg import Point  # noqa: E402
 from cv_bridge import CvBridge  # noqa: E402
 
@@ -61,6 +61,9 @@ WRIST_IMAGE_TOPIC = "/vla/wrist_image"
 # sim state stays out of anything the policy itself sees).
 EVAL_CUBE_POSITION_TOPIC = "/vla/eval/cube_position"
 EVAL_RESET_TOPIC = "/vla/eval/reset"
+# Lockstep only: [epoch, max cube z since the previous message] as Float32MultiArray, the maximum taken over EVERY tick
+# (see vla_bridge/eval_tracking.py). Lets eval_mode see a blow-up that happens inside one executed block.
+EVAL_CUBE_MAX_Z_TOPIC = "/vla/eval/cube_max_z"
 
 
 class PickPlaceSceneBridge(Node):
@@ -80,6 +83,7 @@ class PickPlaceSceneBridge(Node):
         self.base_image_pub = self.create_publisher(Image, BASE_IMAGE_TOPIC, 10)
         self.wrist_image_pub = self.create_publisher(Image, WRIST_IMAGE_TOPIC, 10)
         self.eval_cube_position_pub = self.create_publisher(Point, EVAL_CUBE_POSITION_TOPIC, 10)
+        self.eval_cube_max_z_pub = self.create_publisher(Float32MultiArray, EVAL_CUBE_MAX_Z_TOPIC, 10)
 
         self.latest_joint_target = None
         self.latest_gripper_target = 0.0
@@ -108,6 +112,9 @@ class PickPlaceSceneBridge(Node):
     def publish_cube_position(self, scene):
         pos = scene.get_cube_position()
         self.eval_cube_position_pub.publish(Point(x=float(pos[0]), y=float(pos[1]), z=float(pos[2])))
+
+    def publish_cube_max_z(self, max_z):
+        self.eval_cube_max_z_pub.publish(Float32MultiArray(data=[float(self.reset_count), float(max_z)]))
 
     def publish_joint_state(self, obs, ack_id):
         """joint_state only (lockstep ticks that need no images)."""
@@ -195,6 +202,7 @@ def main():
               "window will not refresh between requests.", flush=True)
     last_obs = scene.get_observation() if lockstep else None
     last_republish = time.time()
+    tick_max_z = 0.0  # lockstep: max cube height over the ticks since the last published message
     if lockstep:
         # Diagnostics for check_lockstep_e2e.py: the world step index must advance by
         # exactly the number of requests executed, and not at all while idle.
@@ -216,8 +224,12 @@ def main():
                     bridge.gate.reset()
                     bridge.latest_gripper_target = 0.0
                     last_obs = obs if isinstance(obs, dict) else scene.get_observation()
-                    bridge.publish_observation(last_obs, ack_id=bridge.gate.last_executed_id)
+                    tick_max_z = float(scene.get_cube_position()[2])
+                    # cube messages BEFORE the observation: the client treats the observation (joint_state) as
+                    # the "tick done" signal and reads the cube values right after it
                     bridge.publish_cube_position(scene)
+                    bridge.publish_cube_max_z(tick_max_z)
+                    bridge.publish_observation(last_obs, ack_id=bridge.gate.last_executed_id)
                     last_republish = time.time()
                 request = bridge.gate.take()
                 if request is not None:
@@ -235,20 +247,24 @@ def main():
                         gripper_target = bridge.latest_gripper_target
                     scene.gripper.set_target(gripper_target)
                     scene.world.step(render=True)  # exactly one tick
+                    tick_max_z = max(tick_max_z, float(scene.get_cube_position()[2]))
                     if request_id % 100 == 0:
                         print(f"lockstep: request {request_id} executed, world step index "
                               f"{scene.world.current_time_step_index}", flush=True)
                     if publish_images:
                         last_obs = scene.get_observation()
-                        bridge.publish_observation(last_obs, ack_id=request_id)
                         bridge.publish_cube_position(scene)
+                        bridge.publish_cube_max_z(tick_max_z)
+                        tick_max_z = float(scene.get_cube_position()[2])  # start the next window at the current height
+                        bridge.publish_observation(last_obs, ack_id=request_id)
                     else:
                         bridge.publish_joint_state(scene.get_proprioception(), ack_id=request_id)
                         last_obs = None  # nothing complete to re-publish while idle until the next image tick
                     last_republish = time.time()
                 elif last_obs is not None and time.time() - last_republish > 0.5:
-                    bridge.publish_observation(last_obs, ack_id=bridge.gate.last_executed_id)
                     bridge.publish_cube_position(scene)
+                    bridge.publish_cube_max_z(tick_max_z)   # repeat only: the window is not cleared here
+                    bridge.publish_observation(last_obs, ack_id=bridge.gate.last_executed_id)
                     last_republish = time.time()
                 continue
 
