@@ -2077,6 +2077,13 @@ checkout (also saved as `openpi_integration/openpi_lerobot_0_4_compat.patch`).
    deletion candidate (not deleted); the "What is still unverified" table further down is historical; the openpi branch is
    local (an upstream clone: pushing needs your own fork).
 
+**Correction 2026-11-10 -- the "policy chunk is 24x jerkier than the recording" remark (smoke checkpoint) was a bad comparison and is withdrawn.**
+It compared the model's chunk at t=900 with the recorded 50-row window at t=900, which is a near-stationary stretch of the
+episode (mean |row-to-row step| 0.00008 rad). The whole-episode mean of the recording is 0.00249 rad per joint per tick (windows
+range 0.0001-0.0096), so the smoke model's 0.0019 is an ordinary magnitude. Metric to use after the 3k run: both quantities are
+absolute-joint row-to-row differences |row[i+1]-row[i]| per joint; compare a model chunk with the recorded window at the SAME t,
+and judge jitter by the ratio mean|second difference| / mean|first difference| for model vs recording, over many t.
+
 #### D. Tomorrow, in this order
 
 Everything runs from the repo root; the scripts live in `scripts/` and work on a clean `env -i` (no system-ROS mixing):
@@ -2094,9 +2101,10 @@ export HF_DATASETS_CACHE=/media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/hf_cac
        OPENPI_DATA_HOME=/media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/openpi_cache \
        UV_CACHE_DIR=/media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/uv_cache PYTHONUNBUFFERED=1
 cd /media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/apps/openpi        # branch vla-ur5e-ws
-#  (a) short run, ~3 h at ~4.7 s/step on 2 GPUs -- answers "how noisy is the policy" (item C3):
+#  (a) short run, ~4 h (3000 x 4.7-5.0 s/step on 2 GPUs; an earlier '~3 h' here was an underestimate) -- answers "how noisy is the policy" (item C3):
 CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 nohup uv run --no-sync scripts/train.py pi0_ur5e_pick_place \
-  --exp-name=short_3k --num-train-steps=3000 --lr-schedule.decay-steps=3000 --save-interval=1000 --keep-period=3000 \
+  --exp-name=short_3k --num-train-steps=3000 --lr-schedule.decay-steps=3000 --lr-schedule.warmup-steps=300 \
+  --save-interval=1000 --keep-period=1000 \
   --log-interval=50 --num-workers=16 --no-wandb-enabled > short_3k.log 2>&1 &
 #  (b) full run, ~14 h:
 CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 nohup uv run --no-sync scripts/train.py pi0_ur5e_pick_place \
@@ -2108,8 +2116,11 @@ CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 nohup uv run --no-sy
 
 # 2. EVALUATE a checkpoint (after training; ~1 min per episode):
 cd /media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/apps/openpi
-uv run --no-sync scripts/serve_policy.py policy:checkpoint --policy.config=pi0_ur5e_pick_place \
-  --policy.dir=checkpoints/pi0_ur5e_pick_place/run1b_10k/<STEP> --port 8000        # terminal 1 (GPU)
+# --port (a top-level option) must come BEFORE `policy:checkpoint`: after it tyro rejects it ("Unrecognized
+# options ... Arguments are applied to the directly preceding subcommand"). Checked against the real server 2026-11-10.
+# The first request after start takes ~23 s (JAX compile); later ones ~170 ms round trip (model ~20 ms).
+uv run --no-sync scripts/serve_policy.py --port 8000 policy:checkpoint --policy.config=pi0_ur5e_pick_place \
+  --policy.dir=checkpoints/pi0_ur5e_pick_place/run1b_10k/<STEP>        # terminal 1 (GPU)
 cd /home/icrs/projects/jaeung/vla_ur5e_ws
 GPU=1 scripts/run_lockstep_bridge.sh                                              # terminal 2 (Isaac Sim, lockstep, headless)
 scripts/run_lockstep_e2e.sh --ticks 300 --horizon 25   # optional sanity check on a FRESH bridge, then restart the bridge
@@ -2123,7 +2134,7 @@ GPU=0 scripts/run_lockstep_bridge.sh &  sleep 60;  scripts/run_lockstep_e2e.sh -
 FAKE_POLICY=1 scripts/run_client_node.sh -p max_steps:=200        # on a fresh bridge
 ```
 
-Decision points for tomorrow: (i) short run first or straight to 10k (the short run costs ~3 h and gives item C3, which
+Decision points for tomorrow: (i) short run first or straight to 10k (the short run costs ~4 h and gives item C3, which
 decides whether re-collection is needed; the 10k run needs both GPUs for ~14 h); (ii) whether to do the blow-up diagnostic before
 training; (iii) after the first evaluation: re-collect with a higher grasp point (C4) or not.
 
@@ -2864,7 +2875,7 @@ in the per-episode log:
 **4. Serve + evaluate in Isaac Sim (the real go/no-go checkpoint)**
 ```bash
 # terminal 1, GPU machine:
-uv run scripts/serve_policy.py policy:checkpoint --policy.config=pi0_ur5e_pick_place --policy.dir=<path-to-your-checkpoint>   # (corrected 2026-10-05: the old --config/--checkpoint form is not openpi's CLI)
+uv run scripts/serve_policy.py --port 8000 policy:checkpoint --policy.config=pi0_ur5e_pick_place --policy.dir=<path-to-your-checkpoint>   # (corrected 2026-10-05: the old --config/--checkpoint form is not openpi's CLI)
 
 # terminal 2, Isaac Sim machine:
 cd isaac && python3 pick_place_scene_bridge.py
