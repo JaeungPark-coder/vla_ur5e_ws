@@ -48,6 +48,7 @@ from pick_place_scene import (  # noqa: E402
 from isaac_sim_common import (  # noqa: E402
     GRIPPER_DRIVE_JOINT_NAME, set_joint_max_force, zero_follower_joint_drives)
 from lockstep_protocol import LockstepGate  # noqa: E402
+from trial_trace import TrialTrace  # noqa: E402
 
 JOINT_TARGET_TOPIC = "/vla/joint_target"
 GRIPPER_TARGET_TOPIC = "/vla/gripper_target"
@@ -192,9 +193,13 @@ def main():
     # with an epoch); unset = random spawns as before.
     base_seed = os.environ.get("VLA_BRIDGE_SEED")
     base_seed = None if base_seed in (None, "") else int(base_seed)
+    # VLA_BRIDGE_SEED_REPEAT=R: R consecutive trials share one spawn (trial k uses default_rng(S + k // R)). The client
+    # cycles execute_horizon over those R trials, so one seed is evaluated under every K before the next seed starts and
+    # an interrupted run still leaves complete pairs.
+    seed_repeat = max(1, int(os.environ.get("VLA_BRIDGE_SEED_REPEAT") or 1))
     if base_seed is not None:
         scene._rng = np.random.default_rng(base_seed)
-        print(f"VLA_BRIDGE_SEED={base_seed}: trial k spawns the cube with default_rng({base_seed}+k)", flush=True)
+        print(f"VLA_BRIDGE_SEED={base_seed}: trial k spawns the cube with default_rng({base_seed}+k//{seed_repeat})", flush=True)
     scene.reset()
     if base_seed is not None:
         print(f"seeded reset 0: cube at {np.round(scene.cube_position, 4).tolist()}", flush=True)
@@ -211,6 +216,9 @@ def main():
               "(client must run with lockstep:=true). See lockstep_protocol.py. Prefer "
               "ISAAC_PICK_PLACE_HEADLESS=1: the idle wait deliberately does not render, so the "
               "window will not refresh between requests.", flush=True)
+    # Every tick of every trial -> VLA_BRIDGE_TRACE_DIR/trial_NNN.npz + .json (trial_trace.py: cube/grip point/joints/gripper
+    # per tick and the blow-up verdict). Unset = no trace.
+    trace = TrialTrace(os.environ.get("VLA_BRIDGE_TRACE_DIR") or None)
     last_obs = scene.get_observation() if lockstep else None
     last_republish = time.time()
     tick_max_z = 0.0  # lockstep: max cube height over the ticks since the last published message
@@ -229,8 +237,9 @@ def main():
                 # right after a reset, still gets a starting observation.
                 rclpy.spin_once(bridge, timeout_sec=0.005)
                 if bridge.reset_requested:
+                    trace.save()   # the trial that just ended
                     if base_seed is not None:
-                        scene._rng = np.random.default_rng(base_seed + bridge.reset_count + 1)
+                        scene._rng = np.random.default_rng(base_seed + (bridge.reset_count + 1) // seed_repeat)
                     obs = scene.reset()
                     bridge.reset_requested = False
                     bridge.reset_count += 1
@@ -240,6 +249,7 @@ def main():
                     bridge.latest_gripper_target = 0.0
                     last_obs = obs if isinstance(obs, dict) else scene.get_observation()
                     tick_max_z = float(scene.get_cube_position()[2])
+                    trace.start(bridge.reset_count, cube=scene.get_cube_position())
                     # cube messages BEFORE the observation: the client treats the observation (joint_state) as
                     # the "tick done" signal and reads the cube values right after it
                     bridge.publish_cube_position(scene)
@@ -262,7 +272,10 @@ def main():
                         gripper_target = bridge.latest_gripper_target
                     scene.gripper.set_target(gripper_target)
                     scene.world.step(render=True)  # exactly one tick
-                    tick_max_z = max(tick_max_z, float(scene.get_cube_position()[2]))
+                    cube_now = scene.get_cube_position()
+                    tick_max_z = max(tick_max_z, float(cube_now[2]))
+                    prop = scene.get_proprioception()
+                    trace.add(request_id, cube_now, scene.grip_point_world(), prop["joints"], prop["gripper"][0])
                     if request_id % 100 == 0:
                         print(f"lockstep: request {request_id} executed, world step index "
                               f"{scene.world.current_time_step_index}", flush=True)
@@ -277,6 +290,7 @@ def main():
                         last_obs = None  # nothing complete to re-publish while idle until the next image tick
                     last_republish = time.time()
                 elif last_obs is not None and time.time() - last_republish > 0.5:
+                    trace.flush_if_dirty()   # the last trial of a run gets no reset after it
                     bridge.publish_cube_position(scene)
                     bridge.publish_cube_max_z(tick_max_z)   # repeat only: the window is not cleared here
                     bridge.publish_observation(last_obs, ack_id=bridge.gate.last_executed_id)
@@ -328,6 +342,7 @@ def main():
         print("pick_place_scene_bridge.py: unhandled exception, shutting down:\n"
               + traceback.format_exc(), flush=True)
     finally:
+        trace.save()
         if lockstep:
             print(f"lockstep: shutting down after {bridge.gate.last_executed_id} requests, world step index "
                   f"{scene.world.current_time_step_index}", flush=True)

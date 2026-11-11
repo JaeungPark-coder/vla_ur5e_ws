@@ -140,6 +140,9 @@ class VLAPolicyClient(Node):
         # time (AbsoluteActions), so open-loop execution of the first K is valid.
         # Forced to 1 when use_residual_policy is on (its observation is per-action).
         self.declare_parameter('execute_horizon', 1)
+        # eval_mode: "10,25,50" = trial k runs with the (k mod 3)-th value instead of execute_horizon. Pair it with the
+        # bridge's VLA_BRIDGE_SEED_REPEAT=3 so those three trials face the same cube spawn. '' = fixed execute_horizon.
+        self.declare_parameter('execute_horizon_schedule', '')
         # 2026-10-05: isaac_sim backend only. true = one action <-> exactly one sim
         # tick (the bridge must be started with --lockstep), so inference latency no
         # longer changes how much sim time an action covers. false = the original
@@ -198,6 +201,10 @@ class VLAPolicyClient(Node):
         self.control_period_s = 1.0 / self.get_parameter('control_hz').value
         self.max_steps = self.get_parameter('max_steps').value
         self.execute_horizon = max(1, int(self.get_parameter('execute_horizon').value))
+        self._horizon_schedule = [max(1, int(v)) for v in
+                                  str(self.get_parameter('execute_horizon_schedule').value).split(',') if v.strip()]
+        if self._horizon_schedule:
+            self.execute_horizon = self._horizon_schedule[0]
         self.lockstep = bool(self.get_parameter('lockstep').value)
         self.velocity_feedforward = bool(self.get_parameter('velocity_feedforward').value)
         self.action_dt_s = float(self.get_parameter('action_dt_s').value)
@@ -293,7 +300,7 @@ class VLAPolicyClient(Node):
                 Float32MultiArray, '/vla/eval/cube_max_z', self._on_cube_max_z, 10,
                 callback_group=self._cb_group)
             with open(self.results_csv_path, 'w', newline='') as f:
-                csv.writer(f).writerow(['trial', 'success', 'steps', 'xy_error_mm', 'max_cube_z_sampled', 'max_cube_z_per_tick', 'blowup'])
+                csv.writer(f).writerow(['trial', 'success', 'steps', 'xy_error_mm', 'max_cube_z_sampled', 'max_cube_z_per_tick', 'blowup', 'execute_horizon'])
             self.get_logger().info(
                 f'eval_mode=true: running {self.n_trials} trials, logging to {self.results_csv_path}')
 
@@ -494,7 +501,7 @@ class VLAPolicyClient(Node):
         blowup = self._trial_max_cube_z > CONTACT_BLOWUP_CUBE_Z_M
         with open(self.results_csv_path, 'a', newline='') as f:
             csv.writer(f).writerow([self._trial_idx, success, self._step_count, xy_error_mm,
-                                    round(sampled_max_z, 4), round(per_tick_max_z, 4), int(blowup)])
+                                    round(sampled_max_z, 4), round(per_tick_max_z, 4), int(blowup), self.execute_horizon])
         if self._trial_max_cube_z > CONTACT_BLOWUP_CUBE_Z_M:
             self.get_logger().warn(
                 f'trial {self._trial_idx}: the cube reached z={self._trial_max_cube_z:.2f} m (a normal episode '
@@ -517,6 +524,8 @@ class VLAPolicyClient(Node):
             # only accept one from a later epoch.
             self._min_epoch = max(self.robot.acked_epoch(), self._base_epoch, self._wrist_epoch) + 1
         self._eval_reset_pub.publish(Empty())
+        if self._horizon_schedule:
+            self.execute_horizon = self._horizon_schedule[self._trial_idx % len(self._horizon_schedule)]
         self._step_count = 0
         self._trial_max_cube_z = 0.0
         self._max_height.start_trial(self._min_epoch)  # 0 unless lockstep (then: ignore pre-reset messages)

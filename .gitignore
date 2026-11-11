@@ -19,3 +19,4 @@ rl_logs/
 
 # Editor
 .vscode/
+eval_runs/
