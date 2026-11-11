@@ -2371,6 +2371,50 @@ residual RL for placement as a later, 1-2 week project. Decide after the range r
 
 **Git:** pushed through `f8791d0` (origin/master). This README section is a later commit.
 
+### TOMORROW (written 2026-11-11 evening): where things stand and what to do, in order
+
+**State when work was stopped**
+* The wider-box policy evaluation was STOPPED by hand after 2 of 20 trials of step 1 (both placed). Those partial files (`eval_runs/range_step1/`)
+  are incomplete and are overwritten by the next run of `eval_checkpoint.sh` (it deletes `results.csv` and `trace/` of its output dir). Step 2 never started.
+* No Isaac Sim, bridge, client or policy server is running; both GPUs are free (checked). Checkpoints `short_3k/{1000,2000,2999}` (27 GB) and `smoke_test` (8.7 GB) are on
+  `/media/.../apps/openpi/checkpoints/pi0_ur5e_pick_place/`; the big disk has 307 GB free, root `/` 56 GB (75% used). **Checkpoint 2999 is the reference for every comparison: do not delete it.**
+* Git: `master` at `301880a` (README day summary) is NOT pushed (origin/master = `f8791d0`); `scripts/summarize_range.py` is new and not committed.
+* Everything measured today is in the sections above this one, the one-page version is the "2026-11-11 DAY SUMMARY". Raw results: `eval_results/`.
+
+**Do in this order**
+1. *Pre-checks (5 min):* `nvidia-smi` (both GPUs empty), `git status`, `df -h / /media/icrs/0549ec1c-684e-41a5-beca-53599cda1267`, `ls eval_runs` (kept: expert/, k3_2999/, curve_*/ -- needed
+   for comparisons), and `ps -eo pid,cmd | grep -E "bridge|vla_policy_client|serve_policy"` (nothing should match).
+2. *Wider-box policy evaluation, 2 x ~25 min, one terminal each is fine but sequential is simpler:*
+   ```
+   cd /home/icrs/projects/jaeung/vla_ur5e_ws
+   C=checkpoints/pi0_ur5e_pick_place/short_3k
+   VLA_BRIDGE_CUBE_Y_RANGE=-0.13,0.13 scripts/eval_checkpoint.sh $C/2999 eval_runs/range_step1 20 8000 50
+   VLA_BRIDGE_CUBE_X_RANGE=0.38,0.48 VLA_BRIDGE_CUBE_Y_RANGE=-0.16,0.16 scripts/eval_checkpoint.sh $C/2999 eval_runs/range_step2 20 8000 50
+   scripts/summarize_range.py eval_runs/range_step1/results.csv eval_runs/range_step1/trace eval_results/expert_baseline_step1.jsonl
+   scripts/summarize_range.py eval_runs/range_step2/results.csv eval_runs/range_step2/trace eval_results/expert_baseline_step2.jsonl
+   ```
+   (`eval_checkpoint.sh` starts the server on GPU 1, warms it up, starts the bridge on GPU 0, runs the client, waits, kills everything; run it from a shell where you can
+   leave it for ~25 min; check `eval_runs/<name>/results.csv` for progress. It cannot be run from inside a tool call that times out at 2 minutes: run it in the background.)
+   The summary reports all seeds / seeds where the expert succeeded / seeds where it failed, blow-ups, placed error, wrist_3 30-tick maximum and the unwinding count.
+   For reference the same numbers for the training box (2999, K=50, same seeds): `scripts/summarize_range.py eval_results/short_3k_2999_k10-25-50_seed8000.csv eval_runs/k3_2999/trace eval_results/expert_baseline_base.jsonl 8000 50`
+   (wrist_3 30-tick maximum over a WHOLE episode is 1.05-1.2 rad because the demonstrated half-turn is included; the unwinding count is the number to watch: demonstrations 8.6% > 0.5 rad, 2999 in the training box 2/20).
+3. *Read the result before choosing anything:*
+   * 2999 stays near its training-box result (placed rate within the expert's, unwinding >0.5 rad in a few trials, no blow-ups) -> range is not the limit; precision (median 11 mm) is. Then the
+     candidates for ONE reinforcement are about placement (see below), and wider-range data is lower priority.
+   * placed rate drops clearly below the expert's, or unwinding / blow-ups rise -> wider-range data is candidate 1 (collect with the expert in the box the expert handles: 19/20 on Y +-0.13, 17/20 on X 0.38-0.48 x Y +-0.16, 18/20 in the training box).
+   * Report policy results on all seeds AND on the expert-success seeds; n=20 per box does not separate boxes, so quote intervals.
+4. *Step 4 candidates (pick ONE, same 3k recipe, same seeds), in the order proposed after the literature relay:* (1) wider-range data (needs a new dataset version v3 and `compute_norm_stats` again, a collection run of the expert at ~42 s per episode,
+   then a 3k run ~4 h); (2) the same 3k run with `ema_decay` on (config `pi0_ur5e_pick_place` has `ema_decay=None`; this separates "un-annealed weights" from "steps" for the 1000/2000 blow-ups);
+   (3) the baseline recipe trained a SECOND time with another seed (~4 h): without it no reinforcement result can be told from training noise. Residual RL for placement is the larger, later project (1-2 weeks). The 10k run stays on hold until one of these shows an effect.
+5. *Open questions that decide how much to trust the numbers:* does a per-tick limit on the position targets (applied to ALL compared runs, marked) change 1000/2000? why does the policy unwind wrist_3 (phase confusion? un-annealed weights?)? how does placement error (11 mm) arise (the demonstrations are 3-5 mm)?
+
+**Housekeeping, only when you decide:** push `301880a` (+ the next commits); `smoke_test` checkpoint (8.7 GB) is no longer needed as a fallback (3k was served and evaluated), the old 14 GB Arrow cache
+`<bigdisk>/hf_cache/datasets/parquet/default-4907ebec...` is a deletion candidate (look before deleting); the claude.ai artifact page for this project still has known errors (p = 0.474, spawn Y +-0.10, stale "next" items) and was not edited.
+
+**Pitfalls met today (so they are not met again):** scripts run under `env -i`: a variable that is not passed through explicitly does not arrive (`VLA_BRIDGE_*` are passed in `run_lockstep_bridge.sh`); `pkill -f <pattern>` kills your own shell
+(use `kill $(pgrep -f X | grep -vx "$$")`); the Kit bridge sometimes ignores TERM (use `kill -9`); a stray client from an earlier run keeps spinning after its timer is cancelled (check `ps` before a new run);
+the first request to a fresh server takes ~22 s (warm it up, `eval_checkpoint.sh` does); `--port` goes BEFORE `policy:checkpoint`; replay of contact events is not repeatable run to run (1 of 4 reproduced), use the recorded joints for conclusions.
+
 ### 2026-10-05 DAY SUMMARY -- what went wrong, how it was found and fixed, what was NOT done, and what to do tomorrow
 
 **State in one paragraph.** The dataset (`Jaeung12/ur5e_pick_place_v2`, 152 episodes) loads and trains through openpi;
