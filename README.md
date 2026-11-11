@@ -2169,6 +2169,23 @@ What the 58/60 does NOT say:
 * Several successes lift the cube only to 0.11-0.12 m (the expert: 0.165 m) -- the policy lifts less than the demonstrations.
 * 3k steps, LoRA, one checkpoint; the 1000/2000 checkpoints were not run closed-loop.
 
+Re-scored afterwards with stricter placement tolerances (cube xy error at the scoring instant, from the per-tick traces; it
+equals the client's `xy_error_mm` to 0.0 mm). A post-hoc re-scoring, not a re-run: a policy judged at 10 mm might have
+behaved differently (the release is the scoring event), and the 2 failures stay failures.
+
+| tolerance | placed /60 | rate | 95% Wilson | K=10 / 25 / 50 (of 20) |
+|---|---|---|---|---|
+| 30 mm (the client's) | 58 | 0.97 | [0.89, 0.99] | 19 / 19 / 20 |
+| 20 mm | 53 | 0.88 | [0.78, 0.94] | 16 / 17 / 20 |
+| 15 mm | 40 | 0.67 | [0.54, 0.77] | 11 / 15 / 14 |
+| 10 mm | 21 | 0.35 | [0.24, 0.48] | 8 / 7 / 6 |
+| 5 mm | 5 | 0.08 | [0.04, 0.18] | 2 / 1 / 2 |
+
+Placement PRECISION is the weak axis: the expert demonstrations were kept only at 3-5 mm, the policy lands at a median of 11 mm.
+The K differences (e.g. 19/19/20 at 30 mm) are not distinguishable at n=20 (Fisher p=1.0): all three settings behave alike.
+Quote the rate together with its tolerance ("97% at 30 mm", "35% at 10 mm"). The noise study (blow-ups at injected 0.005-0.01 rad)
+did not predict the real policy's behaviour (0 blow-ups in 60) and should not be used to judge blow-up risk.
+
 Consequence for the plan: step 3 (diagnose blow-ups) has nothing to diagnose; the 60-trial setup cannot separate
 reinforcements that change the rate from 97% by a few points. Before choosing a step-4 reinforcement the evaluation has to get harder
 (tolerance 10 mm, wider spawn, unseen distractors/prompts) or the run longer; otherwise a 3k-vs-3k comparison is noise.
