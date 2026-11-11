@@ -2229,7 +2229,7 @@ PhysX contact reporting on the cube (`PhysxContactReportAPI`), same cube spawn f
 Controls: 3 trials of 2999 on the same cube spawns (seeds 8000/8003/8004), replayed through tick 900.
 
 What was measured:
-* **Reproduction is partial.** Run 1 (13 blow-up trials): 10 reproduced the jump at the original tick (11 within +-3 ticks, one 23 ticks
+* **Reproduction is partial.** Run 1 (13 blow-up trials): 10 reproduced the jump at the original tick (9 within +-3 ticks, one 23 ticks
   early), 3 did not (2000#9, 2000#15, 1000#7: max one-tick jump 10-12 mm). Run 2 (a short re-run of 4 of them to read the hand pose):
   only 2000#10 reproduced again, 2000#16 and 1000#11 did not -- contact outcomes are not repeatable between runs. So the replay
   says what TYPE of event it is; it cannot say it happens every time.
@@ -2241,7 +2241,7 @@ What was measured:
   normal approach/descent/lift the tilt stays 0-14 degrees (checked on 4 snapshot ticks per trial in the controls and in the pre-jump
   ticks of the blow-up trials; the tilt formula was validated: ~0 pointing down, ~90 at the home pose). 2000#10: at tick 520 the
   fingertips are 3 cm above the table beside the cube with tilt 0.9 degrees; at tick 556 the tilt is 125 degrees.
-* **Cause, from the traces of all 10 blow-up trials that tripped before 700 ticks (no replay needed):** in the 90 ticks before the
+* **Cause, from the traces of the 10 blow-up trials that reproduced (the joint numbers come from the traces, not from the replay):** in the 90 ticks before the
   trip the arm is almost stationary (shoulder/elbow change < 0.03 rad) while **wrist_3 turns by a median of 1.7 rad (max 10 rad) within
   30 ticks** and wrist_2 by up to 0.8 rad. In 20 of the 2999 K=50 trials (ticks 300-750) wrist_3 never changes by more than 0.41 rad in
   30 ticks (p90 0.21), and wrist_3 > 1 rad happened in 8 of 10 blow-up trials and 0 of 20 of 2999's.
