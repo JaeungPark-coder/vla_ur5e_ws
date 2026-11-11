@@ -2190,6 +2190,38 @@ Consequence for the plan: step 3 (diagnose blow-ups) has nothing to diagnose; th
 reinforcements that change the rate from 97% by a few points. Before choosing a step-4 reinforcement the evaluation has to get harder
 (tolerance 10 mm, wider spawn, unseen distractors/prompts) or the run longer; otherwise a 3k-vs-3k comparison is noise.
 
+#### 2026-11-11 (evening): learning curve -- the 1000 and 2000 checkpoints, closed loop (K=50, the same 20 seeds as 2999's K=50 trials)
+
+`scripts/eval_checkpoint.sh` (server -> warm-up -> bridge -> client -> shut down) ran `short_3k/1000` and `short_3k/2000` with
+`VLA_BRIDGE_SEED=8000`, 20 trials, K=50; the 2999 reference is its K=50 trials from the 60-trial run above (same seed per trial
+number). The server logs confirm which checkpoint was loaded. `scripts/compare_checkpoints.py` does the paired comparison.
+Files: `eval_results/short_3k_{1000,2000}_k50_seed8000*.{csv,json}`.
+
+| checkpoint | placed (30 mm) /20 | 95% Wilson | blow-ups | Fisher p vs 2999 |
+|---|---|---|---|---|
+| 1000 | 11 | [0.34, 0.74] | 3 | 0.001 |
+| 2000 | 8 | [0.22, 0.61] | 10 | 0.00005 |
+| 2999 | 20 | [0.84, 1.00] | 0 | -- |
+
+Not a smooth curve: 2000 is worse than 1000 on blow-ups (10 vs 3) and placed fewer, and 2999 is far better than both.
+* **The offline probe did not predict this.** The probe table above (err_row24 0.0147 / 0.0118 / 0.0082, err_rms 0.0122 / 0.0067 / 0.0069)
+  has 2000 close to 2999; closed loop 2000 blows up in half of its trials. Open-loop error against training episodes must not be
+  used to pick or rank checkpoints; only closed-loop trials can.
+* **Confound: step count vs learning-rate phase.** 1000 and 2000 are mid-schedule weights (cosine decay to step 3000, no EMA);
+  2999 is the annealed end. The curve cannot say whether more STEPS help; it also fits "the annealed end of a schedule is what
+  works". A 10k run decayed to its own end is the comparable object (README step 5: `--lr-schedule.decay-steps` = steps).
+* Precision among placed trials (paired on seeds where both placed): 2000's placed trials have median 10.2 mm / p90 14.8 mm (n=8),
+  1000's 22.7 mm / 25.7 mm (n=11), 2999's 11.2 mm (n=60). So precision is not clearly better at 2999 -- the 2999 advantage is
+  in not failing, not in placing closer. This does not support "3k steps was too few for precision" as the cause of the 11 mm.
+* **Blow-ups (13 trials, from the per-tick traces; this is step 3's material).** In all 13 the first tripped tick has the gripper
+  OPEN (0.00), the cube resting on the table (z 0.020) the tick before, and a one-tick cube move of 21-1748 mm (2000: 27-107 mm,
+  then flung to 0.65-2.6 m in 8 trials). The grip point (fingertip centre) was 5-25 cm from the cube centre, at 0.03-0.27 m height,
+  at ticks 400-700 (the approach/descent). So the cube is not squeezed by closing fingers; something hits it while the open hand
+  approaches. HYPOTHESIS, not shown: a part of the arm/hand other than the fingertip centre (a mis-placed descent) strikes the cube.
+  The contact pair and penetration depth are not recorded; the traces hold the measured joints per tick, so a replay of a blow-up
+  trial's joints through the simulator with contact reporting on would show it (policy sampling makes re-running the policy useless).
+* Non-blow-up failures: 6 of 1000's trials never touched the cube (z stays 0.02) and ended at max_steps.
+
 ### 2026-10-05 DAY SUMMARY -- what went wrong, how it was found and fixed, what was NOT done, and what to do tomorrow
 
 **State in one paragraph.** The dataset (`Jaeung12/ur5e_pick_place_v2`, 152 episodes) loads and trains through openpi;
