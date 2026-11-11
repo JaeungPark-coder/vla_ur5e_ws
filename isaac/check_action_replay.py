@@ -103,11 +103,14 @@ def record_expert(scene, seed):
     settle2_end = policy.settle2_end_tick()
 
     states, actions, cmds, cvels = [], [], [], []
+    base_px, wrist_px = [], []   # red-cube pixels visible per tick in the base / wrist camera
     max_cube_z = -np.inf
 
     def log_tick(target_pos, target_rotvec, target_gripper, use_diffik):
         nonlocal max_cube_z
         o = scene.get_observation()
+        base_px.append(scene.cube_pixels_visible(o["base_rgb"]))
+        wrist_px.append(scene.cube_pixels_visible(o["wrist_rgb"]))
         if use_diffik:
             scene.step_towards_diffik(target_pos, target_rotvec, target_gripper)
         else:
@@ -133,6 +136,7 @@ def record_expert(scene, seed):
     place_error = scene.place_error_m()
     lifted = scene.grasp_succeeded(max_cube_z)
     record_expert.last_max_cube_z = float(max_cube_z)
+    record_expert.last_pixels = (np.asarray(base_px), np.asarray(wrist_px))
     record_expert.last_velocities = np.stack(cvels)  # side channel: keeps the return signature
     return (np.stack(states), np.stack(actions), np.stack(cmds), lifted,
             lifted and place_error <= PLACE_TOLERANCE_M, place_error)

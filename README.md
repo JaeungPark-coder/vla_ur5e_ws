@@ -2276,6 +2276,32 @@ option but was not built or tested.
   delta parametrisation lets a small mis-estimate accumulate. A guard that limits the per-tick change of the position targets would stop
   the blow-ups of 1000/2000 and thereby hide this weakness; if it is ever added it has to be applied to every compared run and marked.
 
+#### 2026-11-11 (late): expert baselines on three spawn boxes, same seeds 8000-8019 (before any wider-box policy evaluation)
+
+`isaac/expert_baseline.py` (scripted expert, one JSON line per seed; files `eval_results/expert_baseline_{base,step1,step2}.jsonl`). Boxes:
+base = X 0.42-0.48, Y +-0.10 (the training box); step1 = Y +-0.13 (1.3x); step2 = X 0.38-0.48, Y +-0.16 (2.7x; kept clear of
+X >= 0.49 and |Y| >= 0.17 where `pick_place_scene.py`'s comment records RMPflow tracking spikes).
+
+| box | placed (30 mm) /20 | 95% Wilson | lifted | blow-ups (cube z > 0.25) | failures |
+|---|---|---|---|---|---|
+| base | 18 | [0.70, 0.97] | 20 | 1 (seed 8014) | 8002: placed 32.2 mm (2 mm over); 8014: blow-up |
+| step1 | 19 | [0.76, 0.99] | 20 | 0 | 8008: 41.2 mm |
+| step2 | 17 | [0.64, 0.95] | 19 | 2 (8008, 8018) | 8016 never lifted; the two blow-ups |
+
+* **The expert itself is only ~85-95% on these seeds, in the training box too** (18/20). The three boxes are not distinguishable at n=20.
+  Training data kept only the expert's successes, so the policy's 58/60 on the same seeds in the training box is not "better than the
+  expert": on 8002 and 8014 (where the expert failed) the policy placed 7-16 mm in 5 of 6 trials.
+* Policy results on a wider box must be reported twice: on all seeds, and on the seeds where the expert succeeded.
+* wrist_3 as done by the expert (episodes without a blow-up; blow-up episodes' joints diverge, their numbers are meaningless):
+  max change in 30 ticks 1.05-1.06 rad, unwinding median 0.13 rad, >0.5 rad in 2/17 (base), 2/18 (step1), 3/17 (step2); the 152
+  demonstrations: >0.5 rad in 13/152 (8.6%). The 2999 policy's 2/20 is the same order; 1000/2000 (6/20, 11/20) are not.
+* **Camera visibility did not give a usable answer.** `isaac/check_spawn_visibility.py` (200 cube positions over X 0.34-0.54,
+  Y +-0.22, arm at the home pose, `cube_pixels_visible`): the wrist camera sees 0 cube pixels in all 200 (it looks elsewhere at the
+  home pose; during expert episodes it sees nothing in ~72% of ticks 150-450 in EVERY box); the base camera sees 0 pixels at some
+  positions inside the training box too (around Y ~ 0, the arm hides the cube at the home pose) and a median of 139 / 181 / 229 / 296
+  pixels in the base / step1 / step2 / outside regions. So the check neither flags the wider boxes nor clears them; the expert
+  results above are the better guide.
+
 ### 2026-10-05 DAY SUMMARY -- what went wrong, how it was found and fixed, what was NOT done, and what to do tomorrow
 
 **State in one paragraph.** The dataset (`Jaeung12/ur5e_pick_place_v2`, 152 episodes) loads and trains through openpi;

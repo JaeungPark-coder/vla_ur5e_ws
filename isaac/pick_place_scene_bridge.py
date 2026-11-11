@@ -200,6 +200,14 @@ def main():
     if base_seed is not None:
         scene._rng = np.random.default_rng(base_seed)
         print(f"VLA_BRIDGE_SEED={base_seed}: trial k spawns the cube with default_rng({base_seed}+k//{seed_repeat})", flush=True)
+    # VLA_BRIDGE_CUBE_X_RANGE="0.42,0.48" / VLA_BRIDGE_CUBE_Y_RANGE="-0.1,0.1": spawn box of the cube for this run (the scene's
+    # default is the box the demonstrations were collected in). Evaluation of a wider box: README 2026-11-11.
+    import pick_place_scene as _pps
+    for _name, _attr in (("VLA_BRIDGE_CUBE_X_RANGE", "CUBE_X_RANGE"), ("VLA_BRIDGE_CUBE_Y_RANGE", "CUBE_Y_RANGE")):
+        _v = os.environ.get(_name)
+        if _v:
+            setattr(_pps, _attr, tuple(float(t) for t in _v.split(",")))
+            print(f"{_name}: {_attr} = {getattr(_pps, _attr)}", flush=True)
     scene.reset()
     if base_seed is not None:
         print(f"seeded reset 0: cube at {np.round(scene.cube_position, 4).tolist()}", flush=True)
