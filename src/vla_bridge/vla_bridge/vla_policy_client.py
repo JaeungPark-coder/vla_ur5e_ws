@@ -293,7 +293,7 @@ class VLAPolicyClient(Node):
                 Float32MultiArray, '/vla/eval/cube_max_z', self._on_cube_max_z, 10,
                 callback_group=self._cb_group)
             with open(self.results_csv_path, 'w', newline='') as f:
-                csv.writer(f).writerow(['trial', 'success', 'steps', 'xy_error_mm'])
+                csv.writer(f).writerow(['trial', 'success', 'steps', 'xy_error_mm', 'max_cube_z_sampled', 'max_cube_z_per_tick', 'blowup'])
             self.get_logger().info(
                 f'eval_mode=true: running {self.n_trials} trials, logging to {self.results_csv_path}')
 
@@ -486,9 +486,15 @@ class VLAPolicyClient(Node):
         n_trials done) or requests a scene reset and starts the next trial."""
         self._trial_idx += 1
         self._trial_successes += int(success)
+        # _trial_max_cube_z is what the client itself sampled (once per executed block); _max_height is the bridge's
+        # maximum over every tick (lockstep only, 0 otherwise). Both are logged so the benefit of the per-tick one is visible.
+        sampled_max_z = self._trial_max_cube_z
+        per_tick_max_z = self._max_height.value
+        self._trial_max_cube_z = max(sampled_max_z, per_tick_max_z)
+        blowup = self._trial_max_cube_z > CONTACT_BLOWUP_CUBE_Z_M
         with open(self.results_csv_path, 'a', newline='') as f:
-            csv.writer(f).writerow([self._trial_idx, success, self._step_count, xy_error_mm])
-        self._trial_max_cube_z = max(self._trial_max_cube_z, self._max_height.value)
+            csv.writer(f).writerow([self._trial_idx, success, self._step_count, xy_error_mm,
+                                    round(sampled_max_z, 4), round(per_tick_max_z, 4), int(blowup)])
         if self._trial_max_cube_z > CONTACT_BLOWUP_CUBE_Z_M:
             self.get_logger().warn(
                 f'trial {self._trial_idx}: the cube reached z={self._trial_max_cube_z:.2f} m (a normal episode '
@@ -496,7 +502,8 @@ class VLAPolicyClient(Node):
                 f'excluding or re-running it (collect_demos.py drops such episodes at > {CONTACT_BLOWUP_CUBE_Z_M} m).')
         self.get_logger().info(
             f'trial {self._trial_idx}/{self.n_trials}: '
-            f'{"SUCCESS" if success else "FAILURE"} (steps={self._step_count}, xy_error_mm={xy_error_mm:.1f})')
+            f'{"SUCCESS" if success else "FAILURE"} (steps={self._step_count}, xy_error_mm={xy_error_mm:.1f}, '
+            f'max_cube_z sampled={sampled_max_z:.3f} per_tick={per_tick_max_z:.3f})')
 
         if self._trial_idx >= self.n_trials:
             self.get_logger().info(

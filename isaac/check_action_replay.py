@@ -132,6 +132,7 @@ def record_expert(scene, seed):
 
     place_error = scene.place_error_m()
     lifted = scene.grasp_succeeded(max_cube_z)
+    record_expert.last_max_cube_z = float(max_cube_z)
     record_expert.last_velocities = np.stack(cvels)  # side channel: keeps the return signature
     return (np.stack(states), np.stack(actions), np.stack(cmds), lifted,
             lifted and place_error <= PLACE_TOLERANCE_M, place_error)

@@ -9,7 +9,9 @@ source "$(dirname "$0")/lib_isaac_env.sh"
 cd "$REPO" || exit 1
 if [ "${FAKE_POLICY:-0}" = 1 ]; then
   CLIENT_PKG="$REPO/test/fakes"
-  EXTRA=(FAKE_POLICY_EPISODE="${FAKE_POLICY_EPISODE:-0}" FAKE_POLICY_LOG="${FAKE_POLICY_LOG:-/tmp/fake_policy.jsonl}")
+  # `env -i` below drops everything not listed here -- pass the fake policy's settings through explicitly
+  EXTRA=(FAKE_POLICY_EPISODE="${FAKE_POLICY_EPISODE:-0}" FAKE_POLICY_LOG="${FAKE_POLICY_LOG:-/tmp/fake_policy.jsonl}"
+         FAKE_POLICY_NPZ="${FAKE_POLICY_NPZ:-}" FAKE_POLICY_PLAN="${FAKE_POLICY_PLAN:-lift}" FAKE_POLICY_HOLD_CALLS="${FAKE_POLICY_HOLD_CALLS:-0}")
 else
   CLIENT_PKG="$OPENPI/packages/openpi-client/src"
   EXTRA=()

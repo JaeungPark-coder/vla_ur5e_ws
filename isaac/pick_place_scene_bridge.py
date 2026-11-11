@@ -186,7 +186,18 @@ def main():
             "zero_follower_joint_drives found no follower/passive gripper joints to zero -- "
             "check resolve_gripper_follower_joint_names, the grasp fix depends on this.")
 
+    # Reproducible, PAIRED evaluation: with VLA_BRIDGE_SEED=S the cube spawn of eval trial k (k = 0, 1, ...) is the one
+    # numpy.random.default_rng(S + k) draws, in every run that uses the same S -- so two runs that differ only in the policy
+    # settings (e.g. execute_horizon) face identical scenes. Lockstep mode only (that is where eval resets are handled
+    # with an epoch); unset = random spawns as before.
+    base_seed = os.environ.get("VLA_BRIDGE_SEED")
+    base_seed = None if base_seed in (None, "") else int(base_seed)
+    if base_seed is not None:
+        scene._rng = np.random.default_rng(base_seed)
+        print(f"VLA_BRIDGE_SEED={base_seed}: trial k spawns the cube with default_rng({base_seed}+k)", flush=True)
     scene.reset()
+    if base_seed is not None:
+        print(f"seeded reset 0: cube at {np.round(scene.cube_position, 4).tolist()}", flush=True)
 
     rclpy.init()
     lockstep = _lockstep_requested()
@@ -218,9 +229,13 @@ def main():
                 # right after a reset, still gets a starting observation.
                 rclpy.spin_once(bridge, timeout_sec=0.005)
                 if bridge.reset_requested:
+                    if base_seed is not None:
+                        scene._rng = np.random.default_rng(base_seed + bridge.reset_count + 1)
                     obs = scene.reset()
                     bridge.reset_requested = False
                     bridge.reset_count += 1
+                    if base_seed is not None:
+                        print(f"seeded reset {bridge.reset_count}: cube at {np.round(scene.cube_position, 4).tolist()}", flush=True)
                     bridge.gate.reset()
                     bridge.latest_gripper_target = 0.0
                     last_obs = obs if isinstance(obs, dict) else scene.get_observation()

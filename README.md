@@ -2098,6 +2098,42 @@ closed loop", not "will fail". The closed-loop simulator evaluation of checkpoin
 Operational: the final checkpoint is `2999` (openpi saves at `num_train_steps-1`); `--port` goes before `policy:checkpoint`;
 a probe takes ~2.5 min per checkpoint once the JAX compile is cached.
 
+#### 2026-11-11: step-0/1 checks before the closed-loop evaluation (cube height, seeded paired trials)
+
+**Step 0** (GPUs idle, repo at `a1812b9`, root 56 GB / bigdisk 307 GB free, checkpoint `short_3k/2999` present) passed.
+
+**Step 1 -- the per-tick cube height and the epoch filter work** (real ROS 2 client node + lockstep bridge + fake policy,
+4 trials in the order lift / hold / lift / hold; `hold` = the arm never moves):
+
+| trial | plan | result | per-tick max cube z | expert ground truth |
+|---|---|---|---|---|
+| 1 (seed 7000) | lift | SUCCESS, 5.3 mm | 0.167 m | 0.162 m |
+| 2 | hold | FAILURE | 0.020 m | - |
+| 3 (seed 7002) | lift | SUCCESS, 5.4 mm | 0.165 m | 0.164 m |
+| 4 | hold | FAILURE | 0.020 m | - |
+
+Lifted -> well above 0.08 m; not lifted -> stays at 0.02 m; a hold trial right after a lift trial reads 0.02 m, so the previous
+trial's maximum does not leak across the reset. NOT verified: a transient blow-up inside one block (no trial threw the cube; the
+sampled and per-tick columns are equal here), so the claim "per-tick sees what block sampling misses" still rests on the logic and the
+unit tests, not on a live observation.
+
+New for the evaluation (all used above):
+- `VLA_BRIDGE_SEED=S` (bridge): eval trial k spawns the cube at `default_rng(S+k)`, so runs that differ only in a policy setting
+  (e.g. `execute_horizon`) face identical scenes -- the paired design of step 2. Verified: reset 0 and 2 put the cube exactly at the
+  positions seeds 7000/7002 draw. `scripts/run_lockstep_bridge.sh` passes it through.
+- the eval CSV gained `max_cube_z_sampled, max_cube_z_per_tick, blowup` (columns appended after the old four).
+- `isaac/record_expert_npz.py` records expert episodes at given seeds (ground truth for the check above);
+  `test/fakes` fake policy: `FAKE_POLICY_NPZ`, `FAKE_POLICY_PLAN=lift,hold,...`, `FAKE_POLICY_HOLD_CALLS`.
+
+**Two of my own bugs, found because the first runs "passed" while measuring nothing (4/4 FAILURE, max z 0.02 everywhere):**
+1. `scripts/*.sh` run under `env -i` (to keep the system ROS 2 out); that also drops every variable they are not told to pass, so
+   `VLA_BRIDGE_SEED` and the `FAKE_POLICY_*` settings never arrived (the bridge log had no seed line and the fake policy ran its
+   default mode). The scripts now pass them explicitly. Check the bridge log for the `VLA_BRIDGE_SEED=` line before trusting a seeded run.
+2. The fake policy located the arm in the recording by nearest state and took the FIRST of several identical frames; the expert
+   waits 90+ ticks while the gripper closes, so every following chunk was a standstill and it replayed one frame forever
+   (`test_fake_policy_match.py`).
+A run that fails everywhere with a perfectly flat measurement is a red flag for the harness, not a result.
+
 ### 2026-10-05 DAY SUMMARY -- what went wrong, how it was found and fixed, what was NOT done, and what to do tomorrow
 
 **State in one paragraph.** The dataset (`Jaeung12/ur5e_pick_place_v2`, 152 episodes) loads and trains through openpi;
