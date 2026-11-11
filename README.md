@@ -2134,6 +2134,45 @@ New for the evaluation (all used above):
    (`test_fake_policy_match.py`).
 A run that fails everywhere with a perfectly flat measurement is a red flag for the harness, not a result.
 
+#### 2026-11-11 (later): step 2 -- closed-loop evaluation of `short_3k/2999` (first trained-policy result)
+
+Setup: openpi server on checkpoint `short_3k/2999` (GPU 1, warmed up), Isaac Sim bridge in lockstep (GPU 0), `VLA_BRIDGE_SEED=8000`
+`VLA_BRIDGE_SEED_REPEAT=3`, client `execute_horizon_schedule:=10,25,50`, `n_trials:=60`. Seed k (cube spawn `default_rng(8000+k)`) is
+run under K=10, 25 and 50 one after the other (20 seeds x 3 = 60 trials, ~65 min), so an interrupted run still leaves complete
+pairs. A 3-trial pilot (seed 7000) ran first: it checked the schedule, the identical spawn for the three trials, and that the
+per-tick trace has as many ticks as the client has steps. Files: `eval_results/short_3k_2999_k10-25-50_seed8000.csv` (client CSV),
+`..._trace_summary.json` (per-trial verdict of `isaac/trial_trace.py`); the per-tick npz traces stay in the git-ignored `eval_runs/`.
+
+| execute_horizon | trials | placed | rate | 95% Wilson | blow-ups |
+|---|---|---|---|---|---|
+| 10 | 20 | 19 | 0.95 | [0.76, 0.99] | 0 |
+| 25 | 20 | 19 | 0.95 | [0.76, 0.99] | 0 |
+| 50 | 20 | 20 | 1.00 | [0.84, 1.00] | 0 |
+| all | 60 | 58 | 0.97 | | 0 |
+
+**Blow-ups: 0 of 60** by the criteria fixed before the run (cube z > 0.25 m, > 2 cm cube move in ONE tick, fell, far, NaN;
+the client's z > 0.25 flag agrees: it never fired). The largest one-tick cube move in any trial was 12.9 mm (a cube nudged
+while the fingers close, gripper 0.46), 1.5x below the threshold. With 0/60, the blow-up rate is at most ~5% (rule of three) --
+not "zero". The earlier worry (blow-ups at injected noise 0.005-0.01 rad) did not show up with the real policy's own errors.
+
+The two failures (different K, different seeds -- so no evidence that K matters; the pairs differ in 2 of 20 seeds):
+* trial 17 (seed+5, K=25): the cube was lifted, carried and put down, but 34 mm from the target (tolerance 30 mm); the client
+  scores a trial only at the moment of release, so the arm then hovered until max_steps (1800). A near miss, not a grasp failure.
+* trial 43 (seed+14, K=10): the cube (y -0.063, near the edge of the spawn range) was nudged 3 cm during the descent, the fingers
+  closed (gripper 0.71) and the cube never left the table (max z 0.023); the arm then wandered without it. A grasp miss.
+
+What the 58/60 does NOT say:
+* The success criterion is the client's: released within **30 mm** of the target after being held above 0.08 m. The expert
+  recordings used 3-5 mm. Median error 11 mm, maximum 27 mm among the successes. At 10 mm the rate would be much lower (not measured).
+* Everything is in-distribution: same cube size, same spawn box (X 0.42-0.48, Y +-0.10), same single prompt, same target. Seeds
+  8000+ are new spawns, but the policy was trained on that same box.
+* Several successes lift the cube only to 0.11-0.12 m (the expert: 0.165 m) -- the policy lifts less than the demonstrations.
+* 3k steps, LoRA, one checkpoint; the 1000/2000 checkpoints were not run closed-loop.
+
+Consequence for the plan: step 3 (diagnose blow-ups) has nothing to diagnose; the 60-trial setup cannot separate
+reinforcements that change the rate from 97% by a few points. Before choosing a step-4 reinforcement the evaluation has to get harder
+(tolerance 10 mm, wider spawn, unseen distractors/prompts) or the run longer; otherwise a 3k-vs-3k comparison is noise.
+
 ### 2026-10-05 DAY SUMMARY -- what went wrong, how it was found and fixed, what was NOT done, and what to do tomorrow
 
 **State in one paragraph.** The dataset (`Jaeung12/ur5e_pick_place_v2`, 152 episodes) loads and trains through openpi;
