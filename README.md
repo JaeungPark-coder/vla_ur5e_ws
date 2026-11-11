@@ -2272,8 +2272,9 @@ option but was not built or tested.
   joint values themselves diverge to 1e35 (the articulation blew up after the event). In the blow-up trials wrist_3 sits at ~3.15-3.19 at
   trip-90 and is 1.3-1.5 at the trip: the policy turns the wrist BACK from the demonstrated end value.
   So this is not "a novel kind of motion" (a half-turn at ~2 rad/s is in every demonstration) but the wrong direction at the wrong time,
-  at the cube. Candidate readings (none tested): the policy mistakes the phase of the task and replays the initial swing backwards; the
-  delta parametrisation lets a small mis-estimate accumulate. A guard that limits the per-tick change of the position targets would stop
+  at the cube. Candidate readings (none tested): the policy mistakes the phase of the task and replays the initial swing backwards; (NOT the
+  delta parametrisation accumulating: openpi's `DeltaActions` subtracts the state at inference time from all 50 rows, so rows are relative
+  to the chunk start and do not add up -- checked in `openpi/transforms.py` 2026-11-11). A guard that limits the per-tick change of the position targets would stop
   the blow-ups of 1000/2000 and thereby hide this weakness; if it is ever added it has to be applied to every compared run and marked.
 
 #### 2026-11-11 (late): expert baselines on three spawn boxes, same seeds 8000-8019 (before any wider-box policy evaluation)
@@ -2301,6 +2302,74 @@ X >= 0.49 and |Y| >= 0.17 where `pick_place_scene.py`'s comment records RMPflow 
   positions inside the training box too (around Y ~ 0, the arm hides the cube at the home pose) and a median of 139 / 181 / 229 / 296
   pixels in the base / step1 / step2 / outside regions. So the check neither flags the wider boxes nor clears them; the expert
   results above are the better guide.
+
+### 2026-11-11 DAY SUMMARY -- first closed-loop results of a trained policy, what they mean, what is still open
+
+Everything below is detailed in the dated sections just above; this is the one-page version. All numbers: `short_3k` LoRA run
+(3000 steps, `pi0_ur5e_pick_place`, `ema_decay=None`, cosine schedule), Isaac Sim lockstep bridge, success = released within 30 mm
+of the target after being held above 0.08 m, same cube seeds (8000+k) for every compared run.
+
+**Where the plan stands (the 6-step plan of the day):**
+
+| step | result |
+|---|---|
+| 0 pre-checks | passed (GPUs free, repo current, disk, checkpoint 2999 kept) |
+| 1 per-tick cube height + epoch filter with a fake policy | passed (lift 0.165 m vs hold 0.020 m, no leak across resets); first two runs measured nothing (env vars dropped by `env -i`; fake policy stuck on an expert standstill) |
+| 2 closed-loop evaluation of 2999 | **58/60 placed (97%) at 30 mm**, K=10/25/50 = 19/19/20 of 20 (not distinguishable), **0 blow-ups**; at 10 mm 35%, at 5 mm 8% |
+| learning curve (not in the plan, added) | 1000: 11/20, 3 blow-ups; 2000: 8/20, 10 blow-ups; 2999: 20/20 (K=50, same seeds) |
+| 3 blow-up diagnosis | 13 blow-ups = the policy turns wrist_3 back / spins it at the cube (median 1.7 rad per 30 ticks, max 10; 2999: max 0.41), the open fingers strike the cube; not a solver glitch at a normal grasp |
+| range evaluation (before step 4) | expert baselines done (18/20, 19/20, 17/20 on base / Y+-0.13 / X0.38-0.48 Y+-0.16); policy evaluation of the two wider boxes was RUNNING when this was written -- results are not in this README yet |
+| 4 one reinforcement, 5 stacked 10k run | NOT started (on hold until the range results, see "Next") |
+
+**What the numbers do and do not say**
+* 97% is "in the training distribution, at a 30 mm tolerance". It is a statement about following the demonstrated trajectory, not
+  about robustness: 1000/2000 show that leaving the trajectory is punished hard in this scene (wrist spin -> cube flung).
+* Placement precision is the weak axis (median 11 mm; the demonstrations were kept at 3-5 mm); more steps did not clearly help
+  (placed trials: 2000 median 10.2 mm, 2999 11.2 mm).
+* The scripted expert itself places only 17-19 of 20 on the same seeds (training box 18/20), so the expert's ceiling is ~90%.
+* 2999 unwinds wrist_3 by > 0.5 rad in 2/20 trials; the demonstrations do it in 13/152 (8.6%) -> same order. 1000/2000: 6/20, 11/20.
+* The 1000/2000 vs 2999 difference mixes step count with learning-rate phase (mid-schedule vs annealed end). Which one matters is open.
+
+**Corrections of earlier beliefs (all found today)**
+* The noise study (injected 0.005-0.01 rad -> blow-ups) did not predict the real policy: 0 blow-ups in 60. Do not use it to judge blow-up risk.
+* The offline probe (err_row24, err_rms against training episodes) ranked 2000 close to 2999; closed loop they differ completely.
+  Checkpoints are chosen by closed-loop trials only.
+* "A speed limit (3 rad/s) was on" is true and irrelevant: it clips the velocity feed-forward only; position targets are unlimited
+  (~20 rad/s measured). A future guard must limit the per-tick change of the POSITION targets, and be applied to every compared run.
+* Candidate cause "delta actions accumulate" is unlikely: `DeltaActions` subtracts the chunk-start state from all 50 rows.
+* My guess that the cube was hit by "something other than the fingers" (grip point 5-25 cm away) was wrong: it is the open fingers,
+  with the hand tilted/spinning (tilt 25-165 degrees at the hit).
+* My "1.8x" for the proposed wider box was wrong (X 0.38-0.52 x Y +-0.16 is 3.7x the area; the box actually used is X 0.38-0.48 x Y +-0.16, 2.7x).
+* The camera-pixel check (`check_spawn_visibility.py`) is not informative: wrist camera ~0 px at home pose and in 72% of ticks 150-450
+  in every box, base camera 0 px at some positions inside the training box too. Expert success rates are the better guide.
+
+**Tools added today** (all tested where pure Python; 188 tests pass): `isaac/trial_trace.py` (per-tick trace + blow-up criteria),
+`scripts/eval_checkpoint.sh` (one checkpoint, one evaluation, start to finish), `scripts/summarize_eval.py`, `scripts/compare_checkpoints.py`,
+`scripts/warmup_policy_server.py`, `isaac/replay_blowup_trial.py`, `isaac/expert_baseline.py`, `isaac/check_spawn_visibility.py`,
+`VLA_BRIDGE_SEED` / `_SEED_REPEAT` / `_TRACE_DIR` / `_CUBE_X_RANGE` / `_CUBE_Y_RANGE`, client parameter `execute_horizon_schedule`.
+Results: `eval_results/` (CSV/JSON); the large per-tick traces stay in the git-ignored `eval_runs/`.
+Re-run: `scripts/eval_checkpoint.sh checkpoints/pi0_ur5e_pick_place/short_3k/2999 eval_runs/<name> 20 8000 50`
+(add `VLA_BRIDGE_CUBE_X_RANGE=0.38,0.48 VLA_BRIDGE_CUBE_Y_RANGE=-0.16,0.16` in the environment for a wider box).
+
+**Not done / open**
+* Range results (steps 1 and 2) -- see the next dated section once added; report them on all seeds AND on the seeds where the expert succeeded.
+* Why 1000/2000 spin wrist_3 (phase confusion, un-annealed weights, out-of-distribution state: none tested). An EMA run
+  (`ema_decay` is None in our config) would separate "weights" from "steps".
+* Training-seed variability is unknown: one training run per configuration. Before claiming that a reinforcement works, train the
+  baseline a second time with another seed (~4 h).
+* Real UR5e: lockstep and the velocity feed-forward are Isaac-only; real hardware needs asynchronous inference, a per-tick target limit, joint limits.
+* Single prompt, single cube size, fixed target; `fps=30` metadata label error; no hold-out split in openpi.
+* The repeated "wider data" / "residual RL for the last centimetres" ideas below are untested.
+
+**Relayed literature summary (from the user's pasted review of related work; NOT verified by me except the two repo facts marked)**
+Reported there: checkpoint-to-checkpoint variance and offline-vs-closed-loop mismatch are common (pick by closed-loop evaluation, several
+checkpoints, 3 training seeds); chunk-boundary inconsistencies are known (real-time chunking, per-tick limits/low-pass filters in
+deployments); precision is usually fixed by a residual RL policy on top of a frozen imitation policy; generalisation stays near the
+demonstrated range unless data is widened. Verified here: our `ema_decay` is None; `DeltaActions` is chunk-start-relative.
+Proposed order for step 4 candidates there: (1) wider-range data, (2) an EMA-enabled 3k run, (3) a second training seed of the baseline;
+residual RL for placement as a later, 1-2 week project. Decide after the range results.
+
+**Git:** pushed through `f8791d0` (origin/master). This README section is a later commit.
 
 ### 2026-10-05 DAY SUMMARY -- what went wrong, how it was found and fixed, what was NOT done, and what to do tomorrow
 
