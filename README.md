@@ -2255,6 +2255,27 @@ state, the delta/absolute parametrisation, un-annealed weights are all candidate
 state it has not seen (a wider spawn range is the test). A serving-side guard (limit the per-tick change of the wrist targets) is an
 option but was not built or tested.
 
+#### 2026-11-11 (night, later): two checks on the wrist_3 finding (serving speed limit, what the data does with wrist_3)
+
+* **Speed limit.** `velocity_clip_rad_s` (default 3.0, active in every evaluation run: `run_client_node.sh` does not override it) clips ONLY
+  the velocity feed-forward term built by `chunk_velocities`. The POSITION targets are not limited, so a chunk that asks wrist_3
+  to be 1.7 rad elsewhere is followed by the PD drive as fast as the drive goes: ~20 rad/s measured (10 rad in 30 ticks), against
+  2.9 rad/s at most in any demonstration. The simulator's own joint velocity limit was not read. So "a speed limit was on" is true
+  and irrelevant to the blow-ups.
+* **What the demonstrations do with wrist_3 (152 episodes, offline).** Every episode contains ONE large wrist_3 rotation: 0 -> ~3.14 rad
+  between ticks ~96 and ~152 (p10-p90 96-154; max change in 30 ticks 1.05 rad, max speed 2.9 rad/s), then it stays at 3.2
+  (final 3.03-3.22; 12 episodes peak at 3.5-4.5). It never goes below -0.05, and the largest unwinding (drop from its running
+  maximum) is 0.14 rad median, 1.41 rad in the worst episode. The cube has no yaw randomisation, so this is a fixed phase of the
+  motion, not an alignment to the cube.
+  Policies, same measure over their 20 trials each: 2999 unwinds > 0.5 rad in 2/20 (max 0.80, never below -0.5); 2000 in 11/20 and
+  1000 in 6/20, with wrist_3 below -0.5 rad (outside everything demonstrated) in 11 and 6 trials; in three of the 40 trials the
+  joint values themselves diverge to 1e35 (the articulation blew up after the event). In the blow-up trials wrist_3 sits at ~3.15-3.19 at
+  trip-90 and is 1.3-1.5 at the trip: the policy turns the wrist BACK from the demonstrated end value.
+  So this is not "a novel kind of motion" (a half-turn at ~2 rad/s is in every demonstration) but the wrong direction at the wrong time,
+  at the cube. Candidate readings (none tested): the policy mistakes the phase of the task and replays the initial swing backwards; the
+  delta parametrisation lets a small mis-estimate accumulate. A guard that limits the per-tick change of the position targets would stop
+  the blow-ups of 1000/2000 and thereby hide this weakness; if it is ever added it has to be applied to every compared run and marked.
+
 ### 2026-10-05 DAY SUMMARY -- what went wrong, how it was found and fixed, what was NOT done, and what to do tomorrow
 
 **State in one paragraph.** The dataset (`Jaeung12/ur5e_pick_place_v2`, 152 episodes) loads and trains through openpi;
