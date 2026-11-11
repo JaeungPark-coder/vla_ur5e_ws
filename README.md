@@ -2222,6 +2222,39 @@ Not a smooth curve: 2000 is worse than 1000 on blow-ups (10 vs 3) and placed few
   trial's joints through the simulator with contact reporting on would show it (policy sampling makes re-running the policy useless).
 * Non-blow-up failures: 6 of 1000's trials never touched the cube (z stays 0.02) and ended at max_steps.
 
+#### 2026-11-11 (night): step 3 -- what the 13 blow-ups are (replay with contact reporting + joint traces)
+
+Tool: `isaac/replay_blowup_trial.py` replays a trial's MEASURED joints/gripper (from the per-tick trace) through the simulator with
+PhysX contact reporting on the cube (`PhysxContactReportAPI`), same cube spawn from the seed. Results: `eval_results/blowup_replay_*.json`.
+Controls: 3 trials of 2999 on the same cube spawns (seeds 8000/8003/8004), replayed through tick 900.
+
+What was measured:
+* **Reproduction is partial.** Run 1 (13 blow-up trials): 10 reproduced the jump at the original tick (11 within +-3 ticks, one 23 ticks
+  early), 3 did not (2000#9, 2000#15, 1000#7: max one-tick jump 10-12 mm). Run 2 (a short re-run of 4 of them to read the hand pose):
+  only 2000#10 reproduced again, 2000#16 and 1000#11 did not -- contact outcomes are not repeatable between runs. So the replay
+  says what TYPE of event it is; it cannot say it happens every time.
+* **Who touches the cube at the jump:** in all 10 reproduced cases a finger of the OPEN gripper (`left_/right_inner_finger`,
+  usually also the matching knuckle; once the upper arm link too). Penetration at that tick: 0.3-4 mm in most, 12-22 mm in three;
+  contact impulses 0.08-1.5. Controls (2999): fingers touch the cube for 280-410 ticks (the grasp) with penetration <= 0.5 mm,
+  impulse <= 0.03, and the cube never moves more than 5.3 mm in a tick.
+* **The hand is far from a grasp pose at the jump.** Tilt of the tool axis from vertical: 25-165 degrees (9 of 10 above 45). In
+  normal approach/descent/lift the tilt stays 0-14 degrees (checked on 4 snapshot ticks per trial in the controls and in the pre-jump
+  ticks of the blow-up trials; the tilt formula was validated: ~0 pointing down, ~90 at the home pose). 2000#10: at tick 520 the
+  fingertips are 3 cm above the table beside the cube with tilt 0.9 degrees; at tick 556 the tilt is 125 degrees.
+* **Cause, from the traces of all 10 blow-up trials that tripped before 700 ticks (no replay needed):** in the 90 ticks before the
+  trip the arm is almost stationary (shoulder/elbow change < 0.03 rad) while **wrist_3 turns by a median of 1.7 rad (max 10 rad) within
+  30 ticks** and wrist_2 by up to 0.8 rad. In 20 of the 2999 K=50 trials (ticks 300-750) wrist_3 never changes by more than 0.41 rad in
+  30 ticks (p90 0.21), and wrist_3 > 1 rad happened in 8 of 10 blow-up trials and 0 of 20 of 2999's.
+
+Reading, with the limits: these blow-ups are **not a contact-solver glitch at a normal grasp**. The policy (the 1000/2000 weights)
+commands a fast runaway of the wrist joints while it hovers at cube height with the fingers open; the spinning open hand strikes
+the cube (a real impact -- one-tick moves of 21-131 mm are 1-8 m/s) and flings it. 2999 shows none of that wrist motion. It supports
+reading "97% at 30 mm" as "2999 follows the demonstrated trajectory", not as "robust to contact": a policy that leaves the
+trajectory is punished hard by this scene. What it does not show: why 1000/2000 emit the wrist runaway (an out-of-distribution
+state, the delta/absolute parametrisation, un-annealed weights are all candidates), and whether 2999 would do the same from a
+state it has not seen (a wider spawn range is the test). A serving-side guard (limit the per-tick change of the wrist targets) is an
+option but was not built or tested.
+
 ### 2026-10-05 DAY SUMMARY -- what went wrong, how it was found and fixed, what was NOT done, and what to do tomorrow
 
 **State in one paragraph.** The dataset (`Jaeung12/ur5e_pick_place_v2`, 152 episodes) loads and trains through openpi;

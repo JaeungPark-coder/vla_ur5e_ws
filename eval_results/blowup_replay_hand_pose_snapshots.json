@@ -1,0 +1,942 @@
+[
+ {
+  "trial": 3,
+  "trace": "/home/icrs/projects/jaeung/vla_ur5e_ws/eval_runs/k3_2999/trace",
+  "seed": 8000,
+  "ticks_replayed": 560,
+  "spawn_matches_original_mm": 0.0,
+  "original_first_trip_tick": null,
+  "original_reasons": null,
+  "replay_first_jump_tick": null,
+  "replay_summary": {
+   "epoch": 0,
+   "trial": 1,
+   "ticks": 560,
+   "blowup": false,
+   "reasons": {},
+   "max_cube_z": 0.1653,
+   "max_one_tick_jump_m": 0.00335,
+   "first_trip": null
+  },
+  "touched_by": {
+   "/World/defaultGroundPlane/GroundPlane/CollisionPlane": {
+    "first_tick": 0,
+    "ticks_in_contact": 453,
+    "max_impulse": 0.0129,
+    "min_separation_m": -1e-05,
+    "colliders": [
+     "/World/defaultGroundPlane/GroundPlane/CollisionPlane"
+    ]
+   },
+   "/World/ur5e/Gripper/Robotiq_2F_85/right_inner_finger": {
+    "first_tick": 416,
+    "ticks_in_contact": 144,
+    "max_impulse": 0.0328,
+    "min_separation_m": -0.00018,
+    "colliders": [
+     "/World/ur5e/Gripper/Robotiq_2F_85/right_inner_finger/visuals/Defeatured_2F_85_PAD_OPEN_finger4step_01/Defeatured_2F_85_PAD_OPEN_finger4step",
+     "/World/ur5e/Gripper/Robotiq_2F_85/right_inner_finger/visuals/Defeatured_2F_85_PAD_OPEN_fingertipsstep_01/Defeatured_2F_85_PAD_OPEN_fingertipsstep"
+    ]
+   },
+   "/World/ur5e/Gripper/Robotiq_2F_85/right_inner_knuckle": {
+    "first_tick": 432,
+    "ticks_in_contact": 128,
+    "max_impulse": 0.0,
+    "min_separation_m": 0.00518,
+    "colliders": [
+     "/World/ur5e/Gripper/Robotiq_2F_85/right_inner_knuckle/visuals/Defeatured_2F_85_PAD_OPEN_finger3step_01/Defeatured_2F_85_PAD_OPEN_finger3step"
+    ]
+   },
+   "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_finger": {
+    "first_tick": 436,
+    "ticks_in_contact": 124,
+    "max_impulse": 0.0224,
+    "min_separation_m": -6e-05,
+    "colliders": [
+     "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_finger/visuals/Defeatured_2F_85_PAD_OPEN_finger4step_01/Defeatured_2F_85_PAD_OPEN_finger4step",
+     "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_finger/visuals/Defeatured_2F_85_PAD_OPEN_fingertipsstep_01/Defeatured_2F_85_PAD_OPEN_fingertipsstep"
+    ]
+   },
+   "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_knuckle": {
+    "first_tick": 437,
+    "ticks_in_contact": 123,
+    "max_impulse": 0.0,
+    "min_separation_m": 0.00528,
+    "colliders": [
+     "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_knuckle/visuals/Defeatured_2F_85_PAD_OPEN_finger3step_01/Defeatured_2F_85_PAD_OPEN_finger3step"
+    ]
+   }
+  },
+  "snapshots": {
+   "100": {
+    "tilt_deg": 90.7,
+    "flange": [
+     0.586,
+     0.183,
+     0.196
+    ],
+    "grip_point": [
+     0.636,
+     0.292,
+     0.197
+    ],
+    "cube": [
+     0.435,
+     -0.022,
+     0.02
+    ],
+    "finger_L": [
+     0.586,
+     0.183,
+     0.196
+    ],
+    "finger_R": [
+     0.586,
+     0.183,
+     0.196
+    ]
+   },
+   "300": {
+    "tilt_deg": 0.6,
+    "flange": [
+     0.436,
+     -0.019,
+     0.238
+    ],
+    "grip_point": [
+     0.436,
+     -0.02,
+     0.118
+    ],
+    "cube": [
+     0.435,
+     -0.022,
+     0.02
+    ],
+    "finger_L": [
+     0.437,
+     -0.018,
+     0.237
+    ],
+    "finger_R": [
+     0.436,
+     -0.021,
+     0.237
+    ]
+   },
+   "450": {
+    "tilt_deg": 5.4,
+    "flange": [
+     0.44,
+     -0.015,
+     0.19
+    ],
+    "grip_point": [
+     0.449,
+     -0.022,
+     0.071
+    ],
+    "cube": [
+     0.446,
+     -0.023,
+     0.046
+    ],
+    "finger_L": [
+     0.441,
+     0.008,
+     0.177
+    ],
+    "finger_R": [
+     0.44,
+     -0.039,
+     0.179
+    ]
+   },
+   "520": {
+    "tilt_deg": 10.5,
+    "flange": [
+     0.438,
+     -0.012,
+     0.292
+    ],
+    "grip_point": [
+     0.459,
+     -0.02,
+     0.174
+    ],
+    "cube": [
+     0.459,
+     -0.021,
+     0.15
+    ],
+    "finger_L": [
+     0.441,
+     0.01,
+     0.279
+    ],
+    "finger_R": [
+     0.44,
+     -0.036,
+     0.282
+    ]
+   }
+  },
+  "contacts_around_first_jump": []
+ },
+ {
+  "trial": 10,
+  "trace": "/home/icrs/projects/jaeung/vla_ur5e_ws/eval_runs/curve_2000/trace",
+  "seed": 8009,
+  "ticks_replayed": 557,
+  "spawn_matches_original_mm": 0.0,
+  "original_first_trip_tick": 556,
+  "original_reasons": [
+   "jump"
+  ],
+  "replay_first_jump_tick": 556,
+  "replay_summary": {
+   "epoch": 0,
+   "trial": 1,
+   "ticks": 557,
+   "blowup": true,
+   "reasons": {
+    "jump": 1
+   },
+   "max_cube_z": 0.1089,
+   "max_one_tick_jump_m": 0.1309,
+   "first_trip": {
+    "tick": 556,
+    "request_id": 557,
+    "reasons": [
+     "jump"
+    ],
+    "cube": [
+     0.46924474835395813,
+     0.013220394030213356,
+     0.1088867262005806
+    ],
+    "prev_cube": [
+     0.4648037850856781,
+     -0.08276665210723877,
+     0.01999952271580696
+    ],
+    "grip_point": [
+     0.44795244828166825,
+     -0.030881911456532116,
+     0.20930364024224574
+    ],
+    "gripper": 0.0,
+    "joints": [
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "jump_m": 0.13089755583771276
+   }
+  },
+  "touched_by": {
+   "/World/defaultGroundPlane/GroundPlane/CollisionPlane": {
+    "first_tick": 0,
+    "ticks_in_contact": 557,
+    "max_impulse": 0.0031,
+    "min_separation_m": -0.0,
+    "colliders": [
+     "/World/defaultGroundPlane/GroundPlane/CollisionPlane"
+    ]
+   },
+   "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_knuckle": {
+    "first_tick": 556,
+    "ticks_in_contact": 1,
+    "max_impulse": 0.0,
+    "min_separation_m": 0.00196,
+    "colliders": [
+     "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_knuckle/visuals/Defeatured_2F_85_PAD_OPEN_finger3step_01/Defeatured_2F_85_PAD_OPEN_finger3step"
+    ]
+   },
+   "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_finger": {
+    "first_tick": 556,
+    "ticks_in_contact": 1,
+    "max_impulse": 1.3855,
+    "min_separation_m": -0.01574,
+    "colliders": [
+     "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_finger/visuals/Defeatured_2F_85_PAD_OPEN_finger4step_01/Defeatured_2F_85_PAD_OPEN_finger4step",
+     "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_finger/visuals/Defeatured_2F_85_PAD_OPEN_fingertipsstep_01/Defeatured_2F_85_PAD_OPEN_fingertipsstep"
+    ]
+   }
+  },
+  "snapshots": {
+   "100": {
+    "tilt_deg": 89.8,
+    "flange": [
+     0.601,
+     0.169,
+     0.201
+    ],
+    "grip_point": [
+     0.651,
+     0.278,
+     0.2
+    ],
+    "cube": [
+     0.465,
+     -0.083,
+     0.02
+    ],
+    "finger_L": [
+     0.601,
+     0.169,
+     0.201
+    ],
+    "finger_R": [
+     0.601,
+     0.169,
+     0.201
+    ]
+   },
+   "300": {
+    "tilt_deg": 3.5,
+    "flange": [
+     0.472,
+     -0.084,
+     0.28
+    ],
+    "grip_point": [
+     0.465,
+     -0.087,
+     0.16
+    ],
+    "cube": [
+     0.465,
+     -0.083,
+     0.02
+    ],
+    "finger_L": [
+     0.472,
+     -0.083,
+     0.279
+    ],
+    "finger_R": [
+     0.472,
+     -0.085,
+     0.279
+    ]
+   },
+   "450": {
+    "tilt_deg": 1.3,
+    "flange": [
+     0.473,
+     -0.08,
+     0.216
+    ],
+    "grip_point": [
+     0.475,
+     -0.082,
+     0.096
+    ],
+    "cube": [
+     0.465,
+     -0.083,
+     0.02
+    ],
+    "finger_L": [
+     0.473,
+     -0.079,
+     0.216
+    ],
+    "finger_R": [
+     0.473,
+     -0.081,
+     0.216
+    ]
+   },
+   "520": {
+    "tilt_deg": 0.9,
+    "flange": [
+     0.47,
+     -0.081,
+     0.154
+    ],
+    "grip_point": [
+     0.47,
+     -0.083,
+     0.034
+    ],
+    "cube": [
+     0.465,
+     -0.083,
+     0.02
+    ],
+    "finger_L": [
+     0.47,
+     -0.081,
+     0.154
+    ],
+    "finger_R": [
+     0.47,
+     -0.082,
+     0.154
+    ]
+   }
+  },
+  "contacts_around_first_jump": [
+   {
+    "tick": 550,
+    "body": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "collider": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "impulse": 0.0021,
+    "separation_m": -0.0,
+    "type": "ContactEventType.CONTACT_PERSIST",
+    "points": [
+     0.4648,
+     -0.0828,
+     0.0
+    ]
+   },
+   {
+    "tick": 551,
+    "body": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "collider": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "impulse": 0.0024,
+    "separation_m": -0.0,
+    "type": "ContactEventType.CONTACT_PERSIST",
+    "points": [
+     0.4648,
+     -0.0828,
+     0.0
+    ]
+   },
+   {
+    "tick": 552,
+    "body": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "collider": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "impulse": 0.003,
+    "separation_m": -0.0,
+    "type": "ContactEventType.CONTACT_PERSIST",
+    "points": [
+     0.4648,
+     -0.0828,
+     0.0
+    ]
+   },
+   {
+    "tick": 553,
+    "body": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "collider": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "impulse": 0.0029,
+    "separation_m": -0.0,
+    "type": "ContactEventType.CONTACT_PERSIST",
+    "points": [
+     0.4648,
+     -0.0828,
+     0.0
+    ]
+   },
+   {
+    "tick": 554,
+    "body": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "collider": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "impulse": 0.0024,
+    "separation_m": -0.0,
+    "type": "ContactEventType.CONTACT_PERSIST",
+    "points": [
+     0.4648,
+     -0.0828,
+     0.0
+    ]
+   },
+   {
+    "tick": 555,
+    "body": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "collider": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "impulse": 0.003,
+    "separation_m": -0.0,
+    "type": "ContactEventType.CONTACT_PERSIST",
+    "points": [
+     0.4648,
+     -0.0828,
+     0.0
+    ]
+   },
+   {
+    "tick": 556,
+    "body": "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_knuckle",
+    "collider": "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_knuckle/visuals/Defeatured_2F_85_PAD_OPEN_finger3step_01/Defeatured_2F_85_PAD_OPEN_finger3step",
+    "impulse": 0.0,
+    "separation_m": 0.00196,
+    "type": "ContactEventType.CONTACT_FOUND",
+    "points": [
+     0.4681,
+     -0.1054,
+     0.0404
+    ]
+   },
+   {
+    "tick": 556,
+    "body": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "collider": "/World/defaultGroundPlane/GroundPlane/CollisionPlane",
+    "impulse": 0.0,
+    "separation_m": -0.0,
+    "type": "ContactEventType.CONTACT_PERSIST",
+    "points": [
+     0.4648,
+     -0.0828,
+     0.0
+    ]
+   },
+   {
+    "tick": 556,
+    "body": "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_finger",
+    "collider": "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_finger/visuals/Defeatured_2F_85_PAD_OPEN_fingertipsstep_01/Defeatured_2F_85_PAD_OPEN_fingertipsstep",
+    "impulse": 1.3855,
+    "separation_m": -0.01574,
+    "type": "ContactEventType.CONTACT_FOUND",
+    "points": [
+     0.4681,
+     -0.1006,
+     0.0246
+    ]
+   },
+   {
+    "tick": 556,
+    "body": "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_finger",
+    "collider": "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_finger/visuals/Defeatured_2F_85_PAD_OPEN_finger4step_01/Defeatured_2F_85_PAD_OPEN_finger4step",
+    "impulse": 0.0,
+    "separation_m": -0.00126,
+    "type": "ContactEventType.CONTACT_FOUND",
+    "points": [
+     0.4662,
+     -0.1083,
+     0.0378
+    ]
+   }
+  ],
+  "replay_first_trip": {
+   "tick": 556,
+   "request_id": 557,
+   "reasons": [
+    "jump"
+   ],
+   "cube": [
+    0.46924474835395813,
+    0.013220394030213356,
+    0.1088867262005806
+   ],
+   "prev_cube": [
+    0.4648037850856781,
+    -0.08276665210723877,
+    0.01999952271580696
+   ],
+   "grip_point": [
+    0.44795244828166825,
+    -0.030881911456532116,
+    0.20930364024224574
+   ],
+   "gripper": 0.0,
+   "joints": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "jump_m": 0.13089755583771276
+  },
+  "at_first_jump": {
+   "tool_flange_pos": [
+    0.4798,
+    -0.1239,
+    0.1406
+   ],
+   "tool_axis": [
+    -0.266,
+    0.775,
+    0.573
+   ],
+   "tilt_from_vertical_deg": 124.9,
+   "cube_before": [
+    0.4648,
+    -0.0828,
+    0.02
+   ],
+   "grip_point": [
+    0.448,
+    -0.0309,
+    0.2093
+   ],
+   "hand_pose": {
+    "tilt_deg": 124.9,
+    "flange": [
+     0.48,
+     -0.124,
+     0.141
+    ],
+    "grip_point": [
+     0.448,
+     -0.031,
+     0.209
+    ],
+    "cube": [
+     0.469,
+     0.013,
+     0.109
+    ],
+    "finger_L": [
+     0.487,
+     -0.154,
+     0.167
+    ],
+    "finger_R": [
+     0.486,
+     -0.147,
+     0.153
+    ]
+   }
+  }
+ },
+ {
+  "trial": 16,
+  "trace": "/home/icrs/projects/jaeung/vla_ur5e_ws/eval_runs/curve_2000/trace",
+  "seed": 8015,
+  "ticks_replayed": 1800,
+  "spawn_matches_original_mm": 0.0,
+  "original_first_trip_tick": 606,
+  "original_reasons": [
+   "jump"
+  ],
+  "replay_first_jump_tick": null,
+  "replay_summary": {
+   "epoch": 0,
+   "trial": 1,
+   "ticks": 1800,
+   "blowup": false,
+   "reasons": {},
+   "max_cube_z": 0.029,
+   "max_one_tick_jump_m": 0.01432,
+   "first_trip": null
+  },
+  "touched_by": {
+   "/World/defaultGroundPlane/GroundPlane/CollisionPlane": {
+    "first_tick": 0,
+    "ticks_in_contact": 1800,
+    "max_impulse": 0.364,
+    "min_separation_m": -0.00105,
+    "colliders": [
+     "/World/defaultGroundPlane/GroundPlane/CollisionPlane"
+    ]
+   },
+   "/World/ur5e/Gripper/Robotiq_2F_85/right_inner_finger": {
+    "first_tick": 429,
+    "ticks_in_contact": 37,
+    "max_impulse": 0.6861,
+    "min_separation_m": -0.01312,
+    "colliders": [
+     "/World/ur5e/Gripper/Robotiq_2F_85/right_inner_finger/visuals/Defeatured_2F_85_PAD_OPEN_fingertipsstep_01/Defeatured_2F_85_PAD_OPEN_fingertipsstep"
+    ]
+   }
+  },
+  "snapshots": {
+   "100": {
+    "tilt_deg": 87.8,
+    "flange": [
+     0.587,
+     0.179,
+     0.202
+    ],
+    "grip_point": [
+     0.63,
+     0.291,
+     0.197
+    ],
+    "cube": [
+     0.424,
+     0.091,
+     0.02
+    ],
+    "finger_L": [
+     0.587,
+     0.179,
+     0.202
+    ],
+    "finger_R": [
+     0.587,
+     0.179,
+     0.202
+    ]
+   },
+   "300": {
+    "tilt_deg": 13.7,
+    "flange": [
+     0.433,
+     0.055,
+     0.328
+    ],
+    "grip_point": [
+     0.461,
+     0.05,
+     0.211
+    ],
+    "cube": [
+     0.424,
+     0.091,
+     0.02
+    ],
+    "finger_L": [
+     0.433,
+     0.055,
+     0.327
+    ],
+    "finger_R": [
+     0.433,
+     0.054,
+     0.327
+    ]
+   },
+   "450": {
+    "tilt_deg": 3.1,
+    "flange": [
+     0.44,
+     0.044,
+     0.183
+    ],
+    "grip_point": [
+     0.442,
+     0.038,
+     0.063
+    ],
+    "cube": [
+     0.424,
+     0.091,
+     0.02
+    ],
+    "finger_L": [
+     0.44,
+     0.044,
+     0.183
+    ],
+    "finger_R": [
+     0.44,
+     0.045,
+     0.183
+    ]
+   },
+   "520": {
+    "tilt_deg": 2.6,
+    "flange": [
+     0.44,
+     0.042,
+     0.161
+    ],
+    "grip_point": [
+     0.441,
+     0.037,
+     0.041
+    ],
+    "cube": [
+     0.343,
+     0.124,
+     0.02
+    ],
+    "finger_L": [
+     0.44,
+     0.042,
+     0.161
+    ],
+    "finger_R": [
+     0.44,
+     0.041,
+     0.161
+    ]
+   }
+  },
+  "contacts_around_first_jump": []
+ },
+ {
+  "trial": 11,
+  "trace": "/home/icrs/projects/jaeung/vla_ur5e_ws/eval_runs/curve_1000/trace",
+  "seed": 8010,
+  "ticks_replayed": 1800,
+  "spawn_matches_original_mm": 0.0,
+  "original_first_trip_tick": 403,
+  "original_reasons": [
+   "jump"
+  ],
+  "replay_first_jump_tick": null,
+  "replay_summary": {
+   "epoch": 0,
+   "trial": 1,
+   "ticks": 1800,
+   "blowup": false,
+   "reasons": {},
+   "max_cube_z": 0.0203,
+   "max_one_tick_jump_m": 0.00689,
+   "first_trip": null
+  },
+  "touched_by": {
+   "/World/defaultGroundPlane/GroundPlane/CollisionPlane": {
+    "first_tick": 0,
+    "ticks_in_contact": 1800,
+    "max_impulse": 0.1684,
+    "min_separation_m": -6e-05,
+    "colliders": [
+     "/World/defaultGroundPlane/GroundPlane/CollisionPlane"
+    ]
+   },
+   "/World/ur5e/Gripper/Robotiq_2F_85/right_inner_finger": {
+    "first_tick": 263,
+    "ticks_in_contact": 182,
+    "max_impulse": 0.192,
+    "min_separation_m": -0.00165,
+    "colliders": [
+     "/World/ur5e/Gripper/Robotiq_2F_85/right_inner_finger/visuals/Defeatured_2F_85_PAD_OPEN_finger4step_01/Defeatured_2F_85_PAD_OPEN_finger4step",
+     "/World/ur5e/Gripper/Robotiq_2F_85/right_inner_finger/visuals/Defeatured_2F_85_PAD_OPEN_fingertipsstep_01/Defeatured_2F_85_PAD_OPEN_fingertipsstep"
+    ]
+   },
+   "/World/ur5e/Gripper/Robotiq_2F_85/right_inner_knuckle": {
+    "first_tick": 312,
+    "ticks_in_contact": 127,
+    "max_impulse": 0.0,
+    "min_separation_m": 0.00163,
+    "colliders": [
+     "/World/ur5e/Gripper/Robotiq_2F_85/right_inner_knuckle/visuals/Defeatured_2F_85_PAD_OPEN_finger3step_01/Defeatured_2F_85_PAD_OPEN_finger3step"
+    ]
+   },
+   "/World/ur5e/Gripper/Robotiq_2F_85/right_outer_finger": {
+    "first_tick": 405,
+    "ticks_in_contact": 36,
+    "max_impulse": 0.0229,
+    "min_separation_m": -0.00032,
+    "colliders": [
+     "/World/ur5e/Gripper/Robotiq_2F_85/right_outer_finger/visuals/Defeatured_2F_85_PAD_OPEN_finger2step_01/Defeatured_2F_85_PAD_OPEN_finger2step"
+    ]
+   },
+   "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_finger": {
+    "first_tick": 469,
+    "ticks_in_contact": 4,
+    "max_impulse": 0.0,
+    "min_separation_m": 0.00693,
+    "colliders": [
+     "/World/ur5e/Gripper/Robotiq_2F_85/left_inner_finger/visuals/Defeatured_2F_85_PAD_OPEN_fingertipsstep_01/Defeatured_2F_85_PAD_OPEN_fingertipsstep"
+    ]
+   }
+  },
+  "snapshots": {
+   "100": {
+    "tilt_deg": 91.6,
+    "flange": [
+     0.61,
+     0.17,
+     0.195
+    ],
+    "grip_point": [
+     0.656,
+     0.281,
+     0.198
+    ],
+    "cube": [
+     0.475,
+     0.077,
+     0.02
+    ],
+    "finger_L": [
+     0.61,
+     0.17,
+     0.195
+    ],
+    "finger_R": [
+     0.611,
+     0.17,
+     0.195
+    ]
+   },
+   "300": {
+    "tilt_deg": 1.9,
+    "flange": [
+     0.456,
+     0.057,
+     0.172
+    ],
+    "grip_point": [
+     0.453,
+     0.054,
+     0.052
+    ],
+    "cube": [
+     0.475,
+     0.075,
+     0.02
+    ],
+    "finger_L": [
+     0.456,
+     0.057,
+     0.172
+    ],
+    "finger_R": [
+     0.456,
+     0.056,
+     0.172
+    ]
+   },
+   "450": {
+    "tilt_deg": 40.0,
+    "flange": [
+     0.454,
+     0.054,
+     0.145
+    ],
+    "grip_point": [
+     0.446,
+     -0.022,
+     0.053
+    ],
+    "cube": [
+     0.493,
+     0.035,
+     0.02
+    ],
+    "finger_L": [
+     0.454,
+     0.054,
+     0.144
+    ],
+    "finger_R": [
+     0.454,
+     0.056,
+     0.144
+    ]
+   },
+   "520": {
+    "tilt_deg": 22.9,
+    "flange": [
+     0.447,
+     0.035,
+     0.264
+    ],
+    "grip_point": [
+     0.458,
+     -0.01,
+     0.153
+    ],
+    "cube": [
+     0.493,
+     0.035,
+     0.02
+    ],
+    "finger_L": [
+     0.447,
+     0.036,
+     0.262
+    ],
+    "finger_R": [
+     0.447,
+     0.034,
+     0.263
+    ]
+   }
+  },
+  "contacts_around_first_jump": []
+ }
+]
