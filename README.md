@@ -2495,6 +2495,44 @@ All of this was done before any v3 result exists.
   `scripts/eval_checkpoint.sh` takes the server's policy config from `POLICY_CONFIG` (default `pi0_ur5e_pick_place`; v3 needs `pi0_ur5e_pick_place_v3`: the norm stats in `assets/pi0_ur5e_pick_place_v3/` and the checkpoint's own `assets/` belong to that config; with the wrong config the server loads v2's statistics). Check the server log's `Loaded norm stats from ...` line before trusting a run.
   Reference results of v2 2999 (K=50, seeds 8000-8019): training box 20/20, step 1 17/20, step 2 11/20; wrist_3 runaway 0 / 1 / 4; expert 18 / 19 / 17.
 
+### 2026-11-12 (evening): v3 result -- wider-range data did NOT improve the wider boxes, and the training box got worse
+
+`v3_3k/2999` (`checkpoints/pi0_ur5e_pick_place_v3/v3_3k/2999`, trained on 302 episodes, 3000 steps, final loss ~0.0037) evaluated with `POLICY_CONFIG=pi0_ur5e_pick_place_v3` (server log checked: both
+`Loaded norm stats` lines name `ur5e_pick_place_v3`), K=50, 20 trials, seeds 8000-8019, same boxes and expert baselines as v2. Files: `eval_results/v3_3k_2999_{train_box,step1,step2}_k50_seed8000*`.
+
+| box | v2 2999 | v3 3k | paired (both / only v2 / only v3 / neither) | Fisher p | wrist_3 runaway v2 -> v3 | placed error median v2 -> v3 | expert |
+|---|---|---|---|---|---|---|---|
+| training box | 20/20 | 16/20 [0.58, 0.92] | 16 / 4 / 0 / 0 | 0.11 | 0 -> 1 | 12.2 -> 12.2 mm | 18/20 |
+| step 1 (Y +-0.13) | 17/20 | 15/20 [0.53, 0.89] | 14 / 3 / 1 / 2 | 0.70 | 1 -> 1 | 11.8 -> 12.8 mm | 19/20 |
+| step 2 (X 0.38-0.48, Y +-0.16) | 11/20 | 12/20 [0.39, 0.78] | 10 / 1 / 2 / 7 | 1.00 | 4 -> 1 | 12.0 -> 12.1 mm | 17/20 |
+
+On the expert-success seeds: training box 15/18, step 1 14/19, step 2 10/17.
+
+**Against the criteria fixed before the result:**
+* "Range extension worked" (step 2 >= 15/20, runaway <= 1/20, training box >= 18/20): **not met** (12/20, 1/20, 16/20).
+* "No effect" (step 2 <= 12/20 or runaway >= 3/20): **met** (12/20). The ambiguous branch (13-17/20: 60-seed re-evaluation) does not apply.
+* Pre-written expectation (v3 improves first in X < 0.42 and |Y| > 0.10): X < 0.42 went 3/10 -> 5/10, |Y| > 0.10 went 3/10 -> 4/10 on step 2 -- the right direction, +2 and +1 trials, which at n=10 is nothing to build on;
+  inside the old box 6/6 -> 5/6; the overall step-2 gain is +1 trial.
+* The training-box drop (20/20 -> 16/20, p = 0.11 unpaired / 0.125 paired) is not statistically established, but it fails the no-regression criterion; candidate causes named beforehand: half the epochs per frame
+  (0.31 vs 0.60) and the 69% old-box share; training noise (one run per configuration) cannot be excluded either.
+
+**What did change: the failure types** (all trials of the three boxes):
+
+| | placed | wrist_3 runaway | never lifted / touched | lifted, not placed |
+|---|---|---|---|---|
+| v2 training box (K=50) | 20 | 0 | 0 | 0 |
+| v3 training box | 16 | 1 | 2 | 1 |
+| v2 step 1 / v3 step 1 | 17 / 15 | 1 / 1 | 1 / 4 | 1 / 0 |
+| v2 step 2 / v3 step 2 | 11 / 12 | 4 / 1 | 5 / 7 | 0 / 0 |
+
+On step 2 the wrist_3 runaways of v2 became "never lifted/touched" in v3 (seeds 8007, 8015, 8019; 8006 was placed): the policy no longer spins the wrist (4/20 -> 1/20, Fisher p = 0.34, not established) but at the wide edges it still does not reach the cube.
+All seven v3 "never touched" failures of step 2 lie at |Y| > 0.10 or X < 0.39 (the thinly covered edges): (0.380,+0.065), (0.410,+0.113), (0.455,-0.132), (0.471,+0.124), (0.382,+0.124), (0.386,+0.146), (0.393,+0.120).
+
+**Reading, with the limits:** 150 more expert episodes in a 2.7x box did not make the policy work at the box edges, and it cost a few trials in the training box. The hypothesis "the data range is the only bottleneck" is weakened (not refuted: the
+edges got ~2.5x fewer episodes per area than the old box, 0.31 epochs per frame, one training run). The wrist_3 runaway may have been reduced by the wider data (4 -> 1), but that is 3 trials. Placement precision (12 mm) is unchanged, as expected.
+Per the branch fixed beforehand ("step 2 stays near 11/20 -> go back to the wrist_3 countermeasures or another axis") the next step is NOT more data of the same kind by default. Open candidates: (a) a per-tick limit on position targets / chunk joining (deployment guard; would need to be applied to every compared run),
+(b) an EMA-enabled run or a second training seed (training noise is unknown and now matters: a 4-trial swing is of the size of the v2-v3 difference), (c) longer training on v3 (e.g. 6k steps; changes two things at once), (d) targeted data at the edges.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
