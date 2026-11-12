@@ -41,10 +41,11 @@ def main():
         # wrist_3 "runaway": turns by more than 3 rad against its running maximum, or leaves [-1, 5.5] (the demonstrations stay in
         # [-0.05, 4.5] and unwind at most 1.4 rad) -- counted over ALL trials, blow-up flagged or not
         runaway = bool(unwind > 3.0 or w.min() < -1.0 or w.max() > 5.5 or (~fin).any())
+        spawn = z["cube"][0, :2]
         cube_end = z["cube"][-1, :2]
         err = 1000 * float(np.linalg.norm(cube_end - np.array([0.45, 0.30])))
         rows.append({"trial": t, "seed": seed, "ok": r["success"] == "True", "blowup": bool(meta["blowup"]) or r["blowup"] == "1",
-                     "d30": d30, "unwind": unwind, "runaway": runaway, "err": err})
+                     "d30": d30, "unwind": unwind, "runaway": runaway, "err": err, "x": float(spawn[0]), "y": float(spawn[1])})
 
     def report(label, rs):
         n = len(rs)
@@ -68,6 +69,15 @@ def main():
     report("seeds where the expert succeeded", good)
     bad = [r for r in rows if not expert.get(r["seed"], {}).get("placed", True)]
     report("seeds where the expert failed", bad)
+    # where do the failures sit? (trends only: n per band is 3-10)
+    bands = (("X < 0.42", lambda r: r["x"] < 0.42), ("0.42 <= X <= 0.45", lambda r: 0.42 <= r["x"] <= 0.45), ("X > 0.45", lambda r: r["x"] > 0.45))
+    print("by spawn X band (placed/n, all seeds):", "; ".join(
+        f"{lab}: {sum(r['ok'] for r in rows if f(r))}/{sum(1 for r in rows if f(r))}" for lab, f in bands))
+    ybands = (("|Y| <= 0.10", lambda r: abs(r["y"]) <= 0.10), ("|Y| > 0.10", lambda r: abs(r["y"]) > 0.10))
+    print("by spawn |Y| band:", "; ".join(f"{lab}: {sum(r['ok'] for r in rows if f(r))}/{sum(1 for r in rows if f(r))}" for lab, f in ybands))
+    inbox = [r for r in rows if 0.42 <= r["x"] <= 0.48 and abs(r["y"]) <= 0.10]
+    print(f"inside the OLD training box (X 0.42-0.48, |Y| <= 0.10): {sum(r['ok'] for r in inbox)}/{len(inbox)}; outside it: "
+          f"{sum(r['ok'] for r in rows if r not in inbox)}/{len(rows) - len(inbox)}")
     print("expert failed on seeds:", sorted(s for s, e in expert.items() if not e["placed"]))
 
 

@@ -2471,6 +2471,14 @@ All of this was done before any v3 result exists.
   > 0.12: 40/45 (0.89) -- **no thinning at the Y edges**. By X: < 0.42: 55/68 (0.81); 0.42-0.45: 55/55 (1.00); > 0.45: 40/51 (0.78): the expert fails more at the X edges, and the X > 0.45 band is slightly thin in the saved data (40 saved vs 45 expected for its
   area share). The 4x8 grid of saved episodes has 1-10 per cell (uniform expectation 4.7), too noisy to call anything but "roughly even". So the saved data covers the box about evenly; the lost episodes are mostly blow-ups near the X edges (16 of 24 rejections),
   an observation about the expert (it is least reliable at the extremes of reach) that also bounds what the data can teach there.
+* **Added after the second review (before the result): failures by spawn band.** `scripts/summarize_range.py` now prints placed/n by spawn X band (< 0.42, 0.42-0.45, > 0.45), by |Y| (<= 0.10, > 0.10) and inside/outside the old box. Trends only (3-10 trials per band).
+  Reference, v2 2999: step 1: X 0.42-0.45 9/11, X > 0.45 8/9, |Y| <= 0.10 14/15, |Y| > 0.10 3/5; step 2: X < 0.42 3/10, 0.42-0.45 3/3, X > 0.45 5/7, |Y| <= 0.10 8/10, |Y| > 0.10 3/10, inside the old box 6/6, outside 5/14.
+  Reading rule for v3: if the step-2 failures cluster in the X edges where the saved data is thin (X > 0.45 slightly thin, X < 0.42 the expert's own failures), "range widened but edge data insufficient" is the narrowed explanation; if they are spread evenly, look at the other causes (half the epochs).
+* **Branches after the v3 result (fixed now):**
+  * step 2 >= 18/20, runaway <= 1/20 and training box >= 18/20 -> the range extension is established; move to the next axis (precision / wrist_3 guard / EMA ...).
+  * step 2 15-17/20 (criterion met, effect not established) -> 60-seed re-evaluation of both checkpoints, then decide.
+  * training box < 18/20 -> suspect half the epochs per frame and the 69% old-box share first; if it has to be fixed, a longer v3 run (e.g. 6k steps) is the candidate -- but that changes the step count too, so the confound must be re-recorded and the comparison re-labelled.
+  * step 2 stays near 11/20 (<= 12/20) -> the data-range-is-the-bottleneck hypothesis weakens; go back to the wrist_3 runaway countermeasures (a per-tick limit on the position targets, applied to every compared run and marked, or chunk joining) or another axis.
 * **Known confounds (unchanged):** equal steps on twice the data = 0.31 vs 0.60 epochs; 69% of the episodes in the old box. If the training box drops below 18/20, suspect these first.
 * **Evaluation plan when `v3_3k/2999` exists** (training holds both GPUs until ~18:40; nothing else can run on the GPUs meanwhile):
   ```
