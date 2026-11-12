@@ -2436,6 +2436,25 @@ merge v2 + the two new sets into `vla_ur5e_ws/ur5e_pick_place_v3` with `lerobot-
 (~4 h, `--save-interval=3000` so only the final checkpoint is kept, ~9 GB); evaluation ~1.3 h. Collection writes under `HF_LEROBOT_HOME=/media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/hf_cache` (root disk has 55 GB; v2 is 14 GB there).
 EMA and the training-seed repeat are deferred until the v3 result is in.
 
+#### 2026-11-12 (afternoon): v3 data collected and merged, training `v3_3k` launched
+
+* **Collection** (two collectors in parallel, GPU 0 and 1, X 0.38-0.48 x Y +-0.16, unseeded): 150 episodes saved from 174 attempts (86%); 24 rejected: 16 blow-ups (cube z > 0.25 m), 6 never lifted, 2 placed
+  off target. 18 of the 24 rejections fell outside the old box (the expert's trouble is at the wide edges). All 150 saved spawns lie in the new box (X 0.383-0.479, Y -0.154..0.158); 57 of them inside the old box.
+  ~51 s per attempt per collector (smoke test: 4 attempts, 1 blow-up rejected, 3 saved). Sets: `vla_ur5e_ws/v3_wide_a` (75 episodes, 76,735 frames), `v3_wide_b` (75, 78,048); the throwaway smoke set `v3_smoke` (3) is not used.
+* **Merge** `lerobot-edit-dataset --repo_id vla_ur5e_ws/ur5e_pick_place_v3 --operation.type merge --operation.repo_ids "['vla_ur5e_ws/ur5e_pick_place_v2','vla_ur5e_ws/v3_wide_a','vla_ur5e_ws/v3_wide_b']"`
+  (env: `HF_LEROBOT_HOME=<bigdisk>/hf_cache HF_HUB_OFFLINE=1 HF_DATASETS_CACHE=<bigdisk>/hf_cache/datasets`): **302 episodes, 313,559 frames** (= 158,776 + 76,735 + 78,048), feature schema identical to v2, 26 GB on the big disk.
+  Of the 302 episodes 209 (69%) lie in the old box (152 old + 57 new): the old box stays over-represented.
+* **Incident (mine): the first merge attempt filled the root disk** (213 of 228 GB used, 3.9 GB free): I had not set `HF_DATASETS_CACHE`, so `datasets` wrote 51 GB of Arrow cache (310 entries, all dated that
+  day) under `~/.cache/huggingface/datasets/parquet`. Removed that cache and the incomplete 26 GB v3 output (both created by the failed run only), re-ran with the cache variable on the big disk: root back to 55 GB free.
+  **Always export `HF_DATASETS_CACHE` (and `OPENPI_DATA_HOME`, `UV_CACHE_DIR`) before any lerobot/openpi command that reads this dataset.** Also: finished collectors leave ~5 child processes each alive (they hold GPU memory): check `ps` and kill them.
+* **openpi:** new `TrainConfig` `pi0_ur5e_pick_place_v3` (a copy of `pi0_ur5e_pick_place` with `repo_id="Jaeung12/ur5e_pick_place_v3"`; local commit `cb9d435` on branch `vla-ur5e-ws`), dataset linked as `~/.cache/huggingface/lerobot/Jaeung12/ur5e_pick_place_v3` -> big disk.
+  Norm stats: `scripts/compute_norm_stats_workers.py` (wrapper with 32 workers; the earlier wrapper was not in the repo), 56 min for 9,798 batches. v3 vs v2 statistics are nearly identical; the state ranges widen as expected
+  (joint 0 q01 -0.425 -> -0.500, wrist_2 q01 -1.987 -> -2.063); actions[5] (wrist_3) std 0.260 -> 0.261, q99 1.380 -> 1.384.
+* **Training launched 14:40 KST, `v3_3k`:** `CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run --no-sync scripts/train.py pi0_ur5e_pick_place_v3 --exp-name=v3_3k --num-train-steps=3000 --lr-schedule.decay-steps=3000 --lr-schedule.warmup-steps=300 --save-interval=3000 --keep-period=3000 --log-interval=50 --num-workers=16 --no-wandb-enabled`
+  (identical to `short_3k` except config/exp name and `--save-interval=3000`: only the final checkpoint `v3_3k/2999` is written, ~9 GB). Step 0 loss 0.1186.
+  **A difference to keep in mind:** the number of STEPS is the same (3000 x batch 32 = 96k samples), so v3 sees each frame about half as often as v2 did (0.31 vs 0.60 epochs). That is part of "same recipe" (same compute), and it is a confound if v3 turns out worse or better.
+* Pre-registered decision criteria: see the 2026-11-12 design section; they apply unchanged. Next: evaluate `v3_3k/2999` on the training box, step 1 and step 2 (K=50, 20 trials, seeds 8000-8019, `scripts/eval_checkpoint.sh` + `scripts/summarize_range.py`).
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
