@@ -8,13 +8,14 @@ source "$(dirname "$0")/lib_isaac_env.sh"
 CKPT="$1"; OUT="$2"; N="${3:-20}"; SEED="${4:-8000}"; K="${5:-50}"
 [ -n "$CKPT" ] && [ -n "$OUT" ] || { sed -n 2,7p "$0"; exit 1; }
 SERVER_GPU="${SERVER_GPU:-1}"; PORT="${POLICY_PORT:-8000}"
+POLICY_CONFIG="${POLICY_CONFIG:-pi0_ur5e_pick_place}"   # v3 checkpoints: POLICY_CONFIG=pi0_ur5e_pick_place_v3 (matching norm stats)
 mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"; rm -rf "$OUT/trace" "$OUT/results.csv"
 stop_all() { kill -9 $(pgrep -f "vla_policy_client|pick_place_scene_bridge|serve_policy.py" | grep -vx "$$") 2>/dev/null; }
 trap stop_all EXIT
 stop_all; sleep 3
 
 ( cd "$OPENPI" && CUDA_VISIBLE_DEVICES="$SERVER_GPU" nohup uv run --no-sync scripts/serve_policy.py --port "$PORT" \
-    policy:checkpoint --policy.config=pi0_ur5e_pick_place --policy.dir="$CKPT" > "$OUT/server.log" 2>&1 & )
+    policy:checkpoint --policy.config="$POLICY_CONFIG" --policy.dir="$CKPT" > "$OUT/server.log" 2>&1 & )
 for _ in $(seq 1 120); do grep -q "server listening" "$OUT/server.log" && break; sleep 2; done
 grep -q "server listening" "$OUT/server.log" || { echo "server did not start, see $OUT/server.log"; exit 1; }
 ( cd "$OPENPI" && uv run --no-sync python "$REPO/scripts/warmup_policy_server.py" 2>&1 | tail -3 )

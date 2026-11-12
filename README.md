@@ -2455,6 +2455,36 @@ EMA and the training-seed repeat are deferred until the v3 result is in.
   **A difference to keep in mind:** the number of STEPS is the same (3000 x batch 32 = 96k samples), so v3 sees each frame about half as often as v2 did (0.31 vs 0.60 epochs). That is part of "same recipe" (same compute), and it is a confound if v3 turns out worse or better.
 * Pre-registered decision criteria: see the 2026-11-12 design section; they apply unchanged. Next: evaluate `v3_3k/2999` on the training box, step 1 and step 2 (K=50, 20 trials, seeds 8000-8019, `scripts/eval_checkpoint.sh` + `scripts/summarize_range.py`).
 
+#### 2026-11-12 (while `v3_3k` trains): checks on the v3 design, an amendment to the decision criteria, and the evaluation plan
+
+All of this was done before any v3 result exists.
+
+* **Amendment to the criteria (added after review, before the result).** "Step 2 placed >= 15/20" is statistically weak against the 2999 baseline of 11/20:
+  Fisher exact p = 0.51 / 0.32 / 0.18 / 0.08 / 0.03 / 0.008 for 14 / 15 / 16 / 17 / 18 / 19 of 20. So: **15-17/20 counts as "criterion met, effect not established"**, and the rule is fixed now:
+  in that case extend the step-2 evaluation of BOTH checkpoints (v2 2999 and v3) to 60 seeds (8000-8059; the expert baseline for seeds 8020-8059 first, ~25 min; ~75 min per policy run) before claiming an effect, and only
+  if it is still unclear repeat the training with another seed. >= 18/20 (p <= 0.03) may be reported as an effect on its own. Always quote the paired outcome table (`scripts/paired_success.py`), the wrist_3 runaway count and the
+  placed-error median next to the success rate; the two continuous measures separate better than a pass/fail count at n=20.
+* **Seed overlap: none possible.** The v3 collection (and v2's, README 2026-09-29) was unseeded (`PickPlaceScene._rng = default_rng()`), the evaluation draws its spawns from `default_rng(8000+k)`. By position: the nearest saved v3 spawn to
+  an evaluation spawn is 1.3-1.7 mm at the closest, median 5-8 mm (150 points in 0.032 m2 give ~7 mm to the nearest neighbour by chance). That is ordinary in-distribution proximity, not contamination; the evaluation is in-distribution by design.
+  (v2's spawn positions were not recorded, so that check covers the 150 new episodes only.)
+* **Does the success filter thin the edges?** (`eval_results/v3_spawn_distribution.png`, `v3_new_spawns_{saved,rejected}.npy`; 174 attempts.) Expert success by band: |Y| <= 0.04: 42/51 (0.82); 0.04-0.08: 27/35 (0.77); 0.08-0.12: 41/43 (0.95);
+  > 0.12: 40/45 (0.89) -- **no thinning at the Y edges**. By X: < 0.42: 55/68 (0.81); 0.42-0.45: 55/55 (1.00); > 0.45: 40/51 (0.78): the expert fails more at the X edges, and the X > 0.45 band is slightly thin in the saved data (40 saved vs 45 expected for its
+  area share). The 4x8 grid of saved episodes has 1-10 per cell (uniform expectation 4.7), too noisy to call anything but "roughly even". So the saved data covers the box about evenly; the lost episodes are mostly blow-ups near the X edges (16 of 24 rejections),
+  an observation about the expert (it is least reliable at the extremes of reach) that also bounds what the data can teach there.
+* **Known confounds (unchanged):** equal steps on twice the data = 0.31 vs 0.60 epochs; 69% of the episodes in the old box. If the training box drops below 18/20, suspect these first.
+* **Evaluation plan when `v3_3k/2999` exists** (training holds both GPUs until ~18:40; nothing else can run on the GPUs meanwhile):
+  ```
+  export POLICY_CONFIG=pi0_ur5e_pick_place_v3                     # read by eval_checkpoint.sh (default pi0_ur5e_pick_place)
+  C=checkpoints/pi0_ur5e_pick_place/v3_3k
+  scripts/eval_checkpoint.sh $C/2999 eval_runs/v3_train_box 20 8000 50
+  VLA_BRIDGE_CUBE_Y_RANGE=-0.13,0.13 scripts/eval_checkpoint.sh $C/2999 eval_runs/v3_step1 20 8000 50
+  VLA_BRIDGE_CUBE_X_RANGE=0.38,0.48 VLA_BRIDGE_CUBE_Y_RANGE=-0.16,0.16 scripts/eval_checkpoint.sh $C/2999 eval_runs/v3_step2 20 8000 50
+  scripts/summarize_range.py eval_runs/v3_step2/results.csv eval_runs/v3_step2/trace eval_results/expert_baseline_step2.jsonl      # and step1 / the training box with their baselines
+  scripts/paired_success.py "v2=eval_runs/range_step2/results.csv" "v3=eval_runs/v3_step2/results.csv"      # v2 reference: eval_runs/range_step1, range_step2, and eval_results/short_3k_2999_k10-25-50_seed8000.csv:50 for the training box
+  ```
+  `scripts/eval_checkpoint.sh` takes the server's policy config from `POLICY_CONFIG` (default `pi0_ur5e_pick_place`; v3 needs `pi0_ur5e_pick_place_v3`: the norm stats in `assets/pi0_ur5e_pick_place_v3/` and the checkpoint's own `assets/` belong to that config; with the wrong config the server loads v2's statistics). Check the server log's `Loaded norm stats from ...` line before trusting a run.
+  Reference results of v2 2999 (K=50, seeds 8000-8019): training box 20/20, step 1 17/20, step 2 11/20; wrist_3 runaway 0 / 1 / 4; expert 18 / 19 / 17.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
