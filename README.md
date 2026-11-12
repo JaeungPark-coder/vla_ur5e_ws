@@ -2406,6 +2406,36 @@ Reading: the data range is the limit of this policy. Within about 16 mm of the d
 success collapses, and the failures are largely the wrist_3 runaway seen in the earlier checkpoints. This favours wider-range data as the first
 step-4 candidate (the relayed literature says the same, unverified); the expert handles Y +-0.13 (19/20) and X 0.38-0.48 x Y +-0.16 (17/20), so data can be collected there.
 
+### 2026-11-12: step 4 = wider-range data (v3) -- design and the decision criteria, written BEFORE any v3 result exists
+
+**What changes (one thing):** the spawn box of the data. v3 = `vla_ur5e_ws/ur5e_pick_place_v2` (152 episodes, X 0.42-0.48 x |Y| <= 0.10) merged with ~150 new
+successful expert episodes spawned in **X 0.38-0.48 x Y +-0.16** (contains the old box; stays clear of X >= 0.49 and |Y| >= 0.17 where RMPflow tracking spiked; the expert
+succeeded in 17/20 there on 2026-11-11). Everything else as in v2: `collect_demos.py` (new options `--x_range/--y_range/--max_cube_z_m`), success = lifted and placed within 30 mm,
+`PLACE_CORRECTION_TOLERANCE_M` as in the code today (0.005, the "fixed" value; v2 had 64 episodes at 0.003 and 88 at 0.005, so v3's mix is 64 / ~238 -- a difference that is
+not the box and is recorded here), blow-ups (cube z > 0.25 m) excluded (v2 did it at its merge step, v3 at collection), same prompt, same cameras (the base camera framing is the scene's
+default and is NOT moved with the box), same 3k recipe (`--num-train-steps=3000 --lr-schedule.decay-steps=3000 --lr-schedule.warmup-steps=300`, `ema_decay=None`), same K=50 evaluation.
+**Confounds that remain and cannot be separated by this run:** box AND data amount (152 -> ~300 episodes) change together, and the old box is over-represented (it is 37% of the
+new box's area, plus the 152 old episodes). A control with 150 more episodes in the OLD box would separate them (~4 h of training); it is only worth it if the result is ambiguous.
+
+**Evaluation:** v3's final checkpoint (`<exp>/2999`) on three boxes -- training box, step 1 (Y +-0.13), step 2 (X 0.38-0.48 x Y +-0.16) -- K=50, 20 trials, seeds 8000-8019
+(`scripts/eval_checkpoint.sh`, `scripts/summarize_range.py` with the expert baselines), reported on all seeds and on the seeds where the expert succeeded, with Wilson intervals.
+Reference (2999, v2 data): training box 20/20, step 1 17/20, step 2 11/20 (wrist_3 runaway 0 / 1 / 4 of 20); expert 18 / 19 / 17 of 20.
+
+**Decision criteria (fixed now, before the result):**
+* *The range extension worked* if on step 2: placed >= 15/20 AND wrist_3 runaway <= 1/20, and on the training box placed >= 18/20 (no regression).
+* *No effect* if on step 2: placed <= 12/20 or runaway >= 3/20.
+* *Anything between* (13-14/20, or 2 runaways): ambiguous, no conclusion; the next step is a training-seed repeat and/or the narrow-box control above, not a claim.
+* n=20 per box cannot show small differences (e.g. 15/20 vs 11/20: Fisher p ~ 0.3); these thresholds define "close to the expert's 17/20", not a significance test. Quote the intervals.
+* Placement precision (median placed error ~12 mm in every box so far) is reported but is NOT a criterion: staying near 12 mm is the expected outcome (v3 fixes range, not precision).
+* After v3 the evaluation boxes are inside the training range: a success then shows the extension worked, not that the policy generalises further. A region outside the new box would have
+  to be evaluated separately (not X >= 0.49 or |Y| >= 0.17).
+* If the extension does not remove the wrist_3 runaway (runaway >= 3/20 on step 2), the next candidates are a per-tick limit on the position targets (applied to every compared run, marked) or real-time-chunking-style chunk joining.
+
+**Plan and time (~8-9 h):** code for the box option and the dataset hookup (~1 h); two collectors in parallel (GPU 0 and 1, 75 successful episodes each, ~42 s per attempt, ~85% success -> ~1.2 h);
+merge v2 + the two new sets into `vla_ur5e_ws/ur5e_pick_place_v3` with `lerobot-edit-dataset`; verify the count and the box of the new episodes; `compute_norm_stats` (16 workers); 3k training on both GPUs
+(~4 h, `--save-interval=3000` so only the final checkpoint is kept, ~9 GB); evaluation ~1.3 h. Collection writes under `HF_LEROBOT_HOME=/media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/hf_cache` (root disk has 55 GB; v2 is 14 GB there).
+EMA and the training-seed repeat are deferred until the v3 result is in.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).

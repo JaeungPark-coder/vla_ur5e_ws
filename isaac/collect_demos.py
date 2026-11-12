@@ -109,7 +109,7 @@ def max_attempts_for(num_episodes: int) -> int:
 
 
 def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_m: float = 0.03,
-            overwrite: bool = False):
+            overwrite: bool = False, max_cube_z_m: float = 0.25):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.utils.constants import HF_LEROBOT_HOME
 
@@ -287,7 +287,8 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
         lifted = scene.grasp_succeeded(max_cube_z)
         place_error = scene.place_error_m()
         placed = place_error <= place_tolerance_m
-        if lifted and placed:
+        blown_up = max_cube_z > max_cube_z_m
+        if lifted and placed and not blown_up:
             dataset.save_episode()
             n_success += 1
             place_errors.append(place_error)
@@ -295,6 +296,7 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
         else:
             dataset.clear_episode_buffer()
             outcome = "REJECTED (" + ("never lifted" if not lifted
+                                      else f"blow-up, cube z {max_cube_z:.2f} m" if blown_up
                                       else f"placed {place_error * 1000:.0f}mm off target") + ")"
 
         print(f"attempt {attempted} -> episode {n_success}/{num_episodes}: {outcome}, "
@@ -374,6 +376,14 @@ def main():
                         help="max cube-to-target planar error for an episode to count as a "
                              "demonstration; matches the success threshold vla_policy_client.py's "
                              "eval_mode and hybrid_pick_place_demo.py already use")
+    parser.add_argument("--x_range", type=float, nargs=2, default=None,
+                        help="cube spawn box in X (m), overriding pick_place_scene.CUBE_X_RANGE (v3 data: 0.38 0.48). The base "
+                             "camera framing is NOT changed (it is computed from the scene's default box at import time).")
+    parser.add_argument("--y_range", type=float, nargs=2, default=None,
+                        help="cube spawn box in Y (m), overriding pick_place_scene.CUBE_Y_RANGE (v3 data: -0.16 0.16)")
+    parser.add_argument("--max_cube_z_m", type=float, default=0.25,
+                        help="reject an attempt whose cube ever rose above this (a contact blow-up, not a demonstration); "
+                             "v2 applied the same 0.25 m rule at its merge step")
     parser.add_argument("--overwrite", action="store_true",
                         help="allow deleting an existing dataset at --repo_id. Without this, "
                              "an existing repo_id refuses to run rather than silently deleting "
@@ -382,12 +392,18 @@ def main():
                              "`lerobot-edit-dataset --operation.type merge` step, not rerunning "
                              "this with the same --repo_id.")
     args = parser.parse_args()
+    import pick_place_scene as _pps
+    if args.x_range:
+        _pps.CUBE_X_RANGE = tuple(args.x_range)
+    if args.y_range:
+        _pps.CUBE_Y_RANGE = tuple(args.y_range)
+    print(f"cube spawn box: X {_pps.CUBE_X_RANGE} Y {_pps.CUBE_Y_RANGE}; reject max_cube_z > {args.max_cube_z_m} m", flush=True)
 
     # Print any traceback BEFORE closing the app: simulation_app.close() runs
     # Kit's fastShutdown, which kills the process before Python can report an
     # escaping exception, making a crash look like a clean exit.
     try:
-        collect(args.num_episodes, args.repo_id, args.push_to_hub, args.place_tolerance_m, args.overwrite)
+        collect(args.num_episodes, args.repo_id, args.push_to_hub, args.place_tolerance_m, args.overwrite, args.max_cube_z_m)
     except BaseException:
         import traceback
         print("\n=== FAILED ===\n" + traceback.format_exc(), flush=True)
