@@ -2533,6 +2533,24 @@ edges got ~2.5x fewer episodes per area than the old box, 0.31 epochs per frame,
 Per the branch fixed beforehand ("step 2 stays near 11/20 -> go back to the wrist_3 countermeasures or another axis") the next step is NOT more data of the same kind by default. Open candidates: (a) a per-tick limit on position targets / chunk joining (deployment guard; would need to be applied to every compared run),
 (b) an EMA-enabled run or a second training seed (training noise is unknown and now matters: a 4-trial swing is of the size of the v2-v3 difference), (c) longer training on v3 (e.g. 6k steps; changes two things at once), (d) targeted data at the edges.
 
+#### 2026-11-12 (night): next axis = training-seed repeat of the baseline; and what the cameras see (offline, from the dataset images)
+
+**Training-seed repeat launched ~20:15 KST:** the v2 recipe exactly as `short_3k`, only `--seed=1` (default 42; the seed drives the LoRA initialisation and the data shuffle) and `--save-interval=3000`:
+`CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run --no-sync scripts/train.py pi0_ur5e_pick_place --exp-name=short_3k_seed1 --seed=1 --num-train-steps=3000 --lr-schedule.decay-steps=3000 --lr-schedule.warmup-steps=300 --save-interval=3000 --keep-period=3000 --log-interval=50 --num-workers=16 --no-wandb-enabled`
+(same env variables as before; log `apps/openpi/short_3k_seed1.log`; checkpoint `checkpoints/pi0_ur5e_pick_place/short_3k_seed1/2999`; step 0 loss 0.1311 vs 0.1394 with seed 42: the seed took effect). ETA ~00:30.
+Purpose: the scale for every comparison: does a second training of the same recipe reproduce the training-box 20/20? Evaluate it on the three boxes (training box, step 1, step 2; K=50, 20 trials, seeds 8000-8019, default `POLICY_CONFIG`) and read it against v2 2999 (20 / 17 / 11) and v3 (16 / 15 / 12).
+Reading rule fixed now: if the second v2 run lands near 16/20 on the training box, the v2-v3 difference there is training noise; if it lands near 20/20, v3 was probably worse (half the epochs / old-box share become credible). The other candidates (position-target limit, EMA, 6k steps, edge data) wait for this scale.
+
+**Cube visibility from the dataset images** (`scripts/cube_visibility_from_dataset.py`, `eval_results/v3_visibility_by_frame.npz`; the 150 new episodes, whose spawns are logged; red-pixel count as in `cube_pixels_visible`):
+* **Frames 0 and 1 of every episode show the cube at the same fixed place** (centroid std 4 px in x, 0.6 px in y; no relation to the spawn, R2 0.02), from frame 2 on the centroid follows the spawn (R2 0.99): the first two renders after a reset are stale.
+  So the observation at tick 0 -- the one the first chunk is computed from -- carries no cube position, in training and in evaluation alike.
+* **Base camera visibility (cube >= 20 px) by frame, n=150:** frame 2: 116, frame 10: 104, frame 25: 68, **frame 40: 0** (the arm hides the cube in every episode), frame 50: 139 (median 130 px), frame 60: 143, frame 75: 147, 100: 149, later 150/150. **Wrist camera:** 0 at all frames except 100-125 (131-133 of 150, the descent).
+  K=50 decision ticks (0, 50, 100, ...) fall outside the occlusion window at tick 50; K=10 and K=25 ticks at 30-45 would see no cube.
+* **Failures sit where the cube is small/occluded at the decision ticks.** Predicted base-camera pixels (median of the 5 nearest training spawns) for the evaluation spawns of step 2, v2 and v3: at tick 50, placed 190 / 159 px (v2 / v3), never touched 90 / 91, runaway 62 (v2, 4 trials);
+  at ticks 60-75: placed 228-250, never touched 144-199, runaway 152-173. Training spawns at the edges (X < 0.40 or |Y| > 0.12, n=59): median 61 px at tick 50 vs 189 elsewhere (visible in 49 of 59). Wrist pixels do not differ.
+  **Caveat: this cannot separate "the policy sees the cube badly at the edges" from "the data is thin at the edges"** (both vary with the same position), the pixel counts are predictions from neighbours, not the evaluation's own images, and n is 5-12 per row. It does make a perception limit a live candidate next to data thinness.
+  A test that would separate them needs new data or a camera change (e.g. a higher-resolution or differently placed base camera), not more of the same.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
