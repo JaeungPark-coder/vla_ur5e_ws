@@ -18,6 +18,12 @@ stop_all; sleep 3
     policy:checkpoint --policy.config="$POLICY_CONFIG" --policy.dir="$CKPT" > "$OUT/server.log" 2>&1 & )
 for _ in $(seq 1 120); do grep -q "server listening" "$OUT/server.log" && break; sleep 2; done
 grep -q "server listening" "$OUT/server.log" || { echo "server did not start, see $OUT/server.log"; exit 1; }
+# the norm stats must belong to the config (v3 weights with v2 statistics would be a silent mistake): print the lines and stop on a mismatch
+grep "Loaded norm stats from" "$OUT/server.log"
+case "$POLICY_CONFIG" in
+  *_v3) grep "Loaded norm stats from" "$OUT/server.log" | grep -q "ur5e_pick_place_v3" || { echo "WRONG norm stats for $POLICY_CONFIG, see $OUT/server.log"; exit 1; } ;;
+  *)    grep "Loaded norm stats from" "$OUT/server.log" | grep -q "ur5e_pick_place_v2" || { echo "unexpected norm stats for $POLICY_CONFIG, see $OUT/server.log"; exit 1; } ;;
+esac
 ( cd "$OPENPI" && uv run --no-sync python "$REPO/scripts/warmup_policy_server.py" 2>&1 | tail -3 )
 
 ( GPU="$GPU" VLA_BRIDGE_SEED="$SEED" VLA_BRIDGE_SEED_REPEAT=1 VLA_BRIDGE_TRACE_DIR="$OUT/trace" \
