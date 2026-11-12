@@ -2318,7 +2318,7 @@ of the target after being held above 0.08 m, same cube seeds (8000+k) for every 
 | 2 closed-loop evaluation of 2999 | **58/60 placed (97%) at 30 mm**, K=10/25/50 = 19/19/20 of 20 (not distinguishable), **0 blow-ups**; at 10 mm 35%, at 5 mm 8% |
 | learning curve (not in the plan, added) | 1000: 11/20, 3 blow-ups; 2000: 8/20, 10 blow-ups; 2999: 20/20 (K=50, same seeds) |
 | 3 blow-up diagnosis | 13 blow-ups = the policy turns wrist_3 back / spins it at the cube (median 1.7 rad per 30 ticks, max 10; 2999: max 0.41), the open fingers strike the cube; not a solver glitch at a normal grasp |
-| range evaluation (before step 4) | expert baselines done (18/20, 19/20, 17/20 on base / Y+-0.13 / X0.38-0.48 Y+-0.16); policy evaluation of the two wider boxes was RUNNING when this was written -- results are not in this README yet |
+| range evaluation (before step 4) | expert baselines done (18/20, 19/20, 17/20 on base / Y+-0.13 / X0.38-0.48 Y+-0.16); policy on the wider boxes was run on 2026-11-12: 17/20 and 11/20, see the 2026-11-12 section |
 | 4 one reinforcement, 5 stacked 10k run | NOT started (on hold until the range results, see "Next") |
 
 **What the numbers do and do not say**
@@ -2371,7 +2371,55 @@ residual RL for placement as a later, 1-2 week project. Decide after the range r
 
 **Git:** pushed through `f8791d0` (origin/master). This README section is a later commit.
 
-### TOMORROW (written 2026-11-11 evening): where things stand and what to do, in order
+### 2026-11-12: wider spawn boxes, policy `short_3k/2999` (K=50, 20 trials, seeds 8000-8019 = the expert baselines' seeds)
+
+Files: `eval_results/short_3k_2999_range_step{1,2}_k50_seed8000*.{csv,json}`; summary: `scripts/summarize_range.py`. Step 1 = Y +-0.13 (1.3x
+the training area), step 2 = X 0.38-0.48 x Y +-0.16 (2.7x). The first attempt at step 1 ended after 0 trials because of a race in
+`eval_checkpoint.sh` (it saw "client gone" before the client had started; fixed: the client must have been seen once, or 3 minutes pass),
+and was re-run from scratch; step 2 ran normally the first time.
+
+| box | policy placed (30 mm) | 95% Wilson | expert placed (same seeds) | trace blow-ups (jump / far / z) | wrist_3 runaway |
+|---|---|---|---|---|---|
+| training box (2999, K=50, 11-11) | 20/20 | [0.84, 1.00] | 18/20 | 0 | 0/20 |
+| step 1 | 17/20 | [0.64, 0.95] | 19/20 | 1 | 1/20 |
+| step 2 | 11/20 | [0.34, 0.74] | 17/20 | 4 | 4/20 |
+
+On the seeds where the expert succeeded: step 1 16/19, step 2 9/17. On the seeds where it failed: step 1 1/1, step 2 2/3.
+"wrist_3 runaway" (new, in `summarize_range.py`) = wrist_3 unwinds by > 3 rad against its running maximum, leaves [-1, 5.5] rad (demonstrations:
+[-0.05, 4.5], unwinding <= 1.4) or the joint values diverge; counted over ALL trials. For comparison, same measure: 1000 -> 6/20, 2000 -> 11/20.
+
+* **Success falls with the distance of the spawn from the training box** (X 0.42-0.48, |Y| <= 0.10). Step 2: inside the box 6/6, within 16 mm of it
+  10/10, 17 mm or more away 1/10 (the one success is a seed the expert also failed). Step 1: inside 14/15, outside (<= 19 mm) 3/5. The 16-17 mm
+  threshold was read off after seeing the data (exploratory), the monotone shape is what matters. This is the "works near the demonstrated range" behaviour.
+* **Failure types, step 2 (9 failures):** wrist_3 runaway in 4 (trials 7, 8, 16, 20: wrist_3 reaches 9, 241, 1293 rad and finally the joints diverge; two of them throw the cube
+  far away, one flags a one-tick jump); the cube never touched in 5 (trials 3, 9, 10, 11, 13: the arm does not reach/grasp it, no spin). Step 1 (3 failures): trial 13 never lifted with wrist_3 at -41 rad
+  (a spin, at the box edge Y = 0.101), trial 16 never touched, trial 17 lifted (max z 0.117) but not placed (one-tick jump 2.5 cm: a drop or a push).
+* **Correction of a statement made while this ran:** an interim report said the step-2 failures were not caused by wrist_3. That was wrong: the
+  first version of `summarize_range.py` left the trials flagged as blow-ups out of the wrist_3 statistics, which removed exactly the spinning ones.
+  The runaway count above is over all trials. The same wrist_3 runaway is the common signature of the failures of 1000 and 2000, so it appears
+  both with un-annealed weights and with out-of-distribution spawns.
+* Other numbers: placed error median 11.8 mm (step 1), 12.0 mm (step 2), i.e. unchanged by the box; unwinding of 0.5-0.8 rad (not runaways) occurs in 5/19 (step 1) and 2/16 (step 2) non-runaway trials, as in the demonstrations (8.6% > 0.5 rad).
+* Limits: n=20 per box, one policy, one training run; the box edges the expert cannot handle (17/20 in step 2) are included, so "policy fails" and "task is hard" are
+  mixed in the all-seeds rows (see the expert-success rows); the 2.7x box overlaps no recorded RMPflow-spike region (X >= 0.49, |Y| >= 0.17) but spans the edges of the camera-coverage concern.
+
+Reading: the data range is the limit of this policy. Within about 16 mm of the demonstrated box it behaves as in the training box; beyond it
+success collapses, and the failures are largely the wrist_3 runaway seen in the earlier checkpoints. This favours wider-range data as the first
+step-4 candidate (the relayed literature says the same, unverified); the expert handles Y +-0.13 (19/20) and X 0.38-0.48 x Y +-0.16 (17/20), so data can be collected there.
+
+### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
+
+**State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
+Uncommitted/unpushed work is listed in the git section of the last message; check `git status` first.
+1. *Decide the ONE step-4 reinforcement.* Evidence so far: data range is the limit (above); precision (median 11-12 mm everywhere) is not helped by range; training-seed variance is unknown.
+   Default proposal: **wider-range data (v3)**: collect with the expert in X 0.38-0.48 x Y +-0.16 (expert success 17/20 there; ~42 s per episode; keep successes only, as before; keep the
+   existing 152 base-box episodes and add ~150 in the wider box), `compute_norm_stats` again (16 workers), a 3k run with the SAME recipe (3-4 h), then evaluate with
+   `scripts/eval_checkpoint.sh` on the training box AND on step 1 and step 2 (K=50, 20 trials, seeds 8000-8019; report on all seeds and expert-success seeds, wrist_3 runaway count).
+   Needs: a dataset-collection run (`isaac/collect_demos.py` with a spawn-box override -- not yet there: `CUBE_X_RANGE`/`CUBE_Y_RANGE` are module constants in `pick_place_scene.py`, the bridge override is `VLA_BRIDGE_CUBE_*`), a new repo id (`..._v3`), and a config copy in openpi.
+   Alternatives from the same list: EMA-enabled 3k run (separates weights from steps); a second training seed of the baseline (tells training noise).
+2. *Read first:* the 2026-11-11 DAY SUMMARY and the section above. Pitfalls are listed in the previous TOMORROW section (still valid: `env -i` drops variables, never `pkill -f`, Kit ignores TERM, check `ps` for stale clients, warm the server, `--port` before `policy:checkpoint`).
+3. *Housekeeping when decided:* `smoke_test` checkpoint (8.7 GB) and the old 14 GB Arrow cache are deletion candidates; the claude.ai artifact page still has known errors.
+
+### (superseded by the 2026-11-12 plan above; its pitfalls list is still valid) TOMORROW (written 2026-11-11 evening)
 
 **State when work was stopped**
 * The wider-box policy evaluation was STOPPED by hand after 2 of 20 trials of step 1 (both placed). Those partial files (`eval_runs/range_step1/`)

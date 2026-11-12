@@ -34,14 +34,17 @@ def main():
         z = np.load(os.path.join(trace_dir, f"trial_{t:03d}.npz"))
         meta = json.load(open(os.path.join(trace_dir, f"trial_{t:03d}.json")))
         w = z["joints"][:, 5].astype(float)
-        fin = np.isfinite(w)
+        fin = np.isfinite(w) & (np.abs(w) < 1e4)           # up to the tick where the joint values diverge (numerical explosion)
         w = w[:int(np.argmax(~fin))] if (~fin).any() else w
         d30 = float(np.abs(w[30:] - w[:-30]).max()) if len(w) > 30 else 0.0
         unwind = float(np.max(np.maximum.accumulate(w) - w))
+        # wrist_3 "runaway": turns by more than 3 rad against its running maximum, or leaves [-1, 5.5] (the demonstrations stay in
+        # [-0.05, 4.5] and unwind at most 1.4 rad) -- counted over ALL trials, blow-up flagged or not
+        runaway = bool(unwind > 3.0 or w.min() < -1.0 or w.max() > 5.5 or (~fin).any())
         cube_end = z["cube"][-1, :2]
         err = 1000 * float(np.linalg.norm(cube_end - np.array([0.45, 0.30])))
         rows.append({"trial": t, "seed": seed, "ok": r["success"] == "True", "blowup": bool(meta["blowup"]) or r["blowup"] == "1",
-                     "d30": d30, "unwind": unwind, "err": err})
+                     "d30": d30, "unwind": unwind, "runaway": runaway, "err": err})
 
     def report(label, rs):
         n = len(rs)
@@ -51,13 +54,14 @@ def main():
         ok = sum(r["ok"] for r in rs)
         lo, hi = wilson(ok, n)
         bl = sum(r["blowup"] for r in rs)
-        clean = [r for r in rs if not r["blowup"]]
+        clean = [r for r in rs if not r["runaway"]]
+        runaway = sum(r["runaway"] for r in rs)
         placed = np.array([r["err"] for r in rs if r["ok"]])
         d30 = np.array([r["d30"] for r in clean]) if clean else np.zeros(1)
         un = np.array([r["unwind"] for r in clean]) if clean else np.zeros(1)
         print(f"{label:34s} n={n:2d} placed {ok:2d} ({ok / n:.2f}, Wilson {lo:.2f}-{hi:.2f}) blow-ups {bl} | "
               f"placed err median {np.median(placed) if len(placed) else float('nan'):.1f} mm | "
-              f"wrist_3 30-tick max {d30.max():.2f}, unwinding >0.5 rad in {int((un > 0.5).sum())}/{len(clean)} (max {un.max():.2f}) [non-blow-up trials]")
+              f"wrist_3 RUNAWAY in {runaway}/{n} | without runaway: 30-tick max {d30.max():.2f}, unwinding >0.5 rad in {int((un > 0.5).sum())}/{len(clean)}")
 
     report("all seeds", rows)
     good = [r for r in rows if expert.get(r["seed"], {}).get("placed")]

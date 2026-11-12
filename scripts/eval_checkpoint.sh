@@ -27,9 +27,12 @@ grep -q "world step index after reset" "$OUT/bridge.log" || { echo "bridge did n
 ( nohup "$REPO/scripts/run_client_node.sh" -p eval_mode:=true -p n_trials:="$N" -p execute_horizon:="$K" \
     -p results_csv_path:="$OUT/results.csv" > "$OUT/client.log" 2>&1 & )
 # ~1.2 min per trial; give up after 3x that
-for _ in $(seq 1 $((N * 6))); do
+# "client gone" only counts as the end once the client has been seen running (checked right after the launch it is not
+# visible yet: that race ended a run with 0 trials on 2026-11-12) or after 3 minutes without ever seeing it
+seen=0
+for i in $(seq 1 $((N * 6))); do
   [ "$(($(grep -c . "$OUT/results.csv" 2>/dev/null || echo 1) - 1))" -ge "$N" ] && break
-  pgrep -f vla_policy_client >/dev/null || break
+  if pgrep -f vla_policy_client >/dev/null; then seen=1; elif [ "$seen" = 1 ] || [ "$i" -gt 6 ]; then break; fi
   sleep 30
 done
 sleep 5
