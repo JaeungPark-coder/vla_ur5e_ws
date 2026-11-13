@@ -2596,6 +2596,33 @@ was restarted by a snap auto-refresh at 00:21 and took its child processes with 
 the mirrored -Y strip (Y -0.16 to -0.10), same seeds, to test the asymmetry; (2) the position-target limit on step 2 for the three models (safety device, reported separately,
 applied to every comparison); (3) from now on efficacy claims use n = 60 paired (seeds 8000-8059) on a box with room (step 2); the training box is only a regression check.
 
+### 2026-11-13 (afternoon): GPU-free checks of the +Y failures, and the confirmation test (prediction written BEFORE it runs)
+
+GPU-free checks (`scripts/grasp_offset.py`, `isaac/render_spawn_images.py`, `isaac/expert_pixels_per_tick.py`, `scripts/failure_overlap.py`; raw in `eval_results/`):
+* **Signed miss at the moment the gripper closes** (grip point minus cube, from the traces; 3 models x 3 boxes, 180 attempts): at spawn Y > +0.10 the failed attempts
+  close with the hand a median **-60 mm in Y (toward the centre line) and +40 mm in X** (n=22; per model -78/-69/-46 mm). At Y < -0.10 the failures miss by +30 mm, also toward the centre
+  (n=6); at |Y| <= 0.10 failures -6 mm (n=17). Placed attempts are within a few mm everywhere. The grip Y at close tracks the cube up to Y ~ +0.10
+  (placed bins: grip Y 72 for cube 75 mm) and then **stops at about +0.06 to +0.07 m whatever the cube Y (cube 113 -> grip 61; cube 124 -> grip 66)**; on the -Y side it follows to -118 for -135.
+  Shoulder pan at close shows the same: it follows Y to -0.14 rad and stays at -0.13 for cubes beyond. So the hand lands inside the old training box edge, toward the centre,
+  not at "the training mean": the step at Y ~ 0.10 is sharp, in v3 as well (v3 has 40 training episodes there).
+* **Home-pose images the policy gets** (rendered with the bridge's scene, seed -> spawn): the base camera (at Y=0, aimed at Y=+0.10) sees a cube at Y in about [-0.04, +0.06] **not at all** (0 px, hidden by the arm
+  at the home pose), partly at -0.04 (100 px), and a cube at Y > +0.10 clearly (250-260 px at X = 0.45). The wrist camera sees no cube at home for any Y. So the cube behind the arm
+  at Y ~ 0 is handled by the policy (|Y| <= 0.10 works 118/135) and **plain invisibility at home pose does not explain the +Y failures.** Cubes at X 0.38-0.39, Y +0.12-0.15 lie right at the
+  upper-arm edge in the image (partly overlapped, fewer pixels: 190-220) -- this is the 4 of 5 +Y step-2 seeds with small X and confounds X with Y.
+  (My first render, 10 settle ticks, showed ghost cubes -- temporal-AA leftovers of the previous reset; the 40-tick grid renders are clean. The scene settles slowly after a reset.)
+* **Along the expert's episode** (per-tick pixels, step-2 seeds, `eval_results/expert_pixels_per_tick_step2.npz`): the cube at Y > +0.10 is hidden in 6% of ticks 5-300, in the centre band 12%, at Y < -0.10 9%; but in the first
+  movement (ticks 40-100) it is partly covered more often at +Y (mean 128 px vs 197 centre, 229 at -Y). A weak hint of occlusion by the moving arm during the first approach, not tested on the policy.
+* **Scene symmetry:** not symmetric -- base camera at Y=0 aimed at Y=+0.10, place target at Y=+0.30, shoulder pan -0.1 to -0.4 rad across the box. Nothing found that explains a cliff at +0.10 by itself.
+* Not done: policy inputs were never stored. From now on `VLA_BRIDGE_SAVE_IMAGES=1` saves the images of every tick that carries images (every K-th: exactly what the policy gets, ~3 MB/trial) as `trace/trial_NNN_images.npz`
+  (`TrialTrace.add_images`, unit-tested; first used in the strip evaluation below).
+
+**Confirmation test, designed so the 8000-series seeds that found the pattern are not reused.** v2 `short_3k/2999`, K=50, 20 trials, **new seeds 9000-9019**, two strips with X fixed to the old box
+(X 0.42-0.48, which removes the small-X confound of the earlier +Y seeds): **+Y strip Y 0.10-0.16** and **-Y strip Y -0.16 to -0.10**. Same seed = same X in both strips. Scripted expert on the same seeds afterwards.
+`scripts/strip_eval_driver.sh`.
+
+*Prediction (written before any strip result exists):* if the +Y cliff is real, **+Y strip <= 8/20 placed and -Y strip >= 13/20**, difference >= 6 trials (Fisher p < 0.05), and at the failed +Y attempts the grip Y at close is below +0.09 m.
+If +Y >= 13/20 and within 3 of -Y, the earlier asymmetry was seed-specific luck of 8 seeds and is dropped. Anything between is "not established". One checkpoint only; the other two are run only if the asymmetry is confirmed.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).

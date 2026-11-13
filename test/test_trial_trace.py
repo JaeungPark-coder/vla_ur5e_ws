@@ -61,3 +61,19 @@ def test_start_clears_the_previous_trial():
     assert t.summary()["blowup"]
     t.start(1, cube=[0.45, 0, 0.02])
     assert t.ticks == 0 and not t.summary()["blowup"]
+
+
+def test_policy_input_images_are_saved_next_to_the_trace(tmp_path):
+    t = tt.TrialTrace(str(tmp_path))
+    t.start(0, cube=[0.45, 0.0, 0.02])
+    t.add(1, [0.45, 0.0, 0.02], [0, 0, 0.3], np.zeros(6), 0.0)
+    base, wrist = np.full((8, 8, 3), 7, np.uint8), np.full((8, 8, 3), 9, np.uint8)
+    t.add_images(t.ticks, base, wrist)
+    t.add_images(t.ticks + 50, base + 1, wrist + 1)
+    t.save()
+    z = np.load(tmp_path / "trial_001_images.npz")
+    assert z["tick"].tolist() == [1, 51] and z["base"].shape == (2, 8, 8, 3) and z["wrist"][1, 0, 0, 0] == 10
+    t.start(1, cube=[0.45, 0.0, 0.02])      # a new trial starts with no images
+    t.add(1, [0.45, 0.0, 0.02], [0, 0, 0.3], np.zeros(6), 0.0)
+    t.save()
+    assert not (tmp_path / "trial_002_images.npz").exists()

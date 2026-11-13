@@ -62,6 +62,7 @@ class TrialTrace:
         self.epoch = int(epoch)
         self.request_id, self.cube, self.grip, self.joints, self.gripper = [], [], [], [], []
         self.reasons_seen = {}
+        self.img_tick, self.img_base, self.img_wrist = [], [], []
         self.first_trip = None
         self.max_jump = 0.0
         self.max_z = -np.inf
@@ -100,6 +101,14 @@ class TrialTrace:
         if self.out_dir and self.ticks % SAVE_EVERY_TICKS == 0:
             self.save()
 
+    def add_images(self, tick, base_rgb, wrist_rgb):
+        """Keep the two camera images the policy was given at this tick (uint8 HxWx3, the bridge's own arrays). Call it on the ticks
+        that publish images (every K-th with execute_horizon K = exactly what the policy saw); saved to trial_NNN_images.npz."""
+        self.img_tick.append(int(tick))
+        self.img_base.append(np.array(base_rgb, dtype=np.uint8))
+        self.img_wrist.append(np.array(wrist_rgb, dtype=np.uint8))
+        self._dirty = True
+
     def summary(self):
         return {
             "epoch": self.epoch, "trial": self.epoch + 1, "ticks": self.ticks,
@@ -119,6 +128,9 @@ class TrialTrace:
                             gripper=np.asarray(self.gripper))
         with open(stem + ".json", "w") as f:
             json.dump(self.summary(), f)
+        if self.img_tick:
+            np.savez_compressed(stem + "_images.npz", tick=np.asarray(self.img_tick), base=np.asarray(self.img_base),
+                                wrist=np.asarray(self.img_wrist))
         return stem
 
     def flush_if_dirty(self):

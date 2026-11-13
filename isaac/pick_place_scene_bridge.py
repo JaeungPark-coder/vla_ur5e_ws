@@ -227,6 +227,7 @@ def main():
     # Every tick of every trial -> VLA_BRIDGE_TRACE_DIR/trial_NNN.npz + .json (trial_trace.py: cube/grip point/joints/gripper
     # per tick and the blow-up verdict). Unset = no trace.
     trace = TrialTrace(os.environ.get("VLA_BRIDGE_TRACE_DIR") or None)
+    save_images = bool(trace.out_dir) and os.environ.get("VLA_BRIDGE_SAVE_IMAGES", "") == "1"   # + trial_NNN_images.npz (~3 MB/trial)
     last_obs = scene.get_observation() if lockstep else None
     last_republish = time.time()
     tick_max_z = 0.0  # lockstep: max cube height over the ticks since the last published message
@@ -289,6 +290,8 @@ def main():
                               f"{scene.world.current_time_step_index}", flush=True)
                     if publish_images:
                         last_obs = scene.get_observation()
+                        if save_images:   # the policy's own inputs of this trial, to see later what it saw
+                            trace.add_images(trace.ticks, np.asarray(last_obs["base_rgb"])[..., :3], np.asarray(last_obs["wrist_rgb"])[..., :3])
                         bridge.publish_cube_position(scene)
                         bridge.publish_cube_max_z(tick_max_z)
                         tick_max_z = float(scene.get_cube_position()[2])  # start the next window at the current height
