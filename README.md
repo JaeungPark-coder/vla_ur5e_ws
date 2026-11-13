@@ -2750,7 +2750,9 @@ Also from this round: the expert's outcome on a seed is not repeatable, so paire
   Training box below 18/20 = regression, reported.
 * *Prediction:* v3 3k on the strips about as v2 (13/40; 9-17/40). v3 6k: **no established effect** -- strips within +-5 of v3 3k, slope at the close up by less than 0.15, failures still missing toward the centre by 60-90 mm.
   Reason: the v2 run reached 0.60 epochs with the same result on the edge as v3's 0.31, and the loss was already flat (0.0038) at 3k; if 6k does help, the effect should show in the slope before it shows in the placed count.
-* Started 00:21 KST 2026-11-14 (v3 3k strips first, ~50 min; training ~01:15-09:25; evaluations ~09:30-11:10).
+* Started 00:21 KST 2026-11-14; v3 3k strips done 01:03. The first training start (01:03) lacked `OPENPI_DATA_HOME`/`HF_DATASETS_CACHE`/`UV_CACHE_DIR` in the driver: it began re-downloading pi0_base into `~/.cache/openpi`
+  and built a 26 GB Arrow cache on `/`; stopped at 01:08 before step 0 (orphaned DataLoader workers killed, the caches it created removed), driver fixed to export them, training restarted 01:09 (strips skipped).
+  Expected end of training ~09:30, evaluations ~11:00.
 
 ### 2026-11-14: tracking slope tick by tick -- the policy follows the cube only 60-80 % of the way and stops correcting after tick ~250
 

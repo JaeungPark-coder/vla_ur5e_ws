@@ -8,13 +8,21 @@
 cd "$(dirname "$0")/.." || exit 1
 OPENPI_DIR="${OPENPI:-/media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/apps/openpi}"
 export POLICY_CONFIG=pi0_ur5e_pick_place_v3 VLA_BRIDGE_SAVE_IMAGES=1
+# caches on bigdisk: without these openpi re-downloads pi0_base (11 GB) and datasets rebuilds a 26 GB Arrow cache on / (happened 2026-11-14 01:03, run stopped)
+BIG=/media/icrs/0549ec1c-684e-41a5-beca-53599cda1267
+export HF_DATASETS_CACHE=$BIG/hf_cache/datasets OPENPI_DATA_HOME=$BIG/openpi_cache UV_CACHE_DIR=$BIG/uv_cache PYTHONUNBUFFERED=1
+done20() { [ -f "$1/results.csv" ] && [ "$(($(wc -l < "$1/results.csv") - 1))" -ge 20 ]; }
 strips() {  # $1 checkpoint (relative to openpi), $2 name prefix
     VLA_BRIDGE_CUBE_X_RANGE=0.42,0.48 VLA_BRIDGE_CUBE_Y_RANGE=0.10,0.16 scripts/eval_checkpoint.sh "$1" "eval_runs/$2_strip_posY" 20 9000 50
     VLA_BRIDGE_CUBE_X_RANGE=0.42,0.48 VLA_BRIDGE_CUBE_Y_RANGE=-0.16,-0.10 scripts/eval_checkpoint.sh "$1" "eval_runs/$2_strip_negY" 20 9000 50
 }
-echo "$(date +%H:%M) v3 3k strip evaluations start"
-strips checkpoints/pi0_ur5e_pick_place_v3/v3_3k/2999 v3
-echo "$(date +%H:%M) v3 3k strip evaluations finished"
+if done20 eval_runs/v3_strip_posY && done20 eval_runs/v3_strip_negY; then
+    echo "$(date +%H:%M) v3 3k strip evaluations already complete -- skipped"
+else
+    echo "$(date +%H:%M) v3 3k strip evaluations start"
+    strips checkpoints/pi0_ur5e_pick_place_v3/v3_3k/2999 v3
+    echo "$(date +%H:%M) v3 3k strip evaluations finished"
+fi
 
 sleep 20
 if pgrep -f "kit/python|isaac-sim|serve_policy" >/dev/null; then echo "$(date +%H:%M) Isaac/server still running -- not starting training"; exit 1; fi
