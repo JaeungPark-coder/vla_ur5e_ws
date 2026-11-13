@@ -2732,8 +2732,24 @@ Not tested: training with converged frame 0 (needs re-rendered or re-collected d
 the expert's outcome on a seed is not repeatable (contact non-determinism, also seen in replay earlier). Lowest grip point in the reruns 35.6-40.8 mm, except 9019 (28.1 mm, gripper open, no spin, failed). So whether the expert's runaways share the pattern cannot be decided
 from reruns. What is known: the expert's own commanded path never goes below 36.8 mm in the training demonstrations, so the policy's 20-28 mm commands are not copied from the data.
 
-**Decision input for the next step.** Not perception at frame 0, not the position-target rate, not tracking. Left: the policy itself (lateral miss toward the centre and too-low descent at the edge); candidates are data near the edge with
+**Decision input for the next step.** (Reviewer, 2026-11-14: the first-frame claim "best candidate so far" is withdrawn; the core failure is that the hand does not go far enough toward an edge cube, growing with |Y|;
+the too-low descent and the runaways follow from entering the grasp phase out of position, where the policy extrapolates to heights the data never had.) Not perception at frame 0, not the position-target rate, not tracking. Left: the policy itself (lateral miss toward the centre and too-low descent at the edge); candidates are data near the edge with
 true early frames, more steps/EMA, or a camera that sees the cube at decision ticks. Contact stabilisation stays last and would only change how the failure looks.
+Also from this round: the expert's outcome on a seed is not repeatable, so paired comparisons carry physics noise and the measured run-to-run scale (up to 3/20) includes it; efficacy claims need the n=60 paired rule.
+
+### 2026-11-14: v3 6k -- is the centre bias under-training? Prediction written BEFORE the run
+
+* Design: v3 data unchanged, **6000 steps with `--lr-schedule.decay-steps=6000`** (warm-up 300, seed 42, batch 32, no EMA, as v3 3k). Each model is compared at the end of its own LR schedule, so only the amount of training changes;
+  epochs go 0.31 -> 0.62 (v2 3k had 0.60), which also removes the "half the epochs" confound of v3 3k. Expected ~8 h 10 min (v3 3k took 4 h 06 min).
+* Order (`scripts/v3_6k_driver.sh`; Isaac and training never overlap): (1) v3 3k on the +Y/-Y strips (X 0.42-0.48, seeds 9000-9019, stale first frame like the v2 strip runs) -- v3 3k was never run there and these are the pairs;
+  (2) v3 6k training; (3) v3 6k on the training box (8000-8019), step 2 (8000-8019) and the two strips (9000-9019).
+* Measures: (a) **strips together, 40 pairs v3 3k vs v3 6k, exact McNemar** (primary); (b) **tracking slope**: OLS slope of grip-point Y on cube spawn Y, per decision tick (50, 100, 150, ...) and at the first close, over the strips + step 2 attempts
+  (definition and the v2/v3 3k/expert values in the GPU-free analysis that follows this section); (c) lateral miss of failed strip attempts at the close; (d) training box as a regression check only; step 2 (n=20) exploratory.
+* Decision rule: 6k places **>= 6 more of 40 with McNemar p < 0.05** and the slope at the close rises by **>= 0.15** -> under-training is a main cause; next candidates EMA and longer training. A change of **<= 3** and no slope change
+  -> not under-training; suspect the visual signal (resolution, camera distance, wrist-camera view during the approach), camera placement comes back as a candidate. 4-5, or placed and slope disagreeing -> not established (n=60 needed).
+  Training box below 18/20 = regression, reported.
+* *Prediction:* v3 3k on the strips about as v2 (13/40; 9-17/40). v3 6k: **no established effect** -- strips within +-5 of v3 3k, slope at the close up by less than 0.15, failures still missing toward the centre by 60-90 mm.
+  Reason: the v2 run reached 0.60 epochs with the same result on the edge as v3's 0.31, and the loss was already flat (0.0038) at 3k; if 6k does help, the effect should show in the slope before it shows in the placed count.
 
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
