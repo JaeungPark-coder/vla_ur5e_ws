@@ -259,6 +259,8 @@ def main():
                     last_obs = obs if isinstance(obs, dict) else scene.get_observation()
                     tick_max_z = float(scene.get_cube_position()[2])
                     trace.start(bridge.reset_count, cube=scene.get_cube_position())
+                    if save_images:   # the trial's FIRST policy input (one render after the reset -- possibly a stale frame)
+                        trace.add_images(0, np.asarray(last_obs["base_rgb"])[..., :3], np.asarray(last_obs["wrist_rgb"])[..., :3])
                     # cube messages BEFORE the observation: the client treats the observation (joint_state) as
                     # the "tick done" signal and reads the cube values right after it
                     bridge.publish_cube_position(scene)
