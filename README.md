@@ -2691,6 +2691,49 @@ would mean fingers pushed into the table (a force problem), not a spinning wrist
 * Hypothesis (reviewer's): the stale first frame makes the first 50-tick chunk an "average approach" toward the centre, so cubes far from the centre need more correction; that would explain both the miss toward the centre and the slope with |Y|.
 * *Prediction:* (1) strips together rise from 13/40 to **>= 19/40** (paired, McNemar on 40 pairs); (2) among failed strip attempts the lateral miss at the close shrinks (median |dy| below the 88/62 mm of the stale-frame runs);
   (3) training box **>= 19/20** (no regression; it was 20/20). A change of 3 or fewer over 40 pairs = the first frame is not the cause; 4-5 = not established. The fresh first frame should not be out of distribution: training frames 2+ show the real scene from the home pose.
+* Note found while it ran: trial 1 of every run starts from the bridge's startup reset, not from a reset request, so the 30 renders did not apply to trial 1 (identical in both conditions, pairing holds; 19 treated pairs per box).
+  Fixed in the bridge for future runs (the startup path converges and saves its first input too).
+
+### 2026-11-14: first-frame test result -- no effect; the hand's low descent is commanded by the policy, not a tracking error
+
+**Prediction (above) against the result.** `eval_runs/ff_posY`, `ff_negY`, `ff_train_box`; `scripts/paired_success.py`; classes and heights `scripts/ff_height_analysis.py` -> `eval_results/ff_height_analysis.json`.
+
+| | stale first frame | converged first frame | paired (only stale / only fresh) | McNemar |
+|---|---|---|---|---|
+| +Y strip (9000-9019) | 5/20 | 6/20 | 2 / 3 (one of the 3 is trial 1, untreated) | 1.00 |
+| -Y strip | 8/20 | 8/20 | 1 / 1 | 1.00 |
+| strips together | 13/40 | 14/40 | 3 / 4 | 1.00 |
+| strips, treated trials 2-20 only | 13/38 | 13/38 | 3 / 3 | 1.00 |
+| training box (8000-8019) | 20/20 | 18/20 | 2 / 0 | 0.50 |
+
+1. Strips 13/40 -> 14/40 (prediction >= 19/40): **a change of 1, so by the pre-registered rule the stale first frame is not the cause of the edge failures.**
+2. Lateral miss of failed attempts at the close: +Y median dy -88 -> -82 mm; -Y +62 -> +26 mm, but that drop is a class mix (more blow-ups, which close near the cube after being knocked about);
+   the pushed/untouched failures miss exactly as before (+Y -83 -> -81 mm, -Y +78 -> +79 mm). The miss toward the centre line is unchanged.
+3. Training box 18/20 (prediction >= 19/20): **missed by one.** The two failures (seeds 8010, 8012, both Y +0.077) were placed by all three earlier models: 8010 carried the cube to the place target and dropped it from ~7 cm
+   (counted as a blow-up by the cube-jump test), 8012 closed next to the cube (dy -4.5 mm) and pushed it 31 mm. 2/20 is inside the run-to-run scale (up to 3/20; p = 0.50) and is not claimed as a regression, but see the next point for why a
+   converged frame 0 is not neutral for this model.
+
+**Why the fix could not work at evaluation time alone.** The policy's hand position after the first chunk (tick 50) does not follow the cube in either condition: within a strip, grip-point Y at tick 50 has SD 3-6 mm and slope -0.07..+0.07 against
+spawn Y, stale or fresh. In the 152 training demonstrations the expert's grip-point Y at frame 50 does follow the cube (slope 0.18, r = 0.98, SD 10 mm). In training, frame 0 (and 1) of every episode is the stale image, so the model learned that
+frame 0 carries no position information and outputs the average first chunk; showing it a correct frame at test time does not undo that. The reviewer's mechanism (first chunk = average approach) is real, but its size is small: with slope 0.18 the
+first chunk lacks about 0.18 x 0.13 = 23 mm of lateral correction on the strips, while the failed attempts miss by ~80 mm at the close, 400-900 ticks and 8-17 decisions later, with true images in between. The first frame alone cannot explain the miss.
+Not tested: training with converged frame 0 (needs re-rendered or re-collected data). (Unexplained detail: the +Y strip's tick-50 Y is 15-21 mm higher than the -Y strip's in both conditions although the stale frame 0 looks the same; not chased.)
+
+**Why the hand goes too low (GPU-free, the new `target` key).** `scripts/ur5e_fk.py` (numpy DH FK; world placement and tool offset fitted to the bridge's measured grip point, residual 0.000 mm) gives the grip-point height of the COMMANDED joints.
+* Measured height follows the command to ~0.1 mm in every attempt up to the moment of contact: placed median lowest z 35.7 mm measured / 35.8 commanded (n = 32), failed 27.9 / 29.1 (n = 28).
+* **The policy commands the low descent.** The lowest commanded grip-point height in runaway/blow-up attempts is 19.7-28.3 mm (median 23.9); in placed attempts never below 29.2 mm (median 35.8). The expert's lowest grip point before the close in the 152 demonstrations
+  is 36.8-43.0 mm (median 37.2). So the policy goes lower than the expert ever did, by ~1-2 mm when it succeeds and 9-17 mm when it fails.
+* At the wrist_3 onset (first tick > 0.1 rad/tick) the gripper is open in all 15 runaway/blow-up attempts, and the measured height is ABOVE the command (by 1-33 mm): the hand is being pushed up by a contact the command keeps pressing into.
+  The runaway is the physics reacting to that press; its trigger is the command. Placed and failed overlap at 29-31 mm (three placed attempts went that low), so a height alone does not decide; the press into the table where there is no cube does.
+* So by the pre-agreed split: **command low -> a policy problem**. A contact-stabilisation fix (physics) would turn the spin into a stuck or pushed attempt, not into a grasp, and would hide the symptom; a floor on the commanded grip-point height
+  (deployment guard, like the position limit) would stop the press, not the miss.
+
+**Expert runaways (task 3).** Rerunning the expert on its five runaway seeds (`isaac/expert_trace.py`, `eval_results/expert_trace_*_runaways.npz`) gave no runaway in any of them (max wrist_3 0.04-0.08 rad/step) and changed the outcome on 3 of 5:
+the expert's outcome on a seed is not repeatable (contact non-determinism, also seen in replay earlier). Lowest grip point in the reruns 35.6-40.8 mm, except 9019 (28.1 mm, gripper open, no spin, failed). So whether the expert's runaways share the pattern cannot be decided
+from reruns. What is known: the expert's own commanded path never goes below 36.8 mm in the training demonstrations, so the policy's 20-28 mm commands are not copied from the data.
+
+**Decision input for the next step.** Not perception at frame 0, not the position-target rate, not tracking. Left: the policy itself (lateral miss toward the centre and too-low descent at the edge); candidates are data near the edge with
+true early frames, more steps/EMA, or a camera that sees the cube at decision ticks. Contact stabilisation stays last and would only change how the failure looks.
 
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 

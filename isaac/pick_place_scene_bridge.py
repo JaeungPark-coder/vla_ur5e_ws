@@ -231,7 +231,12 @@ def main():
     # one fixed image position, every trial -- README 2026-11-13 late). N render-only passes fix it (30 = clean, 10 leaves a ghost).
     reset_renders = int(os.environ.get("VLA_BRIDGE_RESET_RENDERS", "0") or 0)
     save_images = bool(trace.out_dir) and os.environ.get("VLA_BRIDGE_SAVE_IMAGES", "") == "1"   # + trial_NNN_images.npz (~3 MB/trial)
+    if reset_renders:   # trial 1 starts from the startup reset above, not from a reset request: converge it too
+        for _ in range(reset_renders):
+            scene.world.render()
     last_obs = scene.get_observation() if lockstep else None
+    if save_images and lockstep:
+        trace.add_images(0, np.asarray(last_obs["base_rgb"])[..., :3], np.asarray(last_obs["wrist_rgb"])[..., :3])
     last_republish = time.time()
     tick_max_z = 0.0  # lockstep: max cube height over the ticks since the last published message
     if lockstep:
