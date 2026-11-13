@@ -2775,6 +2775,26 @@ first close. Expert: the 152 (v2) / 302 (v3) dataset episodes, grip point from F
   0.14-0.16 the cube is not dragged (+13 mm, knocked outward) and the hand misses it.
 * For the v3 6k test the primary slope number is b at the close for the strips + step 2 attempts of v3 3k vs v3 6k (prediction above).
 
+### 2026-11-14 01:03: v3 3k on the strips -- 33/40 against v2's 13/40. The "v3 has no effect" conclusion is withdrawn
+
+Step (1) of the v3 6k plan (`eval_runs/v3_strip_posY|negY`, checkpoint `pi0_ur5e_pick_place_v3/v3_3k/2999` confirmed in `server.log`, spawns identical to the v2 strip runs, stale first frame as there):
+
+| strip (X 0.42-0.48, seeds 9000-9019) | v2 s42 3k | v3 3k | paired: only v2 / only v3 | exact McNemar |
+|---|---|---|---|---|
+| +Y (0.10-0.16) | 5/20 | **19/20** | 0 / 14 | < 0.001 |
+| -Y (-0.16..-0.10) | 8/20 | **14/20** | 1 / 7 | 0.070 |
+| together | 13/40 | **33/40** | 1 / 21 | ~1e-5 |
+
+Tracking slope on the strips (40 attempts each): v2 0.06/0.16/0.32/0.56/0.61/0.61 (t50-t300), **0.60 at the close, median miss -43.7 mm**; v3 0.14/0.31/0.50/0.74/0.89/0.90, **0.93 at the close, median miss -13.5 mm**.
+The prediction "v3 3k about as v2 (9-17/40)" failed by a wide margin. This difference (20 pairs) is far outside the run-to-run scale (3/20) and the physics noise.
+
+*What was wrong before.* "v3 no effect" (2026-11-12/13) rested on step 2 (12/20 vs 11/20) and step 1 (15/20 vs 17/20): those boxes contain only 9 attempts with X >= 0.42 and |Y| > 0.10 per model (v3 5/9, v2 5/9), the rest is the
+training-box centre and X < 0.42. The |Y| curve pooled the three models, so v3's 15 edge attempts were mixed with 40 from v2. n was far too small to see an effect confined to the edge, exactly the weakness the n=60 rule was meant to fix.
+**So edge data does help where it was collected (X 0.42-0.48): the under-following is (at least largely) a data-coverage effect, not a fixed property of the policy.** Not yet known: X 0.38-0.42 (v3 still 2/6 there), and whether v3's
+gain holds on the wide box at n=60 (the efficacy rule).
+*Consequence for the v3 6k test (already training since 01:03):* its baseline is now 33/40, so the pre-registered "+6 of 40" can hardly be reached (ceiling 40). The test still answers whether more steps raise the slope (0.93 -> ?) and
+step 2 / X < 0.42; the strip criterion is reported but cannot decide much. Left running; decision with the reviewer.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
