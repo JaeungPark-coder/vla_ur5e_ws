@@ -2641,6 +2641,17 @@ If +Y >= 13/20 and within 3 of -Y, the earlier asymmetry was seed-specific luck 
   git-ignored) -- the image-saving path works.
 * Open: why success collapses at |Y| ~ 0.10-0.12 although v3 has 40 + 21 training episodes beyond 0.10 (v3 is not reevaluated on the strips); perception of the cube at the edge versus the amount of data there are not separable with this data.
 
+### 2026-11-13 (night): A2 = position-target step limit -- value fixed from the demonstrations, prediction written BEFORE the run
+
+* What: `target_step_limit_rad` (client parameter, `feedforward.limit_target_steps`, unit-tested). Each executed joint target may move at most L_j per tick from the
+  previous one (the first row of a chunk: from the joints measured at inference). Rows inside the limit are untouched. The velocity feed-forward is computed from the limited rows.
+* Value, fixed without any evaluation: **1.5x the largest per-tick change of each joint in the v2 demonstrations** (152 episodes, 158,776 frames; demonstrated max per tick
+  0.0241/0.0282/0.0254/0.0370/0.0411/0.0485 rad, i.e. up to 2.9 rad/s on wrist_3) -> **L = 0.0362/0.0423/0.0381/0.0555/0.0617/0.0728 rad/tick** (wrist_3 4.4 rad/s, where the runaways reached ~20 rad/s).
+* Test: same checkpoint (v2 `short_3k/2999`), same strips and seeds as the no-limit strip runs above (X 0.42-0.48, +Y and -Y strips, seeds 9000-9019), paired seed by seed. `scripts/limit_eval_driver.sh`.
+* *Prediction:* wrist_3 runaways + blow-ups fall from 7+5 (+Y) and 6+2 (-Y) trials-with-events to clearly fewer (runaways <= 3 per strip); placed count rises by at most a few
+  (pushing is the larger failure class and the limit does not address it): +Y 5 -> 5-9, -Y 8 -> 8-12. A rise of 3-4 per strip is inside the run-to-run scale (up to 3/20) and is not claimed as an effect at n=20;
+  the limit is reported as a safety device. If placements FALL by >= 3 in either strip, the limit is hurting motions the policy needs.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).

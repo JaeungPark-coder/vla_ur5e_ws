@@ -42,3 +42,21 @@ def chunk_velocities(rows, dt, window=1, max_speed=None):
     if max_speed is not None:
         v = np.clip(v, -float(max_speed), float(max_speed))
     return v
+
+
+def limit_target_steps(rows, start, max_step):
+    """Limit how far each commanded joint target may move from the previous one (a position-target rate limit).
+
+    Why (2026-11-13): the velocity clip above only touches the velocity feed-forward; position targets were unlimited, and the
+    policy's chunks sometimes jump the wrist far enough to spin wrist_3 at ~20 rad/s (the "runaway" blow-ups). rows: (n, 6)
+    absolute targets one tick apart; start: (6,) the joints the chunk is relative to (measured at inference time); max_step: (6,)
+    largest allowed change per tick (rad). Row i becomes prev + clip(rows[i] - prev, -max_step, max_step), prev = the limited
+    row i-1 (start for i = 0). Rows within the limit are returned unchanged."""
+    rows = np.asarray(rows, dtype=float)
+    lim = np.asarray(max_step, dtype=float)
+    out = np.empty_like(rows)
+    prev = np.asarray(start, dtype=float)
+    for i in range(len(rows)):
+        prev = prev + np.clip(rows[i] - prev, -lim, lim)
+        out[i] = prev
+    return out

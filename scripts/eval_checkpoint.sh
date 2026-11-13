@@ -32,7 +32,7 @@ for _ in $(seq 1 90); do grep -q "world step index after reset" "$OUT/bridge.log
 grep -q "world step index after reset" "$OUT/bridge.log" || { echo "bridge did not start, see $OUT/bridge.log"; exit 1; }
 
 ( nohup "$REPO/scripts/run_client_node.sh" -p eval_mode:=true -p n_trials:="$N" -p execute_horizon:="$K" \
-    -p results_csv_path:="$OUT/results.csv" > "$OUT/client.log" 2>&1 & )
+    -p results_csv_path:="$OUT/results.csv" ${CLIENT_EXTRA_PARAMS:-} > "$OUT/client.log" 2>&1 & )
 # ~1.2 min per trial; give up after 3x that
 # "client gone" only counts as the end once the client has been seen running (checked right after the launch it is not
 # visible yet: that race ended a run with 0 trials on 2026-11-12) or after 3 minutes without ever seeing it

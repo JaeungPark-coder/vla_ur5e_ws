@@ -35,7 +35,7 @@ from vla_bridge.gripper_state import grasp_disagreement
 from vla_bridge.robot_interface import UR5eInterface
 from vla_bridge.isaac_robot_interface import IsaacSimRobotInterface
 from vla_bridge.gripper_command import GripperHysteresis
-from vla_bridge.feedforward import chunk_velocities
+from vla_bridge.feedforward import chunk_velocities, limit_target_steps
 from vla_bridge.eval_tracking import MaxHeightTracker
 
 
@@ -159,6 +159,9 @@ class VLAPolicyClient(Node):
         # same tracking as 1 on clean rows (7/7 placed both), better at 0.01 rad row noise.
         self.declare_parameter('velocity_smoothing_window', 11)
         self.declare_parameter('velocity_clip_rad_s', 3.0)
+        # 2026-11-13: per-tick limit on the change of the joint POSITION target (6 values, rad/tick; empty = off). See
+        # feedforward.limit_target_steps. The evaluated value is 1.5x the largest per-tick change in the v2 demonstrations.
+        self.declare_parameter('target_step_limit_rad', [0.0])
         self.declare_parameter('action_dt_s', 1.0 / 60.0)  # time between consecutive chunk rows = one sim tick (the data's rate; NOT the dataset's fps=30 label)
         # Residual RL (see isaac/residual_rl_train_env.py / train_residual_policy.py,
         # README Phase 4): 'false' (default) = pi0's action is applied as-is,
@@ -210,6 +213,10 @@ class VLAPolicyClient(Node):
         self.action_dt_s = float(self.get_parameter('action_dt_s').value)
         self.velocity_smoothing_window = int(self.get_parameter('velocity_smoothing_window').value)
         self.velocity_clip_rad_s = float(self.get_parameter('velocity_clip_rad_s').value)
+        _lim = [float(v) for v in self.get_parameter('target_step_limit_rad').value]
+        self.target_step_limit = np.asarray(_lim, dtype=float) if (len(_lim) == 6 and all(v > 0 for v in _lim)) else None
+        if self.target_step_limit is not None:
+            self.get_logger().info(f'position-target step limit ON (rad/tick): {self.target_step_limit.tolist()}')
         self._gripper_filter = None
         if self.get_parameter('gripper_hysteresis').value:
             self._gripper_filter = GripperHysteresis(
@@ -409,6 +416,9 @@ class VLAPolicyClient(Node):
         if action_chunk.ndim == 1:
             action_chunk = action_chunk[None, :]
 
+        if self.target_step_limit is not None:
+            action_chunk = action_chunk.copy()
+            action_chunk[:, :6] = limit_target_steps(action_chunk[:, :6], obs["joints"], self.target_step_limit)
         n_apply = max(1, min(self.execute_horizon, len(action_chunk)))
         velocities = (chunk_velocities(action_chunk[:, :6], self.action_dt_s,
                                        window=self.velocity_smoothing_window,

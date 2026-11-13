@@ -55,3 +55,18 @@ def test_speeds_are_clipped_symmetrically():
     rows = np.array([[0.0] * 6, [10.0, -10.0, 0, 0, 0, 0], [20.0, -20.0, 0, 0, 0, 0]])
     v = chunk_velocities(rows, 1.0, max_speed=3.0)
     assert np.allclose(v[:, 0], 3.0) and np.allclose(v[:, 1], -3.0)
+
+
+def test_target_step_limit_leaves_demonstration_like_rows_alone_and_caps_jumps():
+    import numpy as np
+    from vla_bridge.feedforward import limit_target_steps
+    lim = np.full(6, 0.05)
+    smooth = np.cumsum(np.full((10, 6), 0.01), axis=0)
+    assert np.allclose(limit_target_steps(smooth, np.zeros(6), lim), smooth)
+    jump = smooth.copy()
+    jump[3:, 5] += 1.0                      # a 1 rad wrist jump inside the chunk
+    out = limit_target_steps(jump, np.zeros(6), lim)
+    assert np.all(np.abs(np.diff(np.vstack([np.zeros(6), out]), axis=0)) <= 0.05 + 1e-12)
+    assert np.allclose(out[:, :5], smooth[:, :5])
+    far = np.full((3, 6), 0.5)              # first row far from the measured start
+    assert np.allclose(limit_target_steps(far, np.zeros(6), lim)[0], 0.05)
