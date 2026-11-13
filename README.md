@@ -2551,6 +2551,51 @@ Reading rule fixed now: if the second v2 run lands near 16/20 on the training bo
   **Caveat: this cannot separate "the policy sees the cube badly at the edges" from "the data is thin at the edges"** (both vary with the same position), the pixel counts are predictions from neighbours, not the evaluation's own images, and n is 5-12 per row. It does make a perception limit a live candidate next to data thinness.
   A test that would separate them needs new data or a camera change (e.g. a higher-resolution or differently placed base camera), not more of the same.
 
+### 2026-11-13: training-seed repeat of the v2 baseline -- the first run-to-run scale, and where the failures sit (+Y edge)
+
+**Incident first.** The first seed-1 training run (started 2026-11-12 20:15) was killed at step 3000 while writing its checkpoint: VS Code
+was restarted by a snap auto-refresh at 00:21 and took its child processes with it (nothing usable on disk). Re-run from scratch at 13:42
+(`setsid`-detached, save every 1000 steps, otherwise identical: `--seed=1`, 3000 steps, v2 data); final loss 0.0038 both times. The old log is
+`short_3k_seed1_killed_by_snap_refresh.log`. Evaluations ran automatically (`scripts/after_training_eval.sh`) 17:47-18:53.
+
+**Result** (K=50, 20 trials, seeds 8000-8019, success = released within 30 mm; raw: `eval_results/short_3k_seed1_2999_*`):
+
+| box | v2 seed 42 (`2999`) | v2 seed 1 | v3 |
+|---|---|---|---|
+| training box | 20/20 | 19/20 | 16/20 |
+| step 1 (Y +-0.13) | 17/20 | 14/20 | 15/20 |
+| step 2 (X 0.38-0.48, Y +-0.16) | 11/20 | 11/20 | 12/20 |
+| wrist_3 runaways (train/1/2) | 0/1/4 | 0/1/4 | 1/1/1 |
+| placement error median, mm (train/1/2) | 12.2/11.8/12.0 | 9.1/7.7/9.3 | 12.2/12.8/12.1 |
+| blow-ups (train/1/2) | 0/1/4 | 0/0/1 | 1/1/1 |
+
+* **Scale: the same recipe with another training seed moves by up to 3/20 (step 1: 17 -> 14), 1/20 on the training box, 0 on step 2.** Differences of
+  3-4 trials in a 20-trial evaluation are not distinguishable from training variation and must not be claimed as an effect. Paired p (v2 vs seed 1):
+  1.00 / 0.375 / 1.00; (v3 vs seed 1): 0.375 / 1.00 / 1.00 (McNemar; Fisher 1.00/0.45/1.00 and 0.34/1.00/1.00).
+* **Step 2 reproduces at 11/20 in both v2 runs (22/40 = 55%), v3 gets 12/20: with this recipe the wide box sits at about 55% and v3's extra
+  data did not move it.** v3's training-box drop (16/20 vs 20 and 19) is p = 0.038 against the two v2 runs pooled (39/40) -- chosen after looking, exploratory only;
+  over all three boxes pooled it is p = 0.47. Verdict: v3 effect not established, training box possibly worse (weak).
+* **Withdrawn: "placement error ~12 mm is constant."** Seed 1 places at 8-9 mm. Precision varies between trainings (three models only; cause unknown).
+* **Failure bookkeeping (corrected).** Seed 1 has 16 failures (training 1, step 1 6, step 2 9). A failure is by definition a trial that ran to the
+  1800-step limit, so "timeout" is not a class. Mutually exclusive classes (`scripts/failure_overlap.py`; blow-up, then wrist_3 runaway, then lifted
+  (cube above 0.05 m), then untouched (cube never moved >5 mm), else pushed): seed 1 = pushed 7, runaway 4, lifted 2, untouched 2, blow-up 1.
+  (The runaway counts in the table above, 1 and 4, include the one runaway that also blew up.) My first summary's "19 of 20 failures were timeouts" was wrong.
+* **Do the same seeds fail in every model?** Only partly. Training box: no seed fails in all three. Step 1: 2 seeds in all three
+  (8012, 8015; independent-failure expectation 0.2). Step 2: 6 seeds in all three (expected 1.6 under independence, observed 2 in exactly two, 8 in none).
+  So there is a seed-specific component, and it is concentrated: **at spawn Y > +0.10, 2 of 24 attempts succeeded (1/8, 0/8, 1/8 per model; all expert placements on the
+  same seeds succeeded); at Y < -0.10, 15/21 (v2: 5/7, 4/7; v3: 6/7); at |Y| <= 0.10, 118/135.** The 8 seeds are shared by the three models, so the 24 attempts are not
+  independent (the Fisher p of 1e-13 over attempts overstates it); read it as 8 distinct seeds: 7 of them fail in all three models, the eighth (step 1, Y = 0.101, just past the line) in one of three. Found after looking at
+  the table, so it is a hypothesis, not a result. v3 had 40 saved training episodes with Y > 0.10 (vs 21 with Y < -0.10), so it is not simply missing data.
+* **Camera pixels do not separate failures from successes**: the expert's base-camera cube pixels (median over an episode) are 233 for failed and 235 for placed attempts;
+  the wrist camera sees the cube only briefly in all of them (0 pixels on ~215 of 300 ticks for both). This is the expert's view, not the policy's (policy observations are not saved in the traces).
+* **What a failed attempt looks like:** in all 23 "pushed" attempts the gripper closed, but its closest approach to the cube was a median 52 mm (placed attempts: 22 mm); the cube
+  moved 6-58 mm (median 28) and was never lifted; the arm ended nearly still. At Y > 0.10: 60 mm, 17 mm. So the hand arrives about 3 cm beside the cube and closes on it -- a
+  lateral placement problem, not a missed-visibility or runaway problem. The 5 "untouched" attempts came within 42-71 mm and then left (ended 145-295 mm away).
+
+**Next (decided with the reviewer, not yet run):** (1) a confirmatory pair of 20-trial evaluations on the existing checkpoints, +Y strip (X 0.42-0.48, Y 0.10-0.16) versus
+the mirrored -Y strip (Y -0.16 to -0.10), same seeds, to test the asymmetry; (2) the position-target limit on step 2 for the three models (safety device, reported separately,
+applied to every comparison); (3) from now on efficacy claims use n = 60 paired (seeds 8000-8059) on a box with room (step 2); the training box is only a regression check.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).

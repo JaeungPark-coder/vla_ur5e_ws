@@ -1,0 +1,3728 @@
+{
+ "train": {
+  "8000": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16782450675964355,
+    "cube_moved_mm": 318.9359995084917,
+    "min_grip_to_spawn_mm": 15.712415947681343,
+    "tick_of_min": 398,
+    "closed_ever": true,
+    "closed_frac": 0.4186666666666667,
+    "joint_range_last600": 0.5731627941131592,
+    "end_grip_to_spawn_mm": 315.2274851014236,
+    "ticks": 750,
+    "spawn": [
+     0.4347154200077057,
+     -0.021511053666472435
+    ],
+    "end_cube_to_place_mm": 11.968652265404417,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17350628972053528,
+    "cube_moved_mm": 314.40846995254844,
+    "min_grip_to_spawn_mm": 19.175602881841943,
+    "tick_of_min": 598,
+    "closed_ever": true,
+    "closed_frac": 0.3063157894736842,
+    "joint_range_last600": 0.6252233982086182,
+    "end_grip_to_spawn_mm": 320.0269081257012,
+    "ticks": 950,
+    "spawn": [
+     0.4347164034843445,
+     -0.021512825042009354
+    ],
+    "end_cube_to_place_mm": 10.98763765475975,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16972234845161438,
+    "cube_moved_mm": 322.31757819209963,
+    "min_grip_to_spawn_mm": 23.17579911715705,
+    "tick_of_min": 535,
+    "closed_ever": true,
+    "closed_frac": 0.32941176470588235,
+    "joint_range_last600": 0.6196398735046387,
+    "end_grip_to_spawn_mm": 328.6558998894878,
+    "ticks": 850,
+    "spawn": [
+     0.4347164034843445,
+     -0.021512825042009354
+    ],
+    "end_cube_to_place_mm": 8.07296696408471,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8001": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16928844153881073,
+    "cube_moved_mm": 305.4691408249725,
+    "min_grip_to_spawn_mm": 22.955548678615905,
+    "tick_of_min": 490,
+    "closed_ever": true,
+    "closed_frac": 0.3611764705882353,
+    "joint_range_last600": 0.5253810882568359,
+    "end_grip_to_spawn_mm": 303.5729839830417,
+    "ticks": 850,
+    "spawn": [
+     0.4534493088722229,
+     -0.007162564434111118
+    ],
+    "end_cube_to_place_mm": 15.528254330281866,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16918277740478516,
+    "cube_moved_mm": 304.8648974344038,
+    "min_grip_to_spawn_mm": 19.006253346926503,
+    "tick_of_min": 479,
+    "closed_ever": true,
+    "closed_frac": 0.3825,
+    "joint_range_last600": 0.5620962381362915,
+    "end_grip_to_spawn_mm": 309.4979740606427,
+    "ticks": 800,
+    "spawn": [
+     0.4534493088722229,
+     -0.007162564434111118
+    ],
+    "end_cube_to_place_mm": 3.9474611407365345,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17663639783859253,
+    "cube_moved_mm": 311.91977308049053,
+    "min_grip_to_spawn_mm": 22.31392000707427,
+    "tick_of_min": 434,
+    "closed_ever": true,
+    "closed_frac": 0.364,
+    "joint_range_last600": 0.5660423040390015,
+    "end_grip_to_spawn_mm": 314.22987619832236,
+    "ticks": 750,
+    "spawn": [
+     0.4534493088722229,
+     -0.007162564434111118
+    ],
+    "end_cube_to_place_mm": 20.646013681396134,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8002": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16939890384674072,
+    "cube_moved_mm": 252.63415874140298,
+    "min_grip_to_spawn_mm": 16.483743948928772,
+    "tick_of_min": 450,
+    "closed_ever": true,
+    "closed_frac": 0.3413333333333333,
+    "joint_range_last600": 0.5054818689823151,
+    "end_grip_to_spawn_mm": 264.2747337936643,
+    "ticks": 750,
+    "spawn": [
+     0.42006948590278625,
+     0.04093498736619949
+    ],
+    "end_cube_to_place_mm": 10.257343581037835,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17290742695331573,
+    "cube_moved_mm": 251.68284217843546,
+    "min_grip_to_spawn_mm": 18.836941778346986,
+    "tick_of_min": 450,
+    "closed_ever": true,
+    "closed_frac": 0.36,
+    "joint_range_last600": 0.5378599166870117,
+    "end_grip_to_spawn_mm": 261.0783598325528,
+    "ticks": 750,
+    "spawn": [
+     0.42006948590278625,
+     0.04093498736619949
+    ],
+    "end_cube_to_place_mm": 9.147136381205915,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1768738329410553,
+    "cube_moved_mm": 259.6581093747513,
+    "min_grip_to_spawn_mm": 18.0526607418467,
+    "tick_of_min": 420,
+    "closed_ever": true,
+    "closed_frac": 0.37733333333333335,
+    "joint_range_last600": 0.4854527711868286,
+    "end_grip_to_spawn_mm": 263.88504623749094,
+    "ticks": 750,
+    "spawn": [
+     0.42006948590278625,
+     0.04093498736619949
+    ],
+    "end_cube_to_place_mm": 8.188922259666077,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8003": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16857577860355377,
+    "cube_moved_mm": 359.8782901330219,
+    "min_grip_to_spawn_mm": 20.746209973388666,
+    "tick_of_min": 483,
+    "closed_ever": true,
+    "closed_frac": 0.3976470588235294,
+    "joint_range_last600": 0.6320686638355255,
+    "end_grip_to_spawn_mm": 356.7995664668998,
+    "ticks": 850,
+    "spawn": [
+     0.46226298809051514,
+     -0.0647345632314682
+    ],
+    "end_cube_to_place_mm": 15.084738366512195,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.11579374223947525,
+    "cube_moved_mm": 350.0456004566763,
+    "min_grip_to_spawn_mm": 17.6789763440005,
+    "tick_of_min": 531,
+    "closed_ever": true,
+    "closed_frac": 0.3247058823529412,
+    "joint_range_last600": 0.7575322091579437,
+    "end_grip_to_spawn_mm": 353.76406041253205,
+    "ticks": 850,
+    "spawn": [
+     0.46226298809051514,
+     -0.0647345632314682
+    ],
+    "end_cube_to_place_mm": 18.855984468616604,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1742074191570282,
+    "cube_moved_mm": 354.3218021596728,
+    "min_grip_to_spawn_mm": 34.36855144212492,
+    "tick_of_min": 492,
+    "closed_ever": true,
+    "closed_frac": 0.21555555555555556,
+    "joint_range_last600": 0.06276336312294006,
+    "end_grip_to_spawn_mm": 350.43713622550325,
+    "ticks": 1800,
+    "spawn": [
+     0.46226298809051514,
+     -0.0647345632314682
+    ],
+    "end_cube_to_place_mm": 29.384750229293093,
+    "ok": false,
+    "cls": "lifted"
+   }
+  },
+  "8004": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.15910297632217407,
+    "cube_moved_mm": 322.9664815433651,
+    "min_grip_to_spawn_mm": 32.290478194207644,
+    "tick_of_min": 454,
+    "closed_ever": true,
+    "closed_frac": 0.37066666666666664,
+    "joint_range_last600": 0.5642545819282532,
+    "end_grip_to_spawn_mm": 328.5192045651163,
+    "ticks": 750,
+    "spawn": [
+     0.4386628568172455,
+     -0.025087028741836548
+    ],
+    "end_cube_to_place_mm": 5.756429322213148,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16532403230667114,
+    "cube_moved_mm": 321.5540213204529,
+    "min_grip_to_spawn_mm": 17.444154447601235,
+    "tick_of_min": 447,
+    "closed_ever": true,
+    "closed_frac": 0.39375,
+    "joint_range_last600": 0.6044231653213501,
+    "end_grip_to_spawn_mm": 322.49490472879995,
+    "ticks": 800,
+    "spawn": [
+     0.4386628568172455,
+     -0.025087028741836548
+    ],
+    "end_cube_to_place_mm": 7.673079427027865,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16263417899608612,
+    "cube_moved_mm": 316.0965498187689,
+    "min_grip_to_spawn_mm": 16.8445833160012,
+    "tick_of_min": 500,
+    "closed_ever": true,
+    "closed_frac": 0.3564705882352941,
+    "joint_range_last600": 0.5629859864711761,
+    "end_grip_to_spawn_mm": 317.98574758119025,
+    "ticks": 850,
+    "spawn": [
+     0.4386628568172455,
+     -0.025087028741836548
+    ],
+    "end_cube_to_place_mm": 13.572640574551361,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8005": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16832740604877472,
+    "cube_moved_mm": 269.4480388981912,
+    "min_grip_to_spawn_mm": 17.462834487027475,
+    "tick_of_min": 411,
+    "closed_ever": true,
+    "closed_frac": 0.36533333333333334,
+    "joint_range_last600": 0.515343189239502,
+    "end_grip_to_spawn_mm": 264.6788986118397,
+    "ticks": 750,
+    "spawn": [
+     0.475972980260849,
+     0.033301495015621185
+    ],
+    "end_cube_to_place_mm": 16.135553824826296,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.12156599014997482,
+    "cube_moved_mm": 256.75260823216723,
+    "min_grip_to_spawn_mm": 20.085888992204172,
+    "tick_of_min": 451,
+    "closed_ever": true,
+    "closed_frac": 0.328,
+    "joint_range_last600": 0.9085958003997803,
+    "end_grip_to_spawn_mm": 260.382833053773,
+    "ticks": 750,
+    "spawn": [
+     0.475972980260849,
+     0.033301495015621185
+    ],
+    "end_cube_to_place_mm": 11.795889366978832,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1640789806842804,
+    "cube_moved_mm": 264.68539097095646,
+    "min_grip_to_spawn_mm": 19.22876514130749,
+    "tick_of_min": 519,
+    "closed_ever": true,
+    "closed_frac": 0.31882352941176473,
+    "joint_range_last600": 0.492212176322937,
+    "end_grip_to_spawn_mm": 266.3531195216125,
+    "ticks": 850,
+    "spawn": [
+     0.475972980260849,
+     0.033301495015621185
+    ],
+    "end_cube_to_place_mm": 19.593818218438106,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8006": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16923633217811584,
+    "cube_moved_mm": 383.66784840054083,
+    "min_grip_to_spawn_mm": 23.683249515886406,
+    "tick_of_min": 477,
+    "closed_ever": true,
+    "closed_frac": 0.4082352941176471,
+    "joint_range_last600": 0.667896032333374,
+    "end_grip_to_spawn_mm": 382.32335472160355,
+    "ticks": 850,
+    "spawn": [
+     0.42097771167755127,
+     -0.08548598736524582
+    ],
+    "end_cube_to_place_mm": 6.607634913402339,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17090584337711334,
+    "cube_moved_mm": 382.4136810507261,
+    "min_grip_to_spawn_mm": 23.57101901554507,
+    "tick_of_min": 495,
+    "closed_ever": true,
+    "closed_frac": 0.3552941176470588,
+    "joint_range_last600": 0.7064648866653442,
+    "end_grip_to_spawn_mm": 387.26989116479564,
+    "ticks": 850,
+    "spawn": [
+     0.42097771167755127,
+     -0.08548598736524582
+    ],
+    "end_cube_to_place_mm": 5.735918807790179,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.020731765776872635,
+    "cube_moved_mm": 28.02467791659635,
+    "min_grip_to_spawn_mm": 48.45696381144825,
+    "tick_of_min": 527,
+    "closed_ever": true,
+    "closed_frac": 0.22277777777777777,
+    "joint_range_last600": 0.1047062873840332,
+    "end_grip_to_spawn_mm": 241.6247811306447,
+    "ticks": 1800,
+    "spawn": [
+     0.42097771167755127,
+     -0.08548598736524582
+    ],
+    "end_cube_to_place_mm": 389.0541199088456,
+    "ok": false,
+    "cls": "pushed"
+   }
+  },
+  "8007": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1705683320760727,
+    "cube_moved_mm": 225.47718812767374,
+    "min_grip_to_spawn_mm": 17.54708394742243,
+    "tick_of_min": 500,
+    "closed_ever": true,
+    "closed_frac": 0.32875,
+    "joint_range_last600": 0.43423378467559814,
+    "end_grip_to_spawn_mm": 231.47074491521403,
+    "ticks": 800,
+    "spawn": [
+     0.4378032684326172,
+     0.07093415409326553
+    ],
+    "end_cube_to_place_mm": 3.9897131793822034,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16231727600097656,
+    "cube_moved_mm": 218.44790938272703,
+    "min_grip_to_spawn_mm": 19.965176600211002,
+    "tick_of_min": 501,
+    "closed_ever": true,
+    "closed_frac": 0.3225,
+    "joint_range_last600": 0.44767820835113525,
+    "end_grip_to_spawn_mm": 233.9719935415632,
+    "ticks": 800,
+    "spawn": [
+     0.4378032684326172,
+     0.07093415409326553
+    ],
+    "end_cube_to_place_mm": 11.4809079207949,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.164910688996315,
+    "cube_moved_mm": 218.56905397917774,
+    "min_grip_to_spawn_mm": 35.46705408173263,
+    "tick_of_min": 533,
+    "closed_ever": true,
+    "closed_frac": 0.28,
+    "joint_range_last600": 0.48894548416137695,
+    "end_grip_to_spawn_mm": 234.41708518650853,
+    "ticks": 800,
+    "spawn": [
+     0.4378032684326172,
+     0.07093415409326553
+    ],
+    "end_cube_to_place_mm": 10.992160036448604,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8008": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17200183868408203,
+    "cube_moved_mm": 350.3638778445759,
+    "min_grip_to_spawn_mm": 19.649524117631767,
+    "tick_of_min": 468,
+    "closed_ever": true,
+    "closed_frac": 0.36625,
+    "joint_range_last600": 0.6491737067699432,
+    "end_grip_to_spawn_mm": 357.1889044832742,
+    "ticks": 800,
+    "spawn": [
+     0.4234086871147156,
+     -0.0528297945857048
+    ],
+    "end_cube_to_place_mm": 14.858827028736336,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16557294130325317,
+    "cube_moved_mm": 353.2178631028714,
+    "min_grip_to_spawn_mm": 22.667451476370108,
+    "tick_of_min": 480,
+    "closed_ever": true,
+    "closed_frac": 0.37125,
+    "joint_range_last600": 0.6403768062591553,
+    "end_grip_to_spawn_mm": 359.7481480204531,
+    "ticks": 800,
+    "spawn": [
+     0.4234086871147156,
+     -0.0528297945857048
+    ],
+    "end_cube_to_place_mm": 4.025051630333025,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16935889422893524,
+    "cube_moved_mm": 349.0980745065781,
+    "min_grip_to_spawn_mm": 21.989360698794123,
+    "tick_of_min": 507,
+    "closed_ever": true,
+    "closed_frac": 0.3588235294117647,
+    "joint_range_last600": 0.6025180816650391,
+    "end_grip_to_spawn_mm": 349.4727603197201,
+    "ticks": 850,
+    "spawn": [
+     0.4234086871147156,
+     -0.0528297945857048
+    ],
+    "end_cube_to_place_mm": 8.37048157774178,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8009": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16331779956817627,
+    "cube_moved_mm": 384.67087228023126,
+    "min_grip_to_spawn_mm": 23.780263505303513,
+    "tick_of_min": 441,
+    "closed_ever": true,
+    "closed_frac": 0.40375,
+    "joint_range_last600": 0.6451655924320221,
+    "end_grip_to_spawn_mm": 381.64498898634264,
+    "ticks": 800,
+    "spawn": [
+     0.46480366587638855,
+     -0.08276676386594772
+    ],
+    "end_cube_to_place_mm": 7.929341875306298,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.11511252820491791,
+    "cube_moved_mm": 374.3337292404295,
+    "min_grip_to_spawn_mm": 23.229754304036657,
+    "tick_of_min": 474,
+    "closed_ever": true,
+    "closed_frac": 0.38875,
+    "joint_range_last600": 0.8446414172649384,
+    "end_grip_to_spawn_mm": 379.32900674210003,
+    "ticks": 800,
+    "spawn": [
+     0.46480366587638855,
+     -0.08276676386594772
+    ],
+    "end_cube_to_place_mm": 8.930017940397608,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16706928610801697,
+    "cube_moved_mm": 369.65306743921354,
+    "min_grip_to_spawn_mm": 20.54951731967126,
+    "tick_of_min": 538,
+    "closed_ever": true,
+    "closed_frac": 0.34555555555555556,
+    "joint_range_last600": 0.6182644665241241,
+    "end_grip_to_spawn_mm": 371.36242734066275,
+    "ticks": 900,
+    "spawn": [
+     0.46480366587638855,
+     -0.08276676386594772
+    ],
+    "end_cube_to_place_mm": 17.470666105895265,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8010": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.11964097619056702,
+    "cube_moved_mm": 225.2889777911184,
+    "min_grip_to_spawn_mm": 33.60941536811593,
+    "tick_of_min": 458,
+    "closed_ever": true,
+    "closed_frac": 0.34,
+    "joint_range_last600": 0.6432530879974365,
+    "end_grip_to_spawn_mm": 237.080263022876,
+    "ticks": 750,
+    "spawn": [
+     0.4746430218219757,
+     0.07749249786138535
+    ],
+    "end_cube_to_place_mm": 1.6052032033539114,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.14123223721981049,
+    "cube_moved_mm": 231.9582831422728,
+    "min_grip_to_spawn_mm": 21.915860123603256,
+    "tick_of_min": 428,
+    "closed_ever": true,
+    "closed_frac": 0.368,
+    "joint_range_last600": 0.903221607208252,
+    "end_grip_to_spawn_mm": 234.2093606343817,
+    "ticks": 750,
+    "spawn": [
+     0.4746430218219757,
+     0.07749249786138535
+    ],
+    "end_cube_to_place_mm": 10.190845374416426,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.15310801565647125,
+    "cube_moved_mm": 211.8163371803832,
+    "min_grip_to_spawn_mm": 32.89815850495567,
+    "tick_of_min": 494,
+    "closed_ever": true,
+    "closed_frac": 0.3275,
+    "joint_range_last600": 0.4329075813293457,
+    "end_grip_to_spawn_mm": 214.5992532707402,
+    "ticks": 800,
+    "spawn": [
+     0.4746430218219757,
+     0.07749249786138535
+    ],
+    "end_cube_to_place_mm": 22.91162676978916,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8011": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1309301257133484,
+    "cube_moved_mm": 277.0573234867441,
+    "min_grip_to_spawn_mm": 16.274724815374583,
+    "tick_of_min": 451,
+    "closed_ever": true,
+    "closed_frac": 0.38625,
+    "joint_range_last600": 0.6684978008270264,
+    "end_grip_to_spawn_mm": 280.87150491934506,
+    "ticks": 800,
+    "spawn": [
+     0.4732823967933655,
+     0.03222343325614929
+    ],
+    "end_cube_to_place_mm": 10.530235165801706,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16515003144741058,
+    "cube_moved_mm": 268.9885026649665,
+    "min_grip_to_spawn_mm": 16.116032052450535,
+    "tick_of_min": 503,
+    "closed_ever": true,
+    "closed_frac": 0.32941176470588235,
+    "joint_range_last600": 0.5080293416976929,
+    "end_grip_to_spawn_mm": 270.2056102749997,
+    "ticks": 850,
+    "spawn": [
+     0.4732823967933655,
+     0.03222343325614929
+    ],
+    "end_cube_to_place_mm": 2.7119989400949565,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17247462272644043,
+    "cube_moved_mm": 263.8220829762662,
+    "min_grip_to_spawn_mm": 23.715246997949038,
+    "tick_of_min": 554,
+    "closed_ever": true,
+    "closed_frac": 0.30444444444444446,
+    "joint_range_last600": 0.4884291887283325,
+    "end_grip_to_spawn_mm": 265.12218928226497,
+    "ticks": 900,
+    "spawn": [
+     0.4732823967933655,
+     0.03222343325614929
+    ],
+    "end_cube_to_place_mm": 24.846620267514172,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8012": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1622897982597351,
+    "cube_moved_mm": 209.1592567946142,
+    "min_grip_to_spawn_mm": 37.180857675146555,
+    "tick_of_min": 448,
+    "closed_ever": true,
+    "closed_frac": 0.3506666666666667,
+    "joint_range_last600": 0.4798712581396103,
+    "end_grip_to_spawn_mm": 219.04825813050755,
+    "ticks": 750,
+    "spawn": [
+     0.42116579413414,
+     0.0774286538362503
+    ],
+    "end_cube_to_place_mm": 18.093019705442387,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16555607318878174,
+    "cube_moved_mm": 224.7190540236964,
+    "min_grip_to_spawn_mm": 26.076184767743168,
+    "tick_of_min": 418,
+    "closed_ever": true,
+    "closed_frac": 0.38533333333333336,
+    "joint_range_last600": 0.4813404083251953,
+    "end_grip_to_spawn_mm": 225.4602320358954,
+    "ticks": 750,
+    "spawn": [
+     0.42116579413414,
+     0.0774286538362503
+    ],
+    "end_cube_to_place_mm": 7.93349827972073,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16423681378364563,
+    "cube_moved_mm": 215.3344582689621,
+    "min_grip_to_spawn_mm": 24.30911589765101,
+    "tick_of_min": 434,
+    "closed_ever": true,
+    "closed_frac": 0.372,
+    "joint_range_last600": 0.4816500246524811,
+    "end_grip_to_spawn_mm": 218.39002356814422,
+    "ticks": 750,
+    "spawn": [
+     0.42116579413414,
+     0.0774286538362503
+    ],
+    "end_cube_to_place_mm": 15.865576635834564,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8013": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1629403680562973,
+    "cube_moved_mm": 246.2000632215766,
+    "min_grip_to_spawn_mm": 17.24199567313855,
+    "tick_of_min": 451,
+    "closed_ever": true,
+    "closed_frac": 0.348,
+    "joint_range_last600": 0.4910792261362076,
+    "end_grip_to_spawn_mm": 248.52751672789648,
+    "ticks": 750,
+    "spawn": [
+     0.44807377457618713,
+     0.04766782373189926
+    ],
+    "end_cube_to_place_mm": 9.595332009949802,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17153389751911163,
+    "cube_moved_mm": 247.25083789512834,
+    "min_grip_to_spawn_mm": 22.83585604629075,
+    "tick_of_min": 402,
+    "closed_ever": true,
+    "closed_frac": 0.4013333333333333,
+    "joint_range_last600": 0.5129048824310303,
+    "end_grip_to_spawn_mm": 247.3091875849859,
+    "ticks": 750,
+    "spawn": [
+     0.44807377457618713,
+     0.04766782373189926
+    ],
+    "end_cube_to_place_mm": 11.694814132764272,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1675785332918167,
+    "cube_moved_mm": 245.69096638658914,
+    "min_grip_to_spawn_mm": 19.004849740722857,
+    "tick_of_min": 447,
+    "closed_ever": true,
+    "closed_frac": 0.37333333333333335,
+    "joint_range_last600": 0.4630754888057709,
+    "end_grip_to_spawn_mm": 243.7448552623464,
+    "ticks": 750,
+    "spawn": [
+     0.44807377457618713,
+     0.04766782373189926
+    ],
+    "end_cube_to_place_mm": 10.979743093457802,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8014": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1682618260383606,
+    "cube_moved_mm": 356.7469856795623,
+    "min_grip_to_spawn_mm": 20.29812551663326,
+    "tick_of_min": 585,
+    "closed_ever": true,
+    "closed_frac": 0.3473684210526316,
+    "joint_range_last600": 0.6151217520236969,
+    "end_grip_to_spawn_mm": 356.5687979727777,
+    "ticks": 950,
+    "spawn": [
+     0.47764670848846436,
+     -0.06274018436670303
+    ],
+    "end_cube_to_place_mm": 16.194501545803547,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17503836750984192,
+    "cube_moved_mm": 361.79108500343574,
+    "min_grip_to_spawn_mm": 24.508852376670557,
+    "tick_of_min": 478,
+    "closed_ever": true,
+    "closed_frac": 0.38823529411764707,
+    "joint_range_last600": 0.6585198640823364,
+    "end_grip_to_spawn_mm": 362.0084093356376,
+    "ticks": 850,
+    "spawn": [
+     0.47764670848846436,
+     -0.06274018436670303
+    ],
+    "end_cube_to_place_mm": 22.078786851500865,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": true,
+    "runaway": true,
+    "max_z": 0.11257825791835785,
+    "cube_moved_mm": 3236.236784135851,
+    "min_grip_to_spawn_mm": 27.723434929427263,
+    "tick_of_min": 458,
+    "closed_ever": true,
+    "closed_frac": 0.015555555555555555,
+    "joint_range_last600": 14.466204643249512,
+    "end_grip_to_spawn_mm": 204.58739325206574,
+    "ticks": 1800,
+    "spawn": [
+     0.47764670848846436,
+     -0.06274018436670303
+    ],
+    "end_cube_to_place_mm": 2909.233428390138,
+    "ok": false,
+    "cls": "blow-up"
+   }
+  },
+  "8015": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16314853727817535,
+    "cube_moved_mm": 202.78372837921705,
+    "min_grip_to_spawn_mm": 37.293090487136446,
+    "tick_of_min": 447,
+    "closed_ever": true,
+    "closed_frac": 0.368,
+    "joint_range_last600": 0.4688669443130493,
+    "end_grip_to_spawn_mm": 203.73082639306358,
+    "ticks": 750,
+    "spawn": [
+     0.4238058626651764,
+     0.09142067283391953
+    ],
+    "end_cube_to_place_mm": 12.63830403918903,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.020403515547513962,
+    "cube_moved_mm": 32.76073565996672,
+    "min_grip_to_spawn_mm": 47.31861077516753,
+    "tick_of_min": 512,
+    "closed_ever": true,
+    "closed_frac": 0.21833333333333332,
+    "joint_range_last600": 0.26352596282958984,
+    "end_grip_to_spawn_mm": 208.48762200348088,
+    "ticks": 1800,
+    "spawn": [
+     0.4238058626651764,
+     0.09142067283391953
+    ],
+    "end_cube_to_place_mm": 238.95039459457868,
+    "ok": false,
+    "cls": "pushed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16298703849315643,
+    "cube_moved_mm": 200.26156307871193,
+    "min_grip_to_spawn_mm": 28.78676436305238,
+    "tick_of_min": 498,
+    "closed_ever": true,
+    "closed_frac": 0.33375,
+    "joint_range_last600": 0.3996349573135376,
+    "end_grip_to_spawn_mm": 205.63153743552058,
+    "ticks": 800,
+    "spawn": [
+     0.4238058626651764,
+     0.09142067283391953
+    ],
+    "end_cube_to_place_mm": 13.383147195910375,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8016": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.12770673632621765,
+    "cube_moved_mm": 324.12570333433683,
+    "min_grip_to_spawn_mm": 14.061733149417782,
+    "tick_of_min": 479,
+    "closed_ever": true,
+    "closed_frac": 0.32375,
+    "joint_range_last600": 0.8589460849761963,
+    "end_grip_to_spawn_mm": 332.4377683593068,
+    "ticks": 800,
+    "spawn": [
+     0.47593504190444946,
+     -0.02508390136063099
+    ],
+    "end_cube_to_place_mm": 12.461476953438197,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17251203954219818,
+    "cube_moved_mm": 319.78367760503784,
+    "min_grip_to_spawn_mm": 17.483296788465474,
+    "tick_of_min": 469,
+    "closed_ever": true,
+    "closed_frac": 0.34625,
+    "joint_range_last600": 0.5966296195983887,
+    "end_grip_to_spawn_mm": 323.04631664119876,
+    "ticks": 800,
+    "spawn": [
+     0.47593504190444946,
+     -0.02508390136063099
+    ],
+    "end_cube_to_place_mm": 19.344750946194107,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.021943463012576103,
+    "cube_moved_mm": 26.82548143497877,
+    "min_grip_to_spawn_mm": 34.15949165045807,
+    "tick_of_min": 468,
+    "closed_ever": true,
+    "closed_frac": 0.22444444444444445,
+    "joint_range_last600": 0.1335892677307129,
+    "end_grip_to_spawn_mm": 180.93057162606354,
+    "ticks": 1800,
+    "spawn": [
+     0.47593504190444946,
+     -0.02508390136063099
+    ],
+    "end_cube_to_place_mm": 314.802619226632,
+    "ok": false,
+    "cls": "pushed"
+   }
+  },
+  "8017": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1720781773328781,
+    "cube_moved_mm": 284.3460187753844,
+    "min_grip_to_spawn_mm": 16.982294894085666,
+    "tick_of_min": 497,
+    "closed_ever": true,
+    "closed_frac": 0.35,
+    "joint_range_last600": 0.5074214935302734,
+    "end_grip_to_spawn_mm": 283.0117383959147,
+    "ticks": 800,
+    "spawn": [
+     0.4601040184497833,
+     0.01406167447566986
+    ],
+    "end_cube_to_place_mm": 16.156953000033813,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.11756843328475952,
+    "cube_moved_mm": 283.7843744262507,
+    "min_grip_to_spawn_mm": 19.665828133148803,
+    "tick_of_min": 457,
+    "closed_ever": true,
+    "closed_frac": 0.33466666666666667,
+    "joint_range_last600": 0.6023623943328857,
+    "end_grip_to_spawn_mm": 286.6478744230153,
+    "ticks": 750,
+    "spawn": [
+     0.4601040184497833,
+     0.01406167447566986
+    ],
+    "end_cube_to_place_mm": 6.272983886897294,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16904863715171814,
+    "cube_moved_mm": 280.07614527741765,
+    "min_grip_to_spawn_mm": 22.207696984655968,
+    "tick_of_min": 515,
+    "closed_ever": true,
+    "closed_frac": 0.3611764705882353,
+    "joint_range_last600": 0.5421134233474731,
+    "end_grip_to_spawn_mm": 278.6219907564509,
+    "ticks": 850,
+    "spawn": [
+     0.4601040184497833,
+     0.01406167447566986
+    ],
+    "end_cube_to_place_mm": 9.948352309446264,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8018": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17201578617095947,
+    "cube_moved_mm": 365.70973268168063,
+    "min_grip_to_spawn_mm": 20.539406478652637,
+    "tick_of_min": 480,
+    "closed_ever": true,
+    "closed_frac": 0.37375,
+    "joint_range_last600": 0.7001910209655762,
+    "end_grip_to_spawn_mm": 373.09971466659727,
+    "ticks": 800,
+    "spawn": [
+     0.4220537543296814,
+     -0.06989936530590057
+    ],
+    "end_cube_to_place_mm": 12.812623869951421,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17482367157936096,
+    "cube_moved_mm": 366.50777825517713,
+    "min_grip_to_spawn_mm": 22.94320664520928,
+    "tick_of_min": 477,
+    "closed_ever": true,
+    "closed_frac": 0.38,
+    "joint_range_last600": 0.6983636617660522,
+    "end_grip_to_spawn_mm": 374.21248760686365,
+    "ticks": 800,
+    "spawn": [
+     0.4220537543296814,
+     -0.06989936530590057
+    ],
+    "end_cube_to_place_mm": 5.274352214143423,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1715787947177887,
+    "cube_moved_mm": 364.9935459223188,
+    "min_grip_to_spawn_mm": 23.351755871350594,
+    "tick_of_min": 451,
+    "closed_ever": true,
+    "closed_frac": 0.39,
+    "joint_range_last600": 0.6479473114013672,
+    "end_grip_to_spawn_mm": 367.71871908159005,
+    "ticks": 800,
+    "spawn": [
+     0.4220537543296814,
+     -0.06989936530590057
+    ],
+    "end_cube_to_place_mm": 9.557514952107494,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8019": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16640043258666992,
+    "cube_moved_mm": 219.20254885289052,
+    "min_grip_to_spawn_mm": 26.741491900383156,
+    "tick_of_min": 423,
+    "closed_ever": true,
+    "closed_frac": 0.39866666666666667,
+    "joint_range_last600": 0.46026912331581116,
+    "end_grip_to_spawn_mm": 219.3403104101469,
+    "ticks": 750,
+    "spawn": [
+     0.427635133266449,
+     0.07492266595363617
+    ],
+    "end_cube_to_place_mm": 11.205634490465203,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17261762917041779,
+    "cube_moved_mm": 220.85589176505167,
+    "min_grip_to_spawn_mm": 31.198097906099758,
+    "tick_of_min": 461,
+    "closed_ever": true,
+    "closed_frac": 0.375,
+    "joint_range_last600": 0.48604094982147217,
+    "end_grip_to_spawn_mm": 220.29281335733663,
+    "ticks": 800,
+    "spawn": [
+     0.427635133266449,
+     0.07492266595363617
+    ],
+    "end_cube_to_place_mm": 9.498150938300373,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16329942643642426,
+    "cube_moved_mm": 221.76268611282464,
+    "min_grip_to_spawn_mm": 32.18731361659769,
+    "tick_of_min": 474,
+    "closed_ever": true,
+    "closed_frac": 0.32125,
+    "joint_range_last600": 0.47761619091033936,
+    "end_grip_to_spawn_mm": 234.06004975983078,
+    "ticks": 800,
+    "spawn": [
+     0.427635133266449,
+     0.07492266595363617
+    ],
+    "end_cube_to_place_mm": 5.653494407760295,
+    "ok": true,
+    "cls": "placed"
+   }
+  }
+ },
+ "step1": {
+  "8000": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17232343554496765,
+    "cube_moved_mm": 327.55634824504233,
+    "min_grip_to_spawn_mm": 23.061045858498847,
+    "tick_of_min": 645,
+    "closed_ever": true,
+    "closed_frac": 0.299,
+    "joint_range_last600": 0.6034435033798218,
+    "end_grip_to_spawn_mm": 326.3362444971383,
+    "ticks": 1000,
+    "spawn": [
+     0.4347164034843445,
+     -0.027966447174549103
+    ],
+    "end_cube_to_place_mm": 8.262475008615342,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17163893580436707,
+    "cube_moved_mm": 328.0383167270825,
+    "min_grip_to_spawn_mm": 20.118297255057552,
+    "tick_of_min": 639,
+    "closed_ever": true,
+    "closed_frac": 0.312,
+    "joint_range_last600": 0.6419589519500732,
+    "end_grip_to_spawn_mm": 327.9802928777034,
+    "ticks": 1000,
+    "spawn": [
+     0.4347164034843445,
+     -0.027966447174549103
+    ],
+    "end_cube_to_place_mm": 4.9176646412624025,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16946743428707123,
+    "cube_moved_mm": 329.3054034346754,
+    "min_grip_to_spawn_mm": 19.68344220006886,
+    "tick_of_min": 676,
+    "closed_ever": true,
+    "closed_frac": 0.273,
+    "joint_range_last600": 0.6399224996566772,
+    "end_grip_to_spawn_mm": 335.6249968870545,
+    "ticks": 1000,
+    "spawn": [
+     0.4347164034843445,
+     -0.027966447174549103
+    ],
+    "end_cube_to_place_mm": 11.029805349332735,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8001": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17194706201553345,
+    "cube_moved_mm": 303.8007748536061,
+    "min_grip_to_spawn_mm": 17.860677961396892,
+    "tick_of_min": 462,
+    "closed_ever": true,
+    "closed_frac": 0.3625,
+    "joint_range_last600": 0.5484291315078735,
+    "end_grip_to_spawn_mm": 303.4639744844892,
+    "ticks": 800,
+    "spawn": [
+     0.4534493088722229,
+     -0.009311639703810215
+    ],
+    "end_cube_to_place_mm": 16.434794958479298,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16926193237304688,
+    "cube_moved_mm": 308.47448736054287,
+    "min_grip_to_spawn_mm": 21.356355562642456,
+    "tick_of_min": 442,
+    "closed_ever": true,
+    "closed_frac": 0.38133333333333336,
+    "joint_range_last600": 0.5798031091690063,
+    "end_grip_to_spawn_mm": 312.797082722131,
+    "ticks": 750,
+    "spawn": [
+     0.4534493088722229,
+     -0.009311639703810215
+    ],
+    "end_cube_to_place_mm": 5.559075535124116,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1670830398797989,
+    "cube_moved_mm": 311.241521181628,
+    "min_grip_to_spawn_mm": 17.81201686624329,
+    "tick_of_min": 426,
+    "closed_ever": true,
+    "closed_frac": 0.36533333333333334,
+    "joint_range_last600": 0.5669375658035278,
+    "end_grip_to_spawn_mm": 317.90223076828266,
+    "ticks": 750,
+    "spawn": [
+     0.4534493088722229,
+     -0.009311639703810215
+    ],
+    "end_cube_to_place_mm": 13.448905633618152,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8002": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1674402505159378,
+    "cube_moved_mm": 243.95582657083364,
+    "min_grip_to_spawn_mm": 21.058862761868948,
+    "tick_of_min": 433,
+    "closed_ever": true,
+    "closed_frac": 0.39866666666666667,
+    "joint_range_last600": 0.4907468557357788,
+    "end_grip_to_spawn_mm": 243.9442152732939,
+    "ticks": 750,
+    "spawn": [
+     0.42006948590278625,
+     0.05321517214179039
+    ],
+    "end_cube_to_place_mm": 6.657336489927865,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1687464714050293,
+    "cube_moved_mm": 246.429006214153,
+    "min_grip_to_spawn_mm": 23.052662059885545,
+    "tick_of_min": 502,
+    "closed_ever": true,
+    "closed_frac": 0.3635294117647059,
+    "joint_range_last600": 0.5227526426315308,
+    "end_grip_to_spawn_mm": 248.92091384952187,
+    "ticks": 850,
+    "spawn": [
+     0.42006948590278625,
+     0.05321517214179039
+    ],
+    "end_cube_to_place_mm": 4.194353370481021,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16607573628425598,
+    "cube_moved_mm": 246.41862224746723,
+    "min_grip_to_spawn_mm": 16.194836410771074,
+    "tick_of_min": 464,
+    "closed_ever": true,
+    "closed_frac": 0.33066666666666666,
+    "joint_range_last600": 0.5049736499786377,
+    "end_grip_to_spawn_mm": 255.48070798314038,
+    "ticks": 750,
+    "spawn": [
+     0.42006948590278625,
+     0.05321517214179039
+    ],
+    "end_cube_to_place_mm": 6.447393450799541,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8003": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.11106128245592117,
+    "cube_moved_mm": 383.8306139421572,
+    "min_grip_to_spawn_mm": 25.631209899864213,
+    "tick_of_min": 492,
+    "closed_ever": true,
+    "closed_frac": 0.3976470588235294,
+    "joint_range_last600": 0.8588175773620605,
+    "end_grip_to_spawn_mm": 386.1049002395553,
+    "ticks": 850,
+    "spawn": [
+     0.46226298809051514,
+     -0.08415524661540985
+    ],
+    "end_cube_to_place_mm": 8.899743934304045,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.11849099397659302,
+    "cube_moved_mm": 388.8281818954885,
+    "min_grip_to_spawn_mm": 21.556037182437326,
+    "tick_of_min": 497,
+    "closed_ever": true,
+    "closed_frac": 0.3952941176470588,
+    "joint_range_last600": 0.8345965445041656,
+    "end_grip_to_spawn_mm": 389.7523349641981,
+    "ticks": 850,
+    "spawn": [
+     0.46226298809051514,
+     -0.08415524661540985
+    ],
+    "end_cube_to_place_mm": 7.6332301628893235,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1775028258562088,
+    "cube_moved_mm": 380.24416647996287,
+    "min_grip_to_spawn_mm": 42.3475666393719,
+    "tick_of_min": 518,
+    "closed_ever": true,
+    "closed_frac": 0.38235294117647056,
+    "joint_range_last600": 0.6199999153614044,
+    "end_grip_to_spawn_mm": 379.21308282337054,
+    "ticks": 850,
+    "spawn": [
+     0.46226298809051514,
+     -0.08415524661540985
+    ],
+    "end_cube_to_place_mm": 28.306308160576055,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8004": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1687704473733902,
+    "cube_moved_mm": 322.6942474844693,
+    "min_grip_to_spawn_mm": 26.946014463836324,
+    "tick_of_min": 490,
+    "closed_ever": true,
+    "closed_frac": 0.36,
+    "joint_range_last600": 0.5545423030853271,
+    "end_grip_to_spawn_mm": 326.67933708349545,
+    "ticks": 800,
+    "spawn": [
+     0.4386628568172455,
+     -0.03261342644691467
+    ],
+    "end_cube_to_place_mm": 11.465671021013513,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.14256145060062408,
+    "cube_moved_mm": 327.0060371284492,
+    "min_grip_to_spawn_mm": 18.31173063682934,
+    "tick_of_min": 448,
+    "closed_ever": true,
+    "closed_frac": 0.3413333333333333,
+    "joint_range_last600": 0.6979855298995972,
+    "end_grip_to_spawn_mm": 335.5619544186138,
+    "ticks": 750,
+    "spawn": [
+     0.4386628568172455,
+     -0.03261342644691467
+    ],
+    "end_cube_to_place_mm": 6.176903515741035,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1692523956298828,
+    "cube_moved_mm": 326.73973255064453,
+    "min_grip_to_spawn_mm": 23.437146664084565,
+    "tick_of_min": 495,
+    "closed_ever": true,
+    "closed_frac": 0.3835294117647059,
+    "joint_range_last600": 0.5803478956222534,
+    "end_grip_to_spawn_mm": 327.59429262516295,
+    "ticks": 850,
+    "spawn": [
+     0.4386628568172455,
+     -0.03261342644691467
+    ],
+    "end_cube_to_place_mm": 13.292511860555035,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8005": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1206432357430458,
+    "cube_moved_mm": 248.70674754808493,
+    "min_grip_to_spawn_mm": 17.58477674624501,
+    "tick_of_min": 453,
+    "closed_ever": true,
+    "closed_frac": 0.328,
+    "joint_range_last600": 0.9725625514984131,
+    "end_grip_to_spawn_mm": 249.8014337032311,
+    "ticks": 750,
+    "spawn": [
+     0.475972980260849,
+     0.04329163208603859
+    ],
+    "end_cube_to_place_mm": 10.71267301149608,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.10747162252664566,
+    "cube_moved_mm": 220.30522846012047,
+    "min_grip_to_spawn_mm": 22.913895380362938,
+    "tick_of_min": 473,
+    "closed_ever": true,
+    "closed_frac": 0.14166666666666666,
+    "joint_range_last600": 0.03620481491088867,
+    "end_grip_to_spawn_mm": 246.28624064645606,
+    "ticks": 1800,
+    "spawn": [
+     0.475972980260849,
+     0.04329163208603859
+    ],
+    "end_cube_to_place_mm": 38.82910514592715,
+    "ok": false,
+    "cls": "lifted"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1147708147764206,
+    "cube_moved_mm": 261.60994317554514,
+    "min_grip_to_spawn_mm": 26.441444009138547,
+    "tick_of_min": 503,
+    "closed_ever": true,
+    "closed_frac": 0.31875,
+    "joint_range_last600": 0.848548173904419,
+    "end_grip_to_spawn_mm": 273.7784543714669,
+    "ticks": 800,
+    "spawn": [
+     0.475972980260849,
+     0.04329163208603859
+    ],
+    "end_cube_to_place_mm": 12.829057682533072,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8006": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17094536125659943,
+    "cube_moved_mm": 410.4211493928773,
+    "min_grip_to_spawn_mm": 32.69265373184877,
+    "tick_of_min": 496,
+    "closed_ever": true,
+    "closed_frac": 0.40352941176470586,
+    "joint_range_last600": 0.7396953105926514,
+    "end_grip_to_spawn_mm": 408.68772690020444,
+    "ticks": 850,
+    "spawn": [
+     0.42097771167755127,
+     -0.11113210022449493
+    ],
+    "end_cube_to_place_mm": 7.692721354084432,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": true,
+    "max_z": 0.022058160975575447,
+    "cube_moved_mm": 42.48105884918028,
+    "min_grip_to_spawn_mm": 44.71497501313008,
+    "tick_of_min": 480,
+    "closed_ever": true,
+    "closed_frac": 0.19833333333333333,
+    "joint_range_last600": 36.53401184082031,
+    "end_grip_to_spawn_mm": 126.60284664828548,
+    "ticks": 1800,
+    "spawn": [
+     0.42097771167755127,
+     -0.11113210022449493
+    ],
+    "end_cube_to_place_mm": 446.1114225717991,
+    "ok": false,
+    "cls": "runaway"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16131335496902466,
+    "cube_moved_mm": 404.65911654474036,
+    "min_grip_to_spawn_mm": 42.62445240019729,
+    "tick_of_min": 554,
+    "closed_ever": true,
+    "closed_frac": 0.38666666666666666,
+    "joint_range_last600": 0.7150483131408691,
+    "end_grip_to_spawn_mm": 405.88440261279374,
+    "ticks": 900,
+    "spawn": [
+     0.42097771167755127,
+     -0.11113210022449493
+    ],
+    "end_cube_to_place_mm": 10.987051735217618,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8007": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16536298394203186,
+    "cube_moved_mm": 197.5413111637419,
+    "min_grip_to_spawn_mm": 43.945374239215255,
+    "tick_of_min": 464,
+    "closed_ever": true,
+    "closed_frac": 0.32625,
+    "joint_range_last600": 0.44733476638793945,
+    "end_grip_to_spawn_mm": 204.81946226077793,
+    "ticks": 800,
+    "spawn": [
+     0.4378032684326172,
+     0.09221408516168594
+    ],
+    "end_cube_to_place_mm": 12.889957187269646,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16797176003456116,
+    "cube_moved_mm": 199.5179488323638,
+    "min_grip_to_spawn_mm": 39.44977397448317,
+    "tick_of_min": 408,
+    "closed_ever": true,
+    "closed_frac": 0.3585714285714286,
+    "joint_range_last600": 1.4719297885894775,
+    "end_grip_to_spawn_mm": 209.0587606733451,
+    "ticks": 700,
+    "spawn": [
+     0.4378032684326172,
+     0.09221408516168594
+    ],
+    "end_cube_to_place_mm": 9.366555352751503,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": true,
+    "runaway": true,
+    "max_z": 0.5559098124504089,
+    "cube_moved_mm": 934.9409305331532,
+    "min_grip_to_spawn_mm": 22.624869394674036,
+    "tick_of_min": 459,
+    "closed_ever": true,
+    "closed_frac": 0.18055555555555555,
+    "joint_range_last600": 57.66615295410156,
+    "end_grip_to_spawn_mm": 969.6279695207498,
+    "ticks": 1800,
+    "spawn": [
+     0.4378032684326172,
+     0.09221408516168594
+    ],
+    "end_cube_to_place_mm": 937.9286792926343,
+    "ok": false,
+    "cls": "blow-up"
+   }
+  },
+  "8008": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17464327812194824,
+    "cube_moved_mm": 371.52987652765785,
+    "min_grip_to_spawn_mm": 20.894733607508932,
+    "tick_of_min": 430,
+    "closed_ever": true,
+    "closed_frac": 0.415,
+    "joint_range_last600": 0.679765909910202,
+    "end_grip_to_spawn_mm": 368.62595298759794,
+    "ticks": 800,
+    "spawn": [
+     0.4234086871147156,
+     -0.06867902725934982
+    ],
+    "end_cube_to_place_mm": 15.698413847928427,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16808538138866425,
+    "cube_moved_mm": 370.4819402050259,
+    "min_grip_to_spawn_mm": 21.017805069879117,
+    "tick_of_min": 588,
+    "closed_ever": true,
+    "closed_frac": 0.324,
+    "joint_range_last600": 0.7021582126617432,
+    "end_grip_to_spawn_mm": 367.63280507026116,
+    "ticks": 1000,
+    "spawn": [
+     0.4234086871147156,
+     -0.06867902725934982
+    ],
+    "end_cube_to_place_mm": 14.53547422169782,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1632956862449646,
+    "cube_moved_mm": 360.65913597740126,
+    "min_grip_to_spawn_mm": 30.10209424168551,
+    "tick_of_min": 572,
+    "closed_ever": true,
+    "closed_frac": 0.35777777777777775,
+    "joint_range_last600": 0.6100804805755615,
+    "end_grip_to_spawn_mm": 362.3558052617482,
+    "ticks": 900,
+    "spawn": [
+     0.4234086871147156,
+     -0.06867902725934982
+    ],
+    "end_cube_to_place_mm": 10.222959372931669,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8009": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.170408695936203,
+    "cube_moved_mm": 402.39022359412076,
+    "min_grip_to_spawn_mm": 34.67880222265585,
+    "tick_of_min": 430,
+    "closed_ever": true,
+    "closed_frac": 0.425,
+    "joint_range_last600": 0.6675307154655457,
+    "end_grip_to_spawn_mm": 402.47448853290433,
+    "ticks": 800,
+    "spawn": [
+     0.46480366587638855,
+     -0.10759710520505905
+    ],
+    "end_cube_to_place_mm": 18.901260196082244,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16845020651817322,
+    "cube_moved_mm": 404.2286919812226,
+    "min_grip_to_spawn_mm": 23.83053074893212,
+    "tick_of_min": 488,
+    "closed_ever": true,
+    "closed_frac": 0.37176470588235294,
+    "joint_range_last600": 0.6905348300933838,
+    "end_grip_to_spawn_mm": 398.56302074269803,
+    "ticks": 850,
+    "spawn": [
+     0.46480366587638855,
+     -0.10759710520505905
+    ],
+    "end_cube_to_place_mm": 12.491725620127694,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16756172478199005,
+    "cube_moved_mm": 405.53571571825705,
+    "min_grip_to_spawn_mm": 31.6616646321241,
+    "tick_of_min": 852,
+    "closed_ever": true,
+    "closed_frac": 0.24347826086956523,
+    "joint_range_last600": 0.7079586982727051,
+    "end_grip_to_spawn_mm": 410.63764401772215,
+    "ticks": 1150,
+    "spawn": [
+     0.46480366587638855,
+     -0.10759710520505905
+    ],
+    "end_cube_to_place_mm": 11.882790756602931,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8010": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.11757241934537888,
+    "cube_moved_mm": 216.61479964284393,
+    "min_grip_to_spawn_mm": 39.57264858591829,
+    "tick_of_min": 501,
+    "closed_ever": true,
+    "closed_frac": 0.325,
+    "joint_range_last600": 0.733454704284668,
+    "end_grip_to_spawn_mm": 200.55855463035036,
+    "ticks": 800,
+    "spawn": [
+     0.4746430218219757,
+     0.10073993355035782
+    ],
+    "end_cube_to_place_mm": 11.794659131273242,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.024059368297457695,
+    "cube_moved_mm": 16.35306622921909,
+    "min_grip_to_spawn_mm": 57.06956128136766,
+    "tick_of_min": 498,
+    "closed_ever": true,
+    "closed_frac": 0.1661111111111111,
+    "joint_range_last600": 0.09440845251083374,
+    "end_grip_to_spawn_mm": 182.45145845359238,
+    "ticks": 1800,
+    "spawn": [
+     0.4746430218219757,
+     0.10073993355035782
+    ],
+    "end_cube_to_place_mm": 193.56565336934432,
+    "ok": false,
+    "cls": "pushed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.11610380560159683,
+    "cube_moved_mm": 192.51340618611513,
+    "min_grip_to_spawn_mm": 20.8386376321288,
+    "tick_of_min": 399,
+    "closed_ever": true,
+    "closed_frac": 0.32461538461538464,
+    "joint_range_last600": 3.532096691429615,
+    "end_grip_to_spawn_mm": 209.1906232466718,
+    "ticks": 650,
+    "spawn": [
+     0.4746430218219757,
+     0.10073993355035782
+    ],
+    "end_cube_to_place_mm": 9.295655029857697,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8011": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.12508410215377808,
+    "cube_moved_mm": 265.2202285909166,
+    "min_grip_to_spawn_mm": 14.853638311817557,
+    "tick_of_min": 458,
+    "closed_ever": true,
+    "closed_frac": 0.30933333333333335,
+    "joint_range_last600": 0.5958011150360107,
+    "end_grip_to_spawn_mm": 266.56178298838086,
+    "ticks": 750,
+    "spawn": [
+     0.4732823967933655,
+     0.04189015179872513
+    ],
+    "end_cube_to_place_mm": 4.029534862161371,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16704285144805908,
+    "cube_moved_mm": 256.19027837257215,
+    "min_grip_to_spawn_mm": 19.286634163346065,
+    "tick_of_min": 449,
+    "closed_ever": true,
+    "closed_frac": 0.3525,
+    "joint_range_last600": 0.46726715564727783,
+    "end_grip_to_spawn_mm": 258.90089496178183,
+    "ticks": 800,
+    "spawn": [
+     0.4732823967933655,
+     0.04189015179872513
+    ],
+    "end_cube_to_place_mm": 3.1251313191182932,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1680046021938324,
+    "cube_moved_mm": 251.8155672000408,
+    "min_grip_to_spawn_mm": 17.715998948096164,
+    "tick_of_min": 480,
+    "closed_ever": true,
+    "closed_frac": 0.34625,
+    "joint_range_last600": 0.47043704986572266,
+    "end_grip_to_spawn_mm": 251.16249028571823,
+    "ticks": 800,
+    "spawn": [
+     0.4732823967933655,
+     0.04189015179872513
+    ],
+    "end_cube_to_place_mm": 14.768703161932244,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8012": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": true,
+    "max_z": 0.021387143060564995,
+    "cube_moved_mm": 35.57585358984201,
+    "min_grip_to_spawn_mm": 14.949217760061506,
+    "tick_of_min": 417,
+    "closed_ever": true,
+    "closed_frac": 0.13833333333333334,
+    "joint_range_last600": 5.262779235839844,
+    "end_grip_to_spawn_mm": 74.9513024119598,
+    "ticks": 1800,
+    "spawn": [
+     0.42116579413414,
+     0.10065693408250809
+    ],
+    "end_cube_to_place_mm": 212.65398915562704,
+    "ok": false,
+    "cls": "runaway"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.020770467817783356,
+    "cube_moved_mm": 30.624851480169106,
+    "min_grip_to_spawn_mm": 63.31903077016433,
+    "tick_of_min": 438,
+    "closed_ever": true,
+    "closed_frac": 0.1922222222222222,
+    "joint_range_last600": 0.019506454467773438,
+    "end_grip_to_spawn_mm": 200.13439574878157,
+    "ticks": 1800,
+    "spawn": [
+     0.42116579413414,
+     0.10065693408250809
+    ],
+    "end_cube_to_place_mm": 191.22611176298602,
+    "ok": false,
+    "cls": "pushed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.021307244896888733,
+    "cube_moved_mm": 23.999405412864313,
+    "min_grip_to_spawn_mm": 39.53425723396228,
+    "tick_of_min": 550,
+    "closed_ever": true,
+    "closed_frac": 0.17722222222222223,
+    "joint_range_last600": 0.15758413076400757,
+    "end_grip_to_spawn_mm": 73.70614717664036,
+    "ticks": 1800,
+    "spawn": [
+     0.42116579413414,
+     0.10065693408250809
+    ],
+    "end_cube_to_place_mm": 220.89421767301548,
+    "ok": false,
+    "cls": "pushed"
+   }
+  },
+  "8013": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1649392992258072,
+    "cube_moved_mm": 226.21033692857924,
+    "min_grip_to_spawn_mm": 19.301406068381986,
+    "tick_of_min": 413,
+    "closed_ever": true,
+    "closed_frac": 0.35428571428571426,
+    "joint_range_last600": 1.4761078357696533,
+    "end_grip_to_spawn_mm": 238.4196714335927,
+    "ticks": 700,
+    "spawn": [
+     0.44807377457618713,
+     0.06196785718202591
+    ],
+    "end_cube_to_place_mm": 12.283911758718046,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16928096115589142,
+    "cube_moved_mm": 236.73469749889787,
+    "min_grip_to_spawn_mm": 21.441401122227905,
+    "tick_of_min": 453,
+    "closed_ever": true,
+    "closed_frac": 0.335,
+    "joint_range_last600": 0.4620319604873657,
+    "end_grip_to_spawn_mm": 239.42714596291952,
+    "ticks": 800,
+    "spawn": [
+     0.44807377457618713,
+     0.06196785718202591
+    ],
+    "end_cube_to_place_mm": 7.830420643527304,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17011748254299164,
+    "cube_moved_mm": 232.19873433704288,
+    "min_grip_to_spawn_mm": 23.28158696529205,
+    "tick_of_min": 538,
+    "closed_ever": true,
+    "closed_frac": 0.33294117647058824,
+    "joint_range_last600": 0.46255648136138916,
+    "end_grip_to_spawn_mm": 234.89395682638082,
+    "ticks": 850,
+    "spawn": [
+     0.44807377457618713,
+     0.06196785718202591
+    ],
+    "end_cube_to_place_mm": 6.460651977634904,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8014": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1688263714313507,
+    "cube_moved_mm": 385.3456922547624,
+    "min_grip_to_spawn_mm": 20.945761105314514,
+    "tick_of_min": 488,
+    "closed_ever": true,
+    "closed_frac": 0.36470588235294116,
+    "joint_range_last600": 0.6529750823974609,
+    "end_grip_to_spawn_mm": 382.7352023049266,
+    "ticks": 850,
+    "spawn": [
+     0.47764670848846436,
+     -0.0815626010298729
+    ],
+    "end_cube_to_place_mm": 25.086253303548098,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17210686206817627,
+    "cube_moved_mm": 379.1720915910353,
+    "min_grip_to_spawn_mm": 21.554531300774297,
+    "tick_of_min": 556,
+    "closed_ever": true,
+    "closed_frac": 0.3368421052631579,
+    "joint_range_last600": 0.6957255601882935,
+    "end_grip_to_spawn_mm": 383.519452114199,
+    "ticks": 950,
+    "spawn": [
+     0.47764670848846436,
+     -0.0815626010298729
+    ],
+    "end_cube_to_place_mm": 22.640813614634002,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.02427087351679802,
+    "cube_moved_mm": 42.660999936554134,
+    "min_grip_to_spawn_mm": 42.881688217100304,
+    "tick_of_min": 456,
+    "closed_ever": true,
+    "closed_frac": 0.20777777777777778,
+    "joint_range_last600": 0.1091756820678711,
+    "end_grip_to_spawn_mm": 189.9407342262396,
+    "ticks": 1800,
+    "spawn": [
+     0.47764670848846436,
+     -0.0815626010298729
+    ],
+    "end_cube_to_place_mm": 354.66882969751987,
+    "ok": false,
+    "cls": "pushed"
+   }
+  },
+  "8015": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.020123757421970367,
+    "cube_moved_mm": 13.670522384705167,
+    "min_grip_to_spawn_mm": 66.80585087166604,
+    "tick_of_min": 433,
+    "closed_ever": true,
+    "closed_frac": 0.18611111111111112,
+    "joint_range_last600": 0.03947603702545166,
+    "end_grip_to_spawn_mm": 172.2502046008555,
+    "ticks": 1800,
+    "spawn": [
+     0.4238058626651764,
+     0.11884696036577225
+    ],
+    "end_cube_to_place_mm": 173.70513675316965,
+    "ok": false,
+    "cls": "pushed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.022614549845457077,
+    "cube_moved_mm": 28.016650620079695,
+    "min_grip_to_spawn_mm": 53.433617610761445,
+    "tick_of_min": 483,
+    "closed_ever": true,
+    "closed_frac": 0.2727777777777778,
+    "joint_range_last600": 0.21073701977729797,
+    "end_grip_to_spawn_mm": 196.30849830972323,
+    "ticks": 1800,
+    "spawn": [
+     0.4238058626651764,
+     0.11884696036577225
+    ],
+    "end_cube_to_place_mm": 188.54732733511202,
+    "ok": false,
+    "cls": "pushed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.02003021165728569,
+    "cube_moved_mm": 17.226982940148286,
+    "min_grip_to_spawn_mm": 67.53733997384653,
+    "tick_of_min": 472,
+    "closed_ever": true,
+    "closed_frac": 0.21222222222222223,
+    "joint_range_last600": 0.0366058349609375,
+    "end_grip_to_spawn_mm": 192.09211969156652,
+    "ticks": 1800,
+    "spawn": [
+     0.4238058626651764,
+     0.11884696036577225
+    ],
+    "end_cube_to_place_mm": 166.6414896827147,
+    "ok": false,
+    "cls": "pushed"
+   }
+  },
+  "8016": {
+   "v2_s42": {
+    "blowup": true,
+    "runaway": false,
+    "max_z": 0.11649097502231598,
+    "cube_moved_mm": 320.3184096390834,
+    "min_grip_to_spawn_mm": 25.13909434007018,
+    "tick_of_min": 483,
+    "closed_ever": true,
+    "closed_frac": 0.17166666666666666,
+    "joint_range_last600": 0.035678714513778687,
+    "end_grip_to_spawn_mm": 307.22611553176955,
+    "ticks": 1800,
+    "spawn": [
+     0.47593504190444946,
+     -0.03260936215519905
+    ],
+    "end_cube_to_place_mm": 31.453107206321267,
+    "ok": false,
+    "cls": "blow-up"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17235764861106873,
+    "cube_moved_mm": 326.2335943988265,
+    "min_grip_to_spawn_mm": 23.697841986515336,
+    "tick_of_min": 465,
+    "closed_ever": true,
+    "closed_frac": 0.35125,
+    "joint_range_last600": 0.5739717483520508,
+    "end_grip_to_spawn_mm": 331.16270240684514,
+    "ticks": 800,
+    "spawn": [
+     0.47593504190444946,
+     -0.03260936215519905
+    ],
+    "end_cube_to_place_mm": 24.53649939912883,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1710236370563507,
+    "cube_moved_mm": 330.40047327814875,
+    "min_grip_to_spawn_mm": 19.70678063694923,
+    "tick_of_min": 442,
+    "closed_ever": true,
+    "closed_frac": 0.4025,
+    "joint_range_last600": 0.5840698480606079,
+    "end_grip_to_spawn_mm": 330.8064620958974,
+    "ticks": 800,
+    "spawn": [
+     0.47593504190444946,
+     -0.03260936215519905
+    ],
+    "end_cube_to_place_mm": 20.267817574338878,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8017": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17095163464546204,
+    "cube_moved_mm": 274.8109178984719,
+    "min_grip_to_spawn_mm": 15.606139401598615,
+    "tick_of_min": 388,
+    "closed_ever": true,
+    "closed_frac": 0.39571428571428574,
+    "joint_range_last600": 1.4728182554244995,
+    "end_grip_to_spawn_mm": 278.8655302295909,
+    "ticks": 700,
+    "spawn": [
+     0.4601040184497833,
+     0.01827986165881157
+    ],
+    "end_cube_to_place_mm": 10.213191919709832,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16305440664291382,
+    "cube_moved_mm": 280.320443911675,
+    "min_grip_to_spawn_mm": 17.29575668921116,
+    "tick_of_min": 487,
+    "closed_ever": true,
+    "closed_frac": 0.33875,
+    "joint_range_last600": 0.48969411849975586,
+    "end_grip_to_spawn_mm": 283.2402439815478,
+    "ticks": 800,
+    "spawn": [
+     0.4601040184497833,
+     0.01827986165881157
+    ],
+    "end_cube_to_place_mm": 6.351217011448328,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17486019432544708,
+    "cube_moved_mm": 276.4099047020078,
+    "min_grip_to_spawn_mm": 22.343583440592298,
+    "tick_of_min": 480,
+    "closed_ever": true,
+    "closed_frac": 0.36470588235294116,
+    "joint_range_last600": 0.5295038223266602,
+    "end_grip_to_spawn_mm": 276.13968109284986,
+    "ticks": 850,
+    "spawn": [
+     0.4601040184497833,
+     0.01827986165881157
+    ],
+    "end_cube_to_place_mm": 19.05008112327385,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8018": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17078915238380432,
+    "cube_moved_mm": 387.7204844298254,
+    "min_grip_to_spawn_mm": 19.23075374135281,
+    "tick_of_min": 450,
+    "closed_ever": true,
+    "closed_frac": 0.40625,
+    "joint_range_last600": 0.7064565718173981,
+    "end_grip_to_spawn_mm": 388.5942610937474,
+    "ticks": 800,
+    "spawn": [
+     0.4220537543296814,
+     -0.0908694937825203
+    ],
+    "end_cube_to_place_mm": 14.364929123612162,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1662798374891281,
+    "cube_moved_mm": 388.0245508121312,
+    "min_grip_to_spawn_mm": 24.818753265143677,
+    "tick_of_min": 540,
+    "closed_ever": true,
+    "closed_frac": 0.37333333333333335,
+    "joint_range_last600": 0.7145706415176392,
+    "end_grip_to_spawn_mm": 391.89768822260334,
+    "ticks": 900,
+    "spawn": [
+     0.4220537543296814,
+     -0.0908694937825203
+    ],
+    "end_cube_to_place_mm": 9.080097177125772,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16929738223552704,
+    "cube_moved_mm": 388.0000696054281,
+    "min_grip_to_spawn_mm": 35.4481070411622,
+    "tick_of_min": 483,
+    "closed_ever": true,
+    "closed_frac": 0.3835294117647059,
+    "joint_range_last600": 0.6499438285827637,
+    "end_grip_to_spawn_mm": 387.5250270168359,
+    "ticks": 850,
+    "spawn": [
+     0.4220537543296814,
+     -0.0908694937825203
+    ],
+    "end_cube_to_place_mm": 18.49984418828326,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8019": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16430310904979706,
+    "cube_moved_mm": 195.5418986919522,
+    "min_grip_to_spawn_mm": 44.942362926786885,
+    "tick_of_min": 500,
+    "closed_ever": true,
+    "closed_frac": 0.3425,
+    "joint_range_last600": 0.46957099437713623,
+    "end_grip_to_spawn_mm": 201.9727438208537,
+    "ticks": 800,
+    "spawn": [
+     0.427635133266449,
+     0.09739915281534195
+    ],
+    "end_cube_to_place_mm": 14.247726043993305,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.020039288327097893,
+    "cube_moved_mm": 29.918991734589635,
+    "min_grip_to_spawn_mm": 59.0581711140551,
+    "tick_of_min": 503,
+    "closed_ever": true,
+    "closed_frac": 0.27166666666666667,
+    "joint_range_last600": 0.20024800300598145,
+    "end_grip_to_spawn_mm": 164.79371058039112,
+    "ticks": 1800,
+    "spawn": [
+     0.427635133266449,
+     0.09739915281534195
+    ],
+    "end_cube_to_place_mm": 174.2060116534445,
+    "ok": false,
+    "cls": "pushed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.02124263346195221,
+    "cube_moved_mm": 58.32962208722291,
+    "min_grip_to_spawn_mm": 37.69202458544322,
+    "tick_of_min": 588,
+    "closed_ever": true,
+    "closed_frac": 0.17277777777777778,
+    "joint_range_last600": 0.08750605583190918,
+    "end_grip_to_spawn_mm": 135.98251997773224,
+    "ticks": 1800,
+    "spawn": [
+     0.427635133266449,
+     0.09739915281534195
+    ],
+    "end_cube_to_place_mm": 256.76998013276716,
+    "ok": false,
+    "cls": "pushed"
+   }
+  }
+ },
+ "step2": {
+  "8000": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1711498349905014,
+    "cube_moved_mm": 330.31351917548307,
+    "min_grip_to_spawn_mm": 23.814865830491186,
+    "tick_of_min": 441,
+    "closed_ever": true,
+    "closed_frac": 0.38266666666666665,
+    "joint_range_last600": 0.6023814678192139,
+    "end_grip_to_spawn_mm": 338.39924240625436,
+    "ticks": 750,
+    "spawn": [
+     0.40452679991722107,
+     -0.03441924601793289
+    ],
+    "end_cube_to_place_mm": 8.291519990804122,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16885384917259216,
+    "cube_moved_mm": 335.02516008207346,
+    "min_grip_to_spawn_mm": 21.348751154399626,
+    "tick_of_min": 440,
+    "closed_ever": true,
+    "closed_frac": 0.41,
+    "joint_range_last600": 0.6485068798065186,
+    "end_grip_to_spawn_mm": 338.44129105144447,
+    "ticks": 800,
+    "spawn": [
+     0.40452679991722107,
+     -0.03441924601793289
+    ],
+    "end_cube_to_place_mm": 11.540381025647324,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16861696541309357,
+    "cube_moved_mm": 331.1840258931933,
+    "min_grip_to_spawn_mm": 24.047622730065882,
+    "tick_of_min": 471,
+    "closed_ever": true,
+    "closed_frac": 0.3875,
+    "joint_range_last600": 0.6316280364990234,
+    "end_grip_to_spawn_mm": 334.48241930107787,
+    "ticks": 800,
+    "spawn": [
+     0.40452679991722107,
+     -0.03441924601793289
+    ],
+    "end_cube_to_place_mm": 11.634829474388296,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8001": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17215000092983246,
+    "cube_moved_mm": 312.06802115700935,
+    "min_grip_to_spawn_mm": 23.054875435828926,
+    "tick_of_min": 442,
+    "closed_ever": true,
+    "closed_frac": 0.38,
+    "joint_range_last600": 0.5538430511951447,
+    "end_grip_to_spawn_mm": 312.1019777090865,
+    "ticks": 750,
+    "spawn": [
+     0.43574973940849304,
+     -0.011460944078862667
+    ],
+    "end_cube_to_place_mm": 12.226969157484355,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.168629452586174,
+    "cube_moved_mm": 314.68655203461054,
+    "min_grip_to_spawn_mm": 18.503986414648853,
+    "tick_of_min": 440,
+    "closed_ever": true,
+    "closed_frac": 0.388,
+    "joint_range_last600": 0.59358811378479,
+    "end_grip_to_spawn_mm": 312.04921144909315,
+    "ticks": 750,
+    "spawn": [
+     0.43574973940849304,
+     -0.011460944078862667
+    ],
+    "end_cube_to_place_mm": 5.625012849927857,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16975495219230652,
+    "cube_moved_mm": 307.07042636584043,
+    "min_grip_to_spawn_mm": 23.86745613038268,
+    "tick_of_min": 464,
+    "closed_ever": true,
+    "closed_frac": 0.39,
+    "joint_range_last600": 0.5716667175292969,
+    "end_grip_to_spawn_mm": 307.56142660465105,
+    "ticks": 800,
+    "spawn": [
+     0.43574973940849304,
+     -0.011460944078862667
+    ],
+    "end_cube_to_place_mm": 12.203618500014935,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8002": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.019999781623482704,
+    "cube_moved_mm": 0.0005434839792500998,
+    "min_grip_to_spawn_mm": 42.444903338342606,
+    "tick_of_min": 450,
+    "closed_ever": true,
+    "closed_frac": 0.20166666666666666,
+    "joint_range_last600": 0.3444443345069885,
+    "end_grip_to_spawn_mm": 144.75434925191146,
+    "ticks": 1800,
+    "spawn": [
+     0.38011670112609863,
+     0.06549537926912308
+    ],
+    "end_cube_to_place_mm": 244.69623693853097,
+    "ok": false,
+    "cls": "untouched"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.019999781623482704,
+    "cube_moved_mm": 0.0005434839792500998,
+    "min_grip_to_spawn_mm": 54.355742793842744,
+    "tick_of_min": 445,
+    "closed_ever": true,
+    "closed_frac": 0.18222222222222223,
+    "joint_range_last600": 0.24553942680358887,
+    "end_grip_to_spawn_mm": 168.09656328211864,
+    "ticks": 1800,
+    "spawn": [
+     0.38011670112609863,
+     0.06549537926912308
+    ],
+    "end_cube_to_place_mm": 244.69623693853097,
+    "ok": false,
+    "cls": "untouched"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.020007243379950523,
+    "cube_moved_mm": 12.897471428438477,
+    "min_grip_to_spawn_mm": 36.75874760051094,
+    "tick_of_min": 451,
+    "closed_ever": true,
+    "closed_frac": 0.2,
+    "joint_range_last600": 0.06038057804107666,
+    "end_grip_to_spawn_mm": 205.15157550850927,
+    "ticks": 1800,
+    "spawn": [
+     0.38011670112609863,
+     0.06549537926912308
+    ],
+    "end_cube_to_place_mm": 257.2479774359443,
+    "ok": false,
+    "cls": "pushed"
+   }
+  },
+  "8003": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16487489640712738,
+    "cube_moved_mm": 404.40510233844117,
+    "min_grip_to_spawn_mm": 26.760255216307836,
+    "tick_of_min": 476,
+    "closed_ever": true,
+    "closed_frac": 0.39176470588235296,
+    "joint_range_last600": 0.6867232322692871,
+    "end_grip_to_spawn_mm": 403.9421304748143,
+    "ticks": 850,
+    "spawn": [
+     0.4504392147064209,
+     -0.1035761684179306
+    ],
+    "end_cube_to_place_mm": 9.843528927084586,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.11818751692771912,
+    "cube_moved_mm": 399.80532214221404,
+    "min_grip_to_spawn_mm": 23.696546061868045,
+    "tick_of_min": 514,
+    "closed_ever": true,
+    "closed_frac": 0.34,
+    "joint_range_last600": 0.8468635976314545,
+    "end_grip_to_spawn_mm": 399.3426868154861,
+    "ticks": 850,
+    "spawn": [
+     0.4504392147064209,
+     -0.1035761684179306
+    ],
+    "end_cube_to_place_mm": 5.783628683838972,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1657126396894455,
+    "cube_moved_mm": 395.52645690850824,
+    "min_grip_to_spawn_mm": 39.094776055708465,
+    "tick_of_min": 587,
+    "closed_ever": true,
+    "closed_frac": 0.36,
+    "joint_range_last600": 0.6377986371517181,
+    "end_grip_to_spawn_mm": 394.66978611345723,
+    "ticks": 900,
+    "spawn": [
+     0.4504392147064209,
+     -0.1035761684179306
+    ],
+    "end_cube_to_place_mm": 10.181324991110527,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8004": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16794027388095856,
+    "cube_moved_mm": 334.9805147848525,
+    "min_grip_to_spawn_mm": 22.292385143701875,
+    "tick_of_min": 492,
+    "closed_ever": true,
+    "closed_frac": 0.37,
+    "joint_range_last600": 0.599786639213562,
+    "end_grip_to_spawn_mm": 338.4379882025517,
+    "ticks": 800,
+    "spawn": [
+     0.4111056327819824,
+     -0.0401400625705719
+    ],
+    "end_cube_to_place_mm": 12.007714714363717,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16624514758586884,
+    "cube_moved_mm": 335.2401875325744,
+    "min_grip_to_spawn_mm": 19.493462792058594,
+    "tick_of_min": 489,
+    "closed_ever": true,
+    "closed_frac": 0.3525,
+    "joint_range_last600": 0.6321187019348145,
+    "end_grip_to_spawn_mm": 344.39221192886174,
+    "ticks": 800,
+    "spawn": [
+     0.4111056327819824,
+     -0.0401400625705719
+    ],
+    "end_cube_to_place_mm": 10.213945732260367,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1684722751379013,
+    "cube_moved_mm": 335.45267242921824,
+    "min_grip_to_spawn_mm": 23.09766479483853,
+    "tick_of_min": 647,
+    "closed_ever": true,
+    "closed_frac": 0.325,
+    "joint_range_last600": 0.596255898475647,
+    "end_grip_to_spawn_mm": 338.47032475636416,
+    "ticks": 1000,
+    "spawn": [
+     0.4111056327819824,
+     -0.0401400625705719
+    ],
+    "end_cube_to_place_mm": 11.70604535980147,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8005": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.13380774855613708,
+    "cube_moved_mm": 245.27471759902298,
+    "min_grip_to_spawn_mm": 18.722963668715217,
+    "tick_of_min": 453,
+    "closed_ever": true,
+    "closed_frac": 0.3466666666666667,
+    "joint_range_last600": 0.5128814578056335,
+    "end_grip_to_spawn_mm": 248.45134063799551,
+    "ticks": 750,
+    "spawn": [
+     0.47328972816467285,
+     0.05328063294291496
+    ],
+    "end_cube_to_place_mm": 3.5580858683970615,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.09484422951936722,
+    "cube_moved_mm": 216.11161519956033,
+    "min_grip_to_spawn_mm": 22.298262847876526,
+    "tick_of_min": 459,
+    "closed_ever": true,
+    "closed_frac": 0.1711111111111111,
+    "joint_range_last600": 0.031513988971710205,
+    "end_grip_to_spawn_mm": 225.98582273641716,
+    "ticks": 1800,
+    "spawn": [
+     0.47328972816467285,
+     0.05328063294291496
+    ],
+    "end_cube_to_place_mm": 34.61653791309787,
+    "ok": false,
+    "cls": "lifted"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17165301740169525,
+    "cube_moved_mm": 241.90420547644914,
+    "min_grip_to_spawn_mm": 21.68904735333085,
+    "tick_of_min": 426,
+    "closed_ever": true,
+    "closed_frac": 0.3525,
+    "joint_range_last600": 0.4686765670776367,
+    "end_grip_to_spawn_mm": 245.2221852292059,
+    "ticks": 800,
+    "spawn": [
+     0.47328972816467285,
+     0.05328063294291496
+    ],
+    "end_cube_to_place_mm": 15.461267283090612,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8006": {
+   "v2_s42": {
+    "blowup": true,
+    "runaway": true,
+    "max_z": 0.02890380658209324,
+    "cube_moved_mm": 164.16098855637514,
+    "min_grip_to_spawn_mm": 47.80610038624696,
+    "tick_of_min": 541,
+    "closed_ever": true,
+    "closed_frac": 0.21,
+    "joint_range_last600": 0.7146368026733398,
+    "end_grip_to_spawn_mm": 402.2551856003503,
+    "ticks": 1800,
+    "spawn": [
+     0.38163042068481445,
+     -0.13677842915058136
+    ],
+    "end_cube_to_place_mm": 480.3587921909129,
+    "ok": false,
+    "cls": "blow-up"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.029263531789183617,
+    "cube_moved_mm": 42.53954420074788,
+    "min_grip_to_spawn_mm": 64.64664771487838,
+    "tick_of_min": 444,
+    "closed_ever": true,
+    "closed_frac": 0.37666666666666665,
+    "joint_range_last600": 0.35904479026794434,
+    "end_grip_to_spawn_mm": 209.19050123048325,
+    "ticks": 1800,
+    "spawn": [
+     0.38163042068481445,
+     -0.13677842915058136
+    ],
+    "end_cube_to_place_mm": 453.2667741899214,
+    "ok": false,
+    "cls": "pushed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16244758665561676,
+    "cube_moved_mm": 432.8445849888572,
+    "min_grip_to_spawn_mm": 38.291576259557026,
+    "tick_of_min": 419,
+    "closed_ever": true,
+    "closed_frac": 0.4625,
+    "joint_range_last600": 0.7821491956710815,
+    "end_grip_to_spawn_mm": 435.5520732314602,
+    "ticks": 800,
+    "spawn": [
+     0.38163042068481445,
+     -0.13677842915058136
+    ],
+    "end_cube_to_place_mm": 10.78453138898243,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8007": {
+   "v2_s42": {
+    "blowup": true,
+    "runaway": true,
+    "max_z": 0.1557968407869339,
+    "cube_moved_mm": 2191.9182794483936,
+    "min_grip_to_spawn_mm": 39.91713876833322,
+    "tick_of_min": 442,
+    "closed_ever": true,
+    "closed_frac": 0.09777777777777778,
+    "joint_range_last600": 52.29297637939453,
+    "end_grip_to_spawn_mm": 1027.9087491216583,
+    "ticks": 1800,
+    "spawn": [
+     0.40967291593551636,
+     0.11349377781152725
+    ],
+    "end_cube_to_place_mm": 2014.6495673619404,
+    "ok": false,
+    "cls": "blow-up"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": true,
+    "max_z": 0.020038045942783356,
+    "cube_moved_mm": 45.0154661547007,
+    "min_grip_to_spawn_mm": 34.03388529764922,
+    "tick_of_min": 656,
+    "closed_ever": true,
+    "closed_frac": 0.2238888888888889,
+    "joint_range_last600": 0.24921506643295288,
+    "end_grip_to_spawn_mm": 201.4160565122471,
+    "ticks": 1800,
+    "spawn": [
+     0.40967291593551636,
+     0.11349377781152725
+    ],
+    "end_cube_to_place_mm": 186.82754609363934,
+    "ok": false,
+    "cls": "runaway"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.021299934014678,
+    "cube_moved_mm": 39.92726449230661,
+    "min_grip_to_spawn_mm": 43.446806180165986,
+    "tick_of_min": 603,
+    "closed_ever": true,
+    "closed_frac": 0.19,
+    "joint_range_last600": 0.05821174383163452,
+    "end_grip_to_spawn_mm": 134.28427020654738,
+    "ticks": 1800,
+    "spawn": [
+     0.40967291593551636,
+     0.11349377781152725
+    ],
+    "end_cube_to_place_mm": 230.72243539969412,
+    "ok": false,
+    "cls": "pushed"
+   }
+  },
+  "8008": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.020360304042696953,
+    "cube_moved_mm": 15.705458611533135,
+    "min_grip_to_spawn_mm": 35.288813496689194,
+    "tick_of_min": 524,
+    "closed_ever": true,
+    "closed_frac": 0.20722222222222222,
+    "joint_range_last600": 0.22458088397979736,
+    "end_grip_to_spawn_mm": 107.32291176328344,
+    "ticks": 1800,
+    "spawn": [
+     0.38568204641342163,
+     -0.08452851325273514
+    ],
+    "end_cube_to_place_mm": 374.9152588971346,
+    "ok": false,
+    "cls": "pushed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16620470583438873,
+    "cube_moved_mm": 381.1318302531381,
+    "min_grip_to_spawn_mm": 27.021460835519093,
+    "tick_of_min": 497,
+    "closed_ever": true,
+    "closed_frac": 0.3811764705882353,
+    "joint_range_last600": 0.7360002994537354,
+    "end_grip_to_spawn_mm": 389.0479363188355,
+    "ticks": 850,
+    "spawn": [
+     0.38568204641342163,
+     -0.08452851325273514
+    ],
+    "end_cube_to_place_mm": 14.386126692984506,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.15923668444156647,
+    "cube_moved_mm": 382.82953222535804,
+    "min_grip_to_spawn_mm": 48.96500755137974,
+    "tick_of_min": 576,
+    "closed_ever": true,
+    "closed_frac": 0.3726315789473684,
+    "joint_range_last600": 0.649835467338562,
+    "end_grip_to_spawn_mm": 390.82043875755903,
+    "ticks": 950,
+    "spawn": [
+     0.38568204641342163,
+     -0.08452851325273514
+    ],
+    "end_cube_to_place_mm": 16.714468186588345,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8009": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.02425372414290905,
+    "cube_moved_mm": 33.66150136878234,
+    "min_grip_to_spawn_mm": 45.133031613138364,
+    "tick_of_min": 688,
+    "closed_ever": true,
+    "closed_frac": 0.20055555555555554,
+    "joint_range_last600": 0.5193402767181396,
+    "end_grip_to_spawn_mm": 174.65245813490583,
+    "ticks": 1800,
+    "spawn": [
+     0.45467421412467957,
+     -0.1324286162853241
+    ],
+    "end_cube_to_place_mm": 412.88246559157665,
+    "ok": false,
+    "cls": "pushed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.164388045668602,
+    "cube_moved_mm": 432.08163293917215,
+    "min_grip_to_spawn_mm": 37.90457064106182,
+    "tick_of_min": 448,
+    "closed_ever": true,
+    "closed_frac": 0.3941176470588235,
+    "joint_range_last600": 0.7124474346637726,
+    "end_grip_to_spawn_mm": 433.440979491487,
+    "ticks": 850,
+    "spawn": [
+     0.45467421412467957,
+     -0.1324286162853241
+    ],
+    "end_cube_to_place_mm": 3.0083774563113743,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.022817375138401985,
+    "cube_moved_mm": 45.059956685858054,
+    "min_grip_to_spawn_mm": 47.37928280301631,
+    "tick_of_min": 580,
+    "closed_ever": true,
+    "closed_frac": 0.23166666666666666,
+    "joint_range_last600": 0.1900566816329956,
+    "end_grip_to_spawn_mm": 239.36496157181588,
+    "ticks": 1800,
+    "spawn": [
+     0.45467421412467957,
+     -0.1324286162853241
+    ],
+    "end_cube_to_place_mm": 403.39713665708166,
+    "ok": false,
+    "cls": "pushed"
+   }
+  },
+  "8010": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.02024056762456894,
+    "cube_moved_mm": 16.832699512626093,
+    "min_grip_to_spawn_mm": 70.01898163072158,
+    "tick_of_min": 482,
+    "closed_ever": true,
+    "closed_frac": 0.18,
+    "joint_range_last600": 0.035298168659210205,
+    "end_grip_to_spawn_mm": 169.34317624936597,
+    "ticks": 1800,
+    "spawn": [
+     0.4710724949836731,
+     0.12398713082075119
+    ],
+    "end_cube_to_place_mm": 164.44544641073773,
+    "ok": false,
+    "cls": "pushed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.020287467166781425,
+    "cube_moved_mm": 12.15401741720154,
+    "min_grip_to_spawn_mm": 72.11212748593442,
+    "tick_of_min": 400,
+    "closed_ever": true,
+    "closed_frac": 0.2611111111111111,
+    "joint_range_last600": 0.21382030844688416,
+    "end_grip_to_spawn_mm": 216.17689452729218,
+    "ticks": 1800,
+    "spawn": [
+     0.4710724949836731,
+     0.12398713082075119
+    ],
+    "end_cube_to_place_mm": 165.257056622759,
+    "ok": false,
+    "cls": "pushed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.02040371485054493,
+    "cube_moved_mm": 39.84757383076867,
+    "min_grip_to_spawn_mm": 52.023040863763725,
+    "tick_of_min": 445,
+    "closed_ever": true,
+    "closed_frac": 0.2011111111111111,
+    "joint_range_last600": 0.03197997808456421,
+    "end_grip_to_spawn_mm": 183.9301703709802,
+    "ticks": 1800,
+    "spawn": [
+     0.4710724949836731,
+     0.12398713082075119
+    ],
+    "end_cube_to_place_mm": 174.18595781019255,
+    "ok": false,
+    "cls": "pushed"
+   }
+  },
+  "8011": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.11103800684213638,
+    "cube_moved_mm": 245.49028614256136,
+    "min_grip_to_spawn_mm": 21.003127074542824,
+    "tick_of_min": 450,
+    "closed_ever": true,
+    "closed_frac": 0.352,
+    "joint_range_last600": 0.6390495300292969,
+    "end_grip_to_spawn_mm": 246.21634355078473,
+    "ticks": 750,
+    "spawn": [
+     0.46880486607551575,
+     0.051556650549173355
+    ],
+    "end_cube_to_place_mm": 6.418415758236492,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1659649908542633,
+    "cube_moved_mm": 245.83130356756058,
+    "min_grip_to_spawn_mm": 22.26016711669276,
+    "tick_of_min": 429,
+    "closed_ever": true,
+    "closed_frac": 0.4,
+    "joint_range_last600": 0.497051477432251,
+    "end_grip_to_spawn_mm": 245.02716441423377,
+    "ticks": 800,
+    "spawn": [
+     0.46880486607551575,
+     0.051556650549173355
+    ],
+    "end_cube_to_place_mm": 9.29415896658526,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.136203795671463,
+    "cube_moved_mm": 238.37988252109378,
+    "min_grip_to_spawn_mm": 15.997611041542195,
+    "tick_of_min": 627,
+    "closed_ever": true,
+    "closed_frac": 0.301,
+    "joint_range_last600": 0.6473728120326996,
+    "end_grip_to_spawn_mm": 244.37440864643088,
+    "ticks": 1000,
+    "spawn": [
+     0.46880486607551575,
+     0.051556650549173355
+    ],
+    "end_cube_to_place_mm": 26.402216251568152,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8012": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.019999777898192406,
+    "cube_moved_mm": 0.0007164964246851985,
+    "min_grip_to_spawn_mm": 64.91393604044761,
+    "tick_of_min": 450,
+    "closed_ever": true,
+    "closed_frac": 0.17,
+    "joint_range_last600": 0.2734013795852661,
+    "end_grip_to_spawn_mm": 144.66209102872992,
+    "ticks": 1800,
+    "spawn": [
+     0.38194379210472107,
+     0.12388497591018677
+    ],
+    "end_cube_to_place_mm": 188.8069477027067,
+    "ok": false,
+    "cls": "untouched"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": true,
+    "max_z": 0.019999777898192406,
+    "cube_moved_mm": 0.0007164964246851985,
+    "min_grip_to_spawn_mm": 70.10296739955531,
+    "tick_of_min": 505,
+    "closed_ever": true,
+    "closed_frac": 0.4772222222222222,
+    "joint_range_last600": 114.73574829101562,
+    "end_grip_to_spawn_mm": 1048.113178241281,
+    "ticks": 1800,
+    "spawn": [
+     0.38194379210472107,
+     0.12388497591018677
+    ],
+    "end_cube_to_place_mm": 188.8069477027067,
+    "ok": false,
+    "cls": "runaway"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.021986277773976326,
+    "cube_moved_mm": 7.520671309030441,
+    "min_grip_to_spawn_mm": 54.85440216763351,
+    "tick_of_min": 500,
+    "closed_ever": true,
+    "closed_frac": 0.2111111111111111,
+    "joint_range_last600": 0.033949851989746094,
+    "end_grip_to_spawn_mm": 188.10990012421536,
+    "ticks": 1800,
+    "spawn": [
+     0.38194379210472107,
+     0.12388497591018677
+    ],
+    "end_cube_to_place_mm": 193.82976026939428,
+    "ok": false,
+    "cls": "pushed"
+   }
+  },
+  "8013": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16204410791397095,
+    "cube_moved_mm": 213.32564594108715,
+    "min_grip_to_spawn_mm": 33.64937857235603,
+    "tick_of_min": 444,
+    "closed_ever": true,
+    "closed_frac": 0.3557142857142857,
+    "joint_range_last600": 1.5653256177902222,
+    "end_grip_to_spawn_mm": 227.86718899621812,
+    "ticks": 700,
+    "spawn": [
+     0.4267905354499817,
+     0.07626767456531525
+    ],
+    "end_cube_to_place_mm": 12.90222013609128,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.167494535446167,
+    "cube_moved_mm": 218.92684379875607,
+    "min_grip_to_spawn_mm": 23.927650585706672,
+    "tick_of_min": 454,
+    "closed_ever": true,
+    "closed_frac": 0.38533333333333336,
+    "joint_range_last600": 0.4801282584667206,
+    "end_grip_to_spawn_mm": 227.2524141678464,
+    "ticks": 750,
+    "spawn": [
+     0.4267905354499817,
+     0.07626767456531525
+    ],
+    "end_cube_to_place_mm": 6.349321329111502,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16992612183094025,
+    "cube_moved_mm": 222.95784135430668,
+    "min_grip_to_spawn_mm": 23.2928649236178,
+    "tick_of_min": 570,
+    "closed_ever": true,
+    "closed_frac": 0.2988235294117647,
+    "joint_range_last600": 0.4147336483001709,
+    "end_grip_to_spawn_mm": 230.59832305642135,
+    "ticks": 850,
+    "spawn": [
+     0.4267905354499817,
+     0.07626767456531525
+    ],
+    "end_cube_to_place_mm": 14.067441434405879,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8014": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17039863765239716,
+    "cube_moved_mm": 407.43042458179383,
+    "min_grip_to_spawn_mm": 19.44019063457875,
+    "tick_of_min": 429,
+    "closed_ever": true,
+    "closed_frac": 0.39875,
+    "joint_range_last600": 0.6745154559612274,
+    "end_grip_to_spawn_mm": 401.2299877115156,
+    "ticks": 800,
+    "spawn": [
+     0.47607818245887756,
+     -0.100385382771492
+    ],
+    "end_cube_to_place_mm": 16.839333171089788,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1287679672241211,
+    "cube_moved_mm": 410.1839921724994,
+    "min_grip_to_spawn_mm": 27.867065581056018,
+    "tick_of_min": 448,
+    "closed_ever": true,
+    "closed_frac": 0.43375,
+    "joint_range_last600": 0.8778918981552124,
+    "end_grip_to_spawn_mm": 414.5141558274503,
+    "ticks": 800,
+    "spawn": [
+     0.47607818245887756,
+     -0.100385382771492
+    ],
+    "end_cube_to_place_mm": 9.330139203335067,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.17415790259838104,
+    "cube_moved_mm": 394.89746410749103,
+    "min_grip_to_spawn_mm": 27.312924173320912,
+    "tick_of_min": 675,
+    "closed_ever": true,
+    "closed_frac": 0.29363636363636364,
+    "joint_range_last600": 0.6957737803459167,
+    "end_grip_to_spawn_mm": 398.2682704229267,
+    "ticks": 1100,
+    "spawn": [
+     0.47607818245887756,
+     -0.100385382771492
+    ],
+    "end_cube_to_place_mm": 26.885580219122506,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8015": {
+   "v2_s42": {
+    "blowup": true,
+    "runaway": true,
+    "max_z": 0.10528865456581116,
+    "cube_moved_mm": 1110.3874590383634,
+    "min_grip_to_spawn_mm": 63.686422052359596,
+    "tick_of_min": 561,
+    "closed_ever": true,
+    "closed_frac": 0.435,
+    "joint_range_last600": 212.6234130859375,
+    "end_grip_to_spawn_mm": 1089.4033059761282,
+    "ticks": 1800,
+    "spawn": [
+     0.38634252548217773,
+     0.1462743580341339
+    ],
+    "end_cube_to_place_mm": 1010.8104613111368,
+    "ok": false,
+    "cls": "blow-up"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": true,
+    "max_z": 0.019999776035547256,
+    "cube_moved_mm": 0.0007060383403588613,
+    "min_grip_to_spawn_mm": 65.63190873467661,
+    "tick_of_min": 668,
+    "closed_ever": true,
+    "closed_frac": 0.2577777777777778,
+    "joint_range_last600": 120.66021728515625,
+    "end_grip_to_spawn_mm": 1042.9871832470242,
+    "ticks": 1800,
+    "spawn": [
+     0.38634252548217773,
+     0.1462743580341339
+    ],
+    "end_cube_to_place_mm": 166.3842295371985,
+    "ok": false,
+    "cls": "runaway"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.019999776035547256,
+    "cube_moved_mm": 0.0007060383403588613,
+    "min_grip_to_spawn_mm": 70.55890364727195,
+    "tick_of_min": 411,
+    "closed_ever": true,
+    "closed_frac": 0.19833333333333333,
+    "joint_range_last600": 0.02440476417541504,
+    "end_grip_to_spawn_mm": 152.2933798352386,
+    "ticks": 1800,
+    "spawn": [
+     0.38634252548217773,
+     0.1462743580341339
+    ],
+    "end_cube_to_place_mm": 166.3842295371985,
+    "ok": false,
+    "cls": "untouched"
+   }
+  },
+  "8016": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1160287857055664,
+    "cube_moved_mm": 336.06967203146405,
+    "min_grip_to_spawn_mm": 15.620271450910687,
+    "tick_of_min": 481,
+    "closed_ever": true,
+    "closed_frac": 0.31176470588235294,
+    "joint_range_last600": 0.7864803373813629,
+    "end_grip_to_spawn_mm": 342.9806896563348,
+    "ticks": 850,
+    "spawn": [
+     0.47322598099708557,
+     -0.04013505578041077
+    ],
+    "end_cube_to_place_mm": 15.661562564819054,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16693828999996185,
+    "cube_moved_mm": 338.63353982201437,
+    "min_grip_to_spawn_mm": 18.56169583270094,
+    "tick_of_min": 446,
+    "closed_ever": true,
+    "closed_frac": 0.3626666666666667,
+    "joint_range_last600": 0.6066755056381226,
+    "end_grip_to_spawn_mm": 344.0593764949249,
+    "ticks": 750,
+    "spawn": [
+     0.47322598099708557,
+     -0.04013505578041077
+    ],
+    "end_cube_to_place_mm": 13.205029435950813,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": true,
+    "runaway": true,
+    "max_z": 0.023958712816238403,
+    "cube_moved_mm": 57.05603417569379,
+    "min_grip_to_spawn_mm": 45.07456726072271,
+    "tick_of_min": 390,
+    "closed_ever": true,
+    "closed_frac": 0.3616666666666667,
+    "joint_range_last600": 0.21462321281433105,
+    "end_grip_to_spawn_mm": 183.17686856825844,
+    "ticks": 1800,
+    "spawn": [
+     0.47322598099708557,
+     -0.04013505578041077
+    ],
+    "end_cube_to_place_mm": 359.510028207883,
+    "ok": false,
+    "cls": "blow-up"
+   }
+  },
+  "8017": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16890335083007812,
+    "cube_moved_mm": 275.9688926960074,
+    "min_grip_to_spawn_mm": 17.060951851109476,
+    "tick_of_min": 454,
+    "closed_ever": true,
+    "closed_frac": 0.38,
+    "joint_range_last600": 0.49925971031188965,
+    "end_grip_to_spawn_mm": 272.46224452228023,
+    "ticks": 800,
+    "spawn": [
+     0.44684091210365295,
+     0.022497836500406265
+    ],
+    "end_cube_to_place_mm": 7.237662179866643,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1702646017074585,
+    "cube_moved_mm": 270.2227028195989,
+    "min_grip_to_spawn_mm": 18.35367470638127,
+    "tick_of_min": 462,
+    "closed_ever": true,
+    "closed_frac": 0.3475,
+    "joint_range_last600": 0.5273712873458862,
+    "end_grip_to_spawn_mm": 277.3874306503324,
+    "ticks": 800,
+    "spawn": [
+     0.44684091210365295,
+     0.022497836500406265
+    ],
+    "end_cube_to_place_mm": 7.298652813702526,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1701861172914505,
+    "cube_moved_mm": 271.302007339664,
+    "min_grip_to_spawn_mm": 18.724597579626455,
+    "tick_of_min": 440,
+    "closed_ever": true,
+    "closed_frac": 0.372,
+    "joint_range_last600": 0.5115123987197876,
+    "end_grip_to_spawn_mm": 272.79270854958554,
+    "ticks": 750,
+    "spawn": [
+     0.44684091210365295,
+     0.022497836500406265
+    ],
+    "end_cube_to_place_mm": 11.96433319029848,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8018": {
+   "v2_s42": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.1728057861328125,
+    "cube_moved_mm": 407.7585492450583,
+    "min_grip_to_spawn_mm": 41.514383424908765,
+    "tick_of_min": 515,
+    "closed_ever": true,
+    "closed_frac": 0.38823529411764707,
+    "joint_range_last600": 0.7204713821411133,
+    "end_grip_to_spawn_mm": 416.4842488036877,
+    "ticks": 850,
+    "spawn": [
+     0.38342446088790894,
+     -0.11184140294790268
+    ],
+    "end_cube_to_place_mm": 15.48768774538619,
+    "ok": true,
+    "cls": "placed"
+   },
+   "v2_s1": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.020034682005643845,
+    "cube_moved_mm": 3.6261343639418033,
+    "min_grip_to_spawn_mm": 53.21703481341728,
+    "tick_of_min": 523,
+    "closed_ever": true,
+    "closed_frac": 0.3705555555555556,
+    "joint_range_last600": 0.2728920504450798,
+    "end_grip_to_spawn_mm": 295.34452858621995,
+    "ticks": 1800,
+    "spawn": [
+     0.38342446088790894,
+     -0.11184140294790268
+    ],
+    "end_cube_to_place_mm": 417.7199797331902,
+    "ok": false,
+    "cls": "untouched"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.16724292933940887,
+    "cube_moved_mm": 408.02556708598416,
+    "min_grip_to_spawn_mm": 29.007701170281134,
+    "tick_of_min": 431,
+    "closed_ever": true,
+    "closed_frac": 0.41125,
+    "joint_range_last600": 0.7448891401290894,
+    "end_grip_to_spawn_mm": 413.4966108126927,
+    "ticks": 800,
+    "spawn": [
+     0.38342446088790894,
+     -0.11184140294790268
+    ],
+    "end_cube_to_place_mm": 9.37693444464366,
+    "ok": true,
+    "cls": "placed"
+   }
+  },
+  "8019": {
+   "v2_s42": {
+    "blowup": true,
+    "runaway": true,
+    "max_z": 0.055139947682619095,
+    "cube_moved_mm": 205.22349706113772,
+    "min_grip_to_spawn_mm": 49.58817809742094,
+    "tick_of_min": 554,
+    "closed_ever": true,
+    "closed_frac": 0.0070052539404553416,
+    "joint_range_last600": 10647.670654296875,
+    "end_grip_to_spawn_mm": 557.0671079397322,
+    "ticks": 571,
+    "spawn": [
+     0.39272600412368774,
+     0.11987539380788803
+    ],
+    "end_cube_to_place_mm": 273.04878738785,
+    "ok": false,
+    "cls": "blow-up"
+   },
+   "v2_s1": {
+    "blowup": true,
+    "runaway": true,
+    "max_z": 0.28566721081733704,
+    "cube_moved_mm": 4576.153495511761,
+    "min_grip_to_spawn_mm": 52.24673165317203,
+    "tick_of_min": 484,
+    "closed_ever": true,
+    "closed_frac": 0.27944444444444444,
+    "joint_range_last600": 0.4510183334350586,
+    "end_grip_to_spawn_mm": 200.17919243412962,
+    "ticks": 1800,
+    "spawn": [
+     0.39272600412368774,
+     0.11987539380788803
+    ],
+    "end_cube_to_place_mm": 4464.260500822077,
+    "ok": false,
+    "cls": "blow-up"
+   },
+   "v3": {
+    "blowup": false,
+    "runaway": false,
+    "max_z": 0.02136688120663166,
+    "cube_moved_mm": 5.954674137013335,
+    "min_grip_to_spawn_mm": 62.67138332277365,
+    "tick_of_min": 522,
+    "closed_ever": true,
+    "closed_frac": 0.23222222222222222,
+    "joint_range_last600": 0.17470523715019226,
+    "end_grip_to_spawn_mm": 185.0491495888278,
+    "ticks": 1800,
+    "spawn": [
+     0.39272600412368774,
+     0.11987539380788803
+    ],
+    "end_cube_to_place_mm": 192.70701878068564,
+    "ok": false,
+    "cls": "pushed"
+   }
+  }
+ }
+}
