@@ -2713,11 +2713,11 @@ would mean fingers pushed into the table (a force problem), not a spinning wrist
    (counted as a blow-up by the cube-jump test), 8012 closed next to the cube (dy -4.5 mm) and pushed it 31 mm. 2/20 is inside the run-to-run scale (up to 3/20; p = 0.50) and is not claimed as a regression, but see the next point for why a
    converged frame 0 is not neutral for this model.
 
-**Why the fix could not work at evaluation time alone.** The policy's hand position after the first chunk (tick 50) does not follow the cube in either condition: within a strip, grip-point Y at tick 50 has SD 3-6 mm and slope -0.07..+0.07 against
-spawn Y, stale or fresh. In the 152 training demonstrations the expert's grip-point Y at frame 50 does follow the cube (slope 0.18, r = 0.98, SD 10 mm). In training, frame 0 (and 1) of every episode is the stale image, so the model learned that
-frame 0 carries no position information and outputs the average first chunk; showing it a correct frame at test time does not undo that. The reviewer's mechanism (first chunk = average approach) is real, but its size is small: with slope 0.18 the
-first chunk lacks about 0.18 x 0.13 = 23 mm of lateral correction on the strips, while the failed attempts miss by ~80 mm at the close, 400-900 ticks and 8-17 decisions later, with true images in between. The first frame alone cannot explain the miss.
-Not tested: training with converged frame 0 (needs re-rendered or re-collected data). (Unexplained detail: the +Y strip's tick-50 Y is 15-21 mm higher than the -Y strip's in both conditions although the stale frame 0 looks the same; not chased.)
+**Why the fix changes nothing at the close.** In the 152 training demonstrations the expert's grip-point Y at frame 50 follows the cube with slope 0.18 (r = 0.98). The policy, same seeds 8001-8019 in the training box:
+tick-50 slope **-0.02 stale -> +0.14 fresh** (so the policy does use a correct frame 0), tick 100 0.17 -> 0.23, **tick 150 0.44 -> 0.43, tick 200 0.73 -> 0.76**: the head start is gone by tick 150 and the hand ends where it ends anyway.
+The size was small to begin with: slope 0.18 on the strips is ~0.18 x 0.13 = 23 mm of lateral correction, while the failures miss by ~80 mm at the close, 400-900 ticks and 8-17 decisions later, with true images in between.
+*(Corrected the same day: a first version of this paragraph said the tick-50 hand ignores the cube in both conditions and that the model had learned to ignore frame 0. That was read from slopes within one 6 cm strip, where a slope of 0.14 is ~8 mm against 3-6 mm noise; across the training box the effect is clear.)*
+Not tested: training with converged frame 0. (Detail: on the strips the stale tick-50 Y differs by ~15 mm between the +Y and -Y strip although frame 0 is "the same" everywhere; a likely reason, not checked, is a faint ghost of the PREVIOUS trial's cube, which is on the same side within a strip -- 3 renders were seen to leave such a ghost.)
 
 **Why the hand goes too low (GPU-free, the new `target` key).** `scripts/ur5e_fk.py` (numpy DH FK; world placement and tool offset fitted to the bridge's measured grip point, residual 0.000 mm) gives the grip-point height of the COMMANDED joints.
 * Measured height follows the command to ~0.1 mm in every attempt up to the moment of contact: placed median lowest z 35.7 mm measured / 35.8 commanded (n = 32), failed 27.9 / 29.1 (n = 28).
@@ -2750,6 +2750,30 @@ Also from this round: the expert's outcome on a seed is not repeatable, so paire
   Training box below 18/20 = regression, reported.
 * *Prediction:* v3 3k on the strips about as v2 (13/40; 9-17/40). v3 6k: **no established effect** -- strips within +-5 of v3 3k, slope at the close up by less than 0.15, failures still missing toward the centre by 60-90 mm.
   Reason: the v2 run reached 0.60 epochs with the same result on the edge as v3's 0.31, and the loss was already flat (0.0038) at 3k; if 6k does help, the effect should show in the slope before it shows in the placed count.
+* Started 00:21 KST 2026-11-14 (v3 3k strips first, ~50 min; training ~01:15-09:25; evaluations ~09:30-11:10).
+
+### 2026-11-14: tracking slope tick by tick -- the policy follows the cube only 60-80 % of the way and stops correcting after tick ~250
+
+`scripts/tracking_slope.py` -> `eval_results/tracking_slope.{png,json}`. Slope b = OLS of grip-point Y on cube spawn Y over all saved attempts of a model (train box, step 1, step 2; for v2 seed 42 also the strips), at decision ticks and at the
+first close. Expert: the 152 (v2) / 302 (v3) dataset episodes, grip point from FK of the recorded joints, its own Y at the close standing in for cube Y (no cube position in the dataset).
+
+| slope b | t50 | t100 | t150 | t200 | t250 | t300-400 | close | median close tick |
+|---|---|---|---|---|---|---|---|---|
+| expert v2 (152) | 0.18 | 0.40 | 0.61 | 0.96 | 1.01 | 1.00 | 1.00 | 499 |
+| expert v3, edge \|Y\|>0.10 (64) | 0.17 | 0.41 | 0.58 | 0.85 | 1.01 | 1.00 | 1.00 | 477 |
+| v2 s42, \|Y\|<=0.10 (45) | -0.00 | 0.15 | 0.38 | 0.70 | 0.76 | 0.77 | **0.76** | 498 |
+| v2 s42, \|Y\|>0.10 (55) | 0.05 | 0.13 | 0.30 | 0.56 | 0.62 | 0.61 | **0.59** | 517 |
+| v2 s1, \|Y\|<=0.10 / >0.10 (45 / 15) | -0.00 / 0.02 | 0.11 / 0.07 | 0.35 / 0.28 | 0.75 / 0.54 | 0.83 / 0.58 | 0.82 / 0.57 | **0.82 / 0.63** | 504 / 515 |
+| v3, \|Y\|<=0.10 / >0.10 (45 / 15) | -0.02 / -0.01 | 0.04 / 0.05 | 0.31 / 0.29 | 0.67 / 0.61 | 0.70 / 0.71 | 0.70 / 0.69 | **0.75 / 0.68** | 538 / 552 |
+
+* **Confirmed: the policy under-follows the cube systematically.** The expert reaches b = 1 by tick 250 and holds it; the policy lags from the start (b ~0 at tick 50 with the stale frame) and then **plateaus at 0.6-0.8 from tick ~250 on, and
+  never corrects further during the 250 ticks of slow descent before the close** although the cube is visible to the wrist camera at tick 100 and the images keep coming. All three models alike; v3, with edge data, is no better at the edge (0.68).
+* **The training-box error and the edge failures are the same effect at two sizes.** Lateral miss at the close (grip Y - spawn Y, sign + = away from the centre line), all policy attempts pooled by |Y|:
+  0-0.02 -1.5 mm, 0.02-0.06 -8 mm, 0.06-0.08 -15, 0.08-0.10 -17, 0.10-0.12 -34, 0.12-0.14 -45, 0.14-0.16 -61 mm. Placed attempts sit on the same line (-8, -13, -14, -27, -33 mm) up to where the 85 mm gripper can no longer take the cube
+  (failures from ~-40 mm). Slope below 1 x distance from the centre = the miss; b also drops at the edge (0.76-0.82 -> 0.59-0.68), so the miss grows faster than linearly.
+* Partly hidden inside the box: up to |Y| 0.12 the cube is moved 6-13 mm toward the centre before the close (the descending hand drags it), so relative to the cube's position at the close the hand is closer than the spawn-based error says; at
+  0.14-0.16 the cube is not dragged (+13 mm, knocked outward) and the hand misses it.
+* For the v3 6k test the primary slope number is b at the close for the strips + step 2 attempts of v3 3k vs v3 6k (prediction above).
 
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
