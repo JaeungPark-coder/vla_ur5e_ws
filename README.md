@@ -2652,6 +2652,36 @@ If +Y >= 13/20 and within 3 of -Y, the earlier asymmetry was seed-specific luck 
   (pushing is the larger failure class and the limit does not address it): +Y 5 -> 5-9, -Y 8 -> 8-12. A rise of 3-4 per strip is inside the run-to-run scale (up to 3/20) and is not claimed as an effect at n=20;
   the limit is reported as a safety device. If placements FALL by >= 3 in either strip, the limit is hurting motions the policy needs.
 
+### 2026-11-13 (late): A1 + A2 results -- the limit changed nothing; "runaway" is a contact instability, not a commanded wrist motion; the first policy input is always a stale frame
+
+**A2, position-target step limit (prediction above): no effect.** Paired, same seeds 9000-9019:
+
+| strip | placed no limit -> limit | blow-ups | wrist_3 runaway | classes with limit |
+|---|---|---|---|---|
+| +Y | 5 -> 5 (McNemar 1.00; 1 seed each way) | 5 -> 3 | 7 -> 5 | pushed 10, blow-up 3, runaway 2, placed 5 |
+| -Y | 8 -> 8 (1.00; 1 each way) | 2 -> 3 | 6 -> 7 | runaway 5, pushed 4, blow-up 3, placed 8 |
+
+The prediction "runaways <= 3 per strip" failed. Why, from the traces: with the limit on (client log confirms `position-target step limit ON`), the commanded target can move at most 0.0728 rad/tick on wrist_3,
+yet the MEASURED wrist_3 in every runaway trial jumps 0.2-0.8 rad/tick at onset and then spins at hundreds to thousands of rad/s (total 60-120 rad). That is not commanded motion.
+**Every runaway onset (12 limit trials + 7 no-limit trials looked at) happens with the gripper open and the grip point at z = 27-30 mm; the lowest grip-point height of placed trials is 34-37 mm, of failures without a spin 29-34 mm.**
+The hand is driven 7-9 mm lower than a normal grasp, the open fingers press into the table (often 50-440 mm away from the cube), and the PhysX contact turns into a wrist spin; the cube "jump" blow-up follows 1-9 ticks later when it is hit.
+This corrects the earlier reading (2026-11-11/12) that the policy commands the wrist to unwind at ~20 rad/s: the measured spin is the physics reacting to a finger-table contact. A target-rate limit cannot prevent it;
+what would: the policy not descending that low (it is a symptom of the same lateral/height miss), or contact/drive settings that keep a finger-table contact stable (articulation solver, finger collision, wrist drive). On a real robot the same mistake
+would mean fingers pushed into the table (a force problem), not a spinning wrist. The limit stays available (`target_step_limit_rad`, off by default) as a deployment guard; it is not evidence of anything here.
+
+**A1 (GPU-free + one render):**
+* *Success against |Y|* (`scripts/success_by_abs_y.py`, `eval_results/success_by_abs_y.png`; 220 attempts of the three final checkpoints, X >= 0.42, pooled): |Y| 0-0.02 15/15, 0.02-0.04 25/27, 0.04-0.06 24/27, 0.06-0.08 28/30,
+  **0.08-0.10 18/24 (0.75)**, 0.10-0.12 21/36 (0.58), 0.12-0.14 6/16 (0.38), **0.14-0.16 0/15**. Not a cliff at 0.10: a slope that starts inside the training box (~0.08) and steepens toward 0.14-0.16.
+* *What the policy actually saw* (saved inputs of the strip runs, `scripts/policy_input_pixels.py`, montages `eval_results/policy_inputs/`): at decision tick 50 the cube is in NEITHER camera in 18/20 +Y trials (the upper arm fills the base
+  camera; the wrist camera does not see it yet), 1/20 -Y. The wrist camera sees the cube only at tick 100 (732/762 px +Y, 345/260 px -Y, placed/failed); from tick 150 on it sees nothing (too close). **Within a strip, placed and failed attempts show the
+  same cube pixel counts at every decision tick**, and the -Y strip fails as often with the cube visible at tick 50. So occlusion at the decision ticks does not separate success from failure here. (Pixel counts are not localisation; whether the
+  model reads the position correctly near the image edge is not tested.)
+* *The first policy input* (rendered exactly as the bridge does it: `scene.reset()` then one render; seeds 9000-9005): **in every case the base image shows a faint red sliver (26-36 px) at the same image position (x ~ 77, y ~ 128) regardless of
+  where the cube really is** (after 40 settle ticks: 250-297 px at the true position, x 45-129). It is the cube at its authored default pose, before the reset's `set_world_pose` reaches the renderer, and the image is blurrier (render not converged).
+  This is the same defect as frames 0-1 of every dataset episode. With K=50 the first 50 ticks are executed from this input, so **the first chunk cannot depend on the cube position in any trial**; in the +Y strip the next input (tick 50) is mostly occluded,
+  so the first real view there is tick 100. Train and serve agree on frame 0 (both stale), but training also had frames 2-49 with true images that serving never uses. Bridge now also saves the tick-0 input (`add_images(0, ...)`) for future runs.
+* Not yet tested: whether a fresh first frame changes anything. Cheap test (no training): render the scene until converged before the first observation (`world.render()` N times, no physics step), same seeds, paired.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
