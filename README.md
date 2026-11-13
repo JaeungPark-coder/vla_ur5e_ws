@@ -2623,6 +2623,24 @@ GPU-free checks (`scripts/grasp_offset.py`, `isaac/render_spawn_images.py`, `isa
 *Prediction (written before any strip result exists):* if the +Y cliff is real, **+Y strip <= 8/20 placed and -Y strip >= 13/20**, difference >= 6 trials (Fisher p < 0.05), and at the failed +Y attempts the grip Y at close is below +0.09 m.
 If +Y >= 13/20 and within 3 of -Y, the earlier asymmetry was seed-specific luck of 8 seeds and is dropped. Anything between is "not established". One checkpoint only; the other two are run only if the asymmetry is confirmed.
 
+**Strip result (2026-11-13 evening, v2 `2999`, seeds 9000-9019, X 0.42-0.48): the prediction FAILED -- no left/right asymmetry was confirmed.**
+
+| strip | placed | blow-ups | wrist_3 runaway | placement err median | expert placed (same seeds) |
+|---|---|---|---|---|---|
+| +Y (Y 0.10 to 0.16) | **5/20** (Wilson 0.11-0.47) | 5 | 7/20 | 15.0 mm | 18/20 |
+| -Y (Y -0.16 to -0.10) | **8/20** (0.22-0.61) | 2 | 6/20 | 14.1 mm | 16/20 |
+
+* The prediction needed +Y <= 8/20 (met, 5) **and -Y >= 13/20 (not met, 8)**; Fisher p = 0.50 between the strips. The earlier "-Y holds (15/21)" came from 8000-series seeds mostly at Y -0.10 to -0.137;
+  these strips go to -0.16 and the failed -Y seeds sit further out (median spawn Y -0.147, placed -0.122; +Y: failed 0.124, placed 0.108). **What the data support: with this checkpoint success falls steeply once |Y| exceeds ~0.10-0.12 on BOTH sides
+  (13/40 over the two strips, against 20/20 in the training box and 17/20 at |Y| <= 0.13)**; whether +Y is somewhat worse than -Y (5 vs 8) is not established.
+* The failed attempts mirror each other: the hand closes toward the centre line (+Y: dy -88 mm, -Y: dy +62 mm, dx -21/-18 mm; closest approach 53/57 mm vs 40/36 mm for placed). The earlier "stops at +0.06-0.07" (computed as spawn Y + offset) was an approximation:
+  the cube is sometimes nudged before the close; from the measured grip point the failed +Y attempts close at Y = +0.059 m (placed +0.074), the failed -Y at -0.103 (placed -0.092) -- a limit near +0.06 on the left is not matched on the right, but only 12-15 attempts each.
+* **In these strips wrist_3 runaway/blow-up is a large share of the failures** (+Y: 7 of 15 failures are blow-up or runaway, -Y: 6 of 12; classes +Y pushed 7, blow-up 5, runaway 2, untouched 1; -Y runaway 4, pushed 5, blow-up 2, lifted 1). In the 8000-series boxes pushing dominated; this raises the
+  priority of the position-target limit again for the wide region (to be re-judged by the reviewer).
+* Checked, unchanged: the expert placed 18/20 and 16/20 here, so the region is mostly doable; the base-camera pixels (see above) do not show invisibility. The policy-input images were saved for every trial (`eval_runs/strip_*/trace/trial_NNN_images.npz`, 36 frames of 256x256 per trial, 67 MB per run;
+  git-ignored) -- the image-saving path works.
+* Open: why success collapses at |Y| ~ 0.10-0.12 although v3 has 40 + 21 training episodes beyond 0.10 (v3 is not reevaluated on the strips); perception of the cube at the edge versus the amount of data there are not separable with this data.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
