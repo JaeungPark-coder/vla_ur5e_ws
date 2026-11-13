@@ -77,3 +77,13 @@ def test_policy_input_images_are_saved_next_to_the_trace(tmp_path):
     t.add(1, [0.45, 0.0, 0.02], [0, 0, 0.3], np.zeros(6), 0.0)
     t.save()
     assert not (tmp_path / "trial_002_images.npz").exists()
+
+
+def test_commanded_targets_are_saved_when_given_every_tick(tmp_path):
+    t = tt.TrialTrace(str(tmp_path))
+    t.start(0, cube=[0.45, 0.0, 0.02])
+    for i in range(3):
+        t.add(i + 1, [0.45, 0.0, 0.02], [0, 0, 0.3], np.zeros(6), 0.0, target=np.arange(7) + i)
+    t.save()
+    z = np.load(tmp_path / "trial_001.npz")
+    assert z["target"].shape == (3, 7) and z["target"][2, 0] == 2

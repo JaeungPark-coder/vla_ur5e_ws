@@ -19,6 +19,7 @@ ap.add_argument("--y_range", type=float, nargs=2, required=True)
 ap.add_argument("--seeds", type=int, nargs="*", default=[])
 ap.add_argument("--xy", type=float, nargs="*", default=[], help="x1 y1 x2 y2 ...: spawn the cube exactly there (instead of seeds)")
 ap.add_argument("--settle", type=int, default=10)
+ap.add_argument("--renders", type=int, default=0, help="world.render() calls (no physics step) after the reset, before reading the images")
 ap.add_argument("--out", required=True)
 args = ap.parse_args()
 sys.argv = [sys.argv[0]]
@@ -52,6 +53,8 @@ try:
         scene.reset()
         for _ in range(args.settle):
             scene.world.step(render=True)
+        for _ in range(args.renders):
+            scene.world.render()
         o = scene.get_observation()
         cube = scene.get_cube_position()
         b, w = np.asarray(o["base_rgb"]), np.asarray(o["wrist_rgb"])

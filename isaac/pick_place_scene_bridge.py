@@ -227,6 +227,9 @@ def main():
     # Every tick of every trial -> VLA_BRIDGE_TRACE_DIR/trial_NNN.npz + .json (trial_trace.py: cube/grip point/joints/gripper
     # per tick and the blow-up verdict). Unset = no trace.
     trace = TrialTrace(os.environ.get("VLA_BRIDGE_TRACE_DIR") or None)
+    # 2026-11-13: scene.reset() renders once; that first frame still shows the cube at its authored default pose (a faint sliver at
+    # one fixed image position, every trial -- README 2026-11-13 late). N render-only passes fix it (30 = clean, 10 leaves a ghost).
+    reset_renders = int(os.environ.get("VLA_BRIDGE_RESET_RENDERS", "0") or 0)
     save_images = bool(trace.out_dir) and os.environ.get("VLA_BRIDGE_SAVE_IMAGES", "") == "1"   # + trial_NNN_images.npz (~3 MB/trial)
     last_obs = scene.get_observation() if lockstep else None
     last_republish = time.time()
@@ -250,6 +253,10 @@ def main():
                     if base_seed is not None:
                         scene._rng = np.random.default_rng(base_seed + (bridge.reset_count + 1) // seed_repeat)
                     obs = scene.reset()
+                    if reset_renders:   # converge the renderer (no physics step) so the first policy input shows the real cube
+                        for _ in range(reset_renders):
+                            scene.world.render()
+                        obs = scene.get_observation()
                     bridge.reset_requested = False
                     bridge.reset_count += 1
                     if base_seed is not None:
@@ -286,7 +293,8 @@ def main():
                     cube_now = scene.get_cube_position()
                     tick_max_z = max(tick_max_z, float(cube_now[2]))
                     prop = scene.get_proprioception()
-                    trace.add(request_id, cube_now, scene.grip_point_world(), prop["joints"], prop["gripper"][0])
+                    trace.add(request_id, cube_now, scene.grip_point_world(), prop["joints"], prop["gripper"][0],
+                              target=np.concatenate([np.asarray(joint_target, dtype=float)[:6], [float(gripper_target)]]))
                     if request_id % 100 == 0:
                         print(f"lockstep: request {request_id} executed, world step index "
                               f"{scene.world.current_time_step_index}", flush=True)

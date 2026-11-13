@@ -63,6 +63,7 @@ class TrialTrace:
         self.request_id, self.cube, self.grip, self.joints, self.gripper = [], [], [], [], []
         self.reasons_seen = {}
         self.img_tick, self.img_base, self.img_wrist = [], [], []
+        self.target = []
         self.first_trip = None
         self.max_jump = 0.0
         self.max_z = -np.inf
@@ -73,7 +74,7 @@ class TrialTrace:
     def ticks(self):
         return len(self.cube)
 
-    def add(self, request_id, cube, grip, joints, gripper):
+    def add(self, request_id, cube, grip, joints, gripper, target=None):
         cube = np.asarray(cube, dtype=float)
         jump = 0.0 if self._prev is None else float(np.linalg.norm(cube - self._prev))
         if np.isfinite(jump):
@@ -96,6 +97,8 @@ class TrialTrace:
         self.grip.append(np.asarray(grip, dtype=float))
         self.joints.append(np.asarray(joints, dtype=float))
         self.gripper.append(float(gripper))
+        if target is not None:   # the commanded joint targets (6) + gripper target of this tick, to tell command from physics
+            self.target.append(np.asarray(target, dtype=float))
         self._prev = cube
         self._dirty = True
         if self.out_dir and self.ticks % SAVE_EVERY_TICKS == 0:
@@ -125,7 +128,8 @@ class TrialTrace:
         stem = os.path.join(self.out_dir, f"trial_{self.epoch + 1:03d}")
         np.savez_compressed(stem + ".npz", request_id=np.asarray(self.request_id), cube=np.asarray(self.cube),
                             grip_point=np.asarray(self.grip), joints=np.asarray(self.joints),
-                            gripper=np.asarray(self.gripper))
+                            gripper=np.asarray(self.gripper),
+                            **({"target": np.asarray(self.target)} if len(self.target) == len(self.cube) else {}))
         with open(stem + ".json", "w") as f:
             json.dump(self.summary(), f)
         if self.img_tick:

@@ -2682,6 +2682,16 @@ would mean fingers pushed into the table (a force problem), not a spinning wrist
   so the first real view there is tick 100. Train and serve agree on frame 0 (both stale), but training also had frames 2-49 with true images that serving never uses. Bridge now also saves the tick-0 input (`add_images(0, ...)`) for future runs.
 * Not yet tested: whether a fresh first frame changes anything. Cheap test (no training): render the scene until converged before the first observation (`world.render()` N times, no physics step), same seeds, paired.
 
+### 2026-11-13 (night): first-frame test -- converged first input, prediction written BEFORE the run
+
+* Change (evaluation only, no training): `VLA_BRIDGE_RESET_RENDERS=30` -- after `scene.reset()` the bridge calls `world.render()` 30 times (no physics step) before the first observation.
+  Checked by rendering seeds 9000-9005 exactly that way: 3 passes still leave a ghost of the previous cube (seed 9002 box spans both positions), 10 a faint one, **30 give the same cube pixels/position as 40 settled physics ticks**.
+  The bridge now also records the commanded joint/gripper targets every tick (`trial_NNN.npz` key `target`), so command and measured motion can be compared (the "why so low" question).
+* Test: v2 `short_3k/2999`, K=50, no position limit; +Y and -Y strips (X 0.42-0.48, seeds 9000-9019) paired with `strip_posY/negY`, training box (seeds 8000-8019) paired with the K=50 trials of `k3_2999`. `scripts/firstframe_eval_driver.sh`.
+* Hypothesis (reviewer's): the stale first frame makes the first 50-tick chunk an "average approach" toward the centre, so cubes far from the centre need more correction; that would explain both the miss toward the centre and the slope with |Y|.
+* *Prediction:* (1) strips together rise from 13/40 to **>= 19/40** (paired, McNemar on 40 pairs); (2) among failed strip attempts the lateral miss at the close shrinks (median |dy| below the 88/62 mm of the stale-frame runs);
+  (3) training box **>= 19/20** (no regression; it was 20/20). A change of 3 or fewer over 40 pairs = the first frame is not the cause; 4-5 = not established. The fresh first frame should not be out of distribution: training frames 2+ show the real scene from the home pose.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).

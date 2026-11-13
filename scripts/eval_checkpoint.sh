@@ -26,7 +26,7 @@ case "$POLICY_CONFIG" in
 esac
 ( cd "$OPENPI" && uv run --no-sync python "$REPO/scripts/warmup_policy_server.py" 2>&1 | tail -3 )
 
-( GPU="$GPU" VLA_BRIDGE_SEED="$SEED" VLA_BRIDGE_SEED_REPEAT=1 VLA_BRIDGE_TRACE_DIR="$OUT/trace" VLA_BRIDGE_SAVE_IMAGES="${VLA_BRIDGE_SAVE_IMAGES:-}" \
+( GPU="$GPU" VLA_BRIDGE_SEED="$SEED" VLA_BRIDGE_SEED_REPEAT=1 VLA_BRIDGE_TRACE_DIR="$OUT/trace" VLA_BRIDGE_SAVE_IMAGES="${VLA_BRIDGE_SAVE_IMAGES:-}" VLA_BRIDGE_RESET_RENDERS="${VLA_BRIDGE_RESET_RENDERS:-}" \
     nohup "$REPO/scripts/run_lockstep_bridge.sh" > "$OUT/bridge.log" 2>&1 & )
 for _ in $(seq 1 90); do grep -q "world step index after reset" "$OUT/bridge.log" && break; sleep 2; done
 grep -q "world step index after reset" "$OUT/bridge.log" || { echo "bridge did not start, see $OUT/bridge.log"; exit 1; }
