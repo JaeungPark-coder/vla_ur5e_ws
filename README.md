@@ -2717,7 +2717,7 @@ would mean fingers pushed into the table (a force problem), not a spinning wrist
 tick-50 slope **-0.02 stale -> +0.14 fresh** (so the policy does use a correct frame 0), tick 100 0.17 -> 0.23, **tick 150 0.44 -> 0.43, tick 200 0.73 -> 0.76**: the head start is gone by tick 150 and the hand ends where it ends anyway.
 The size was small to begin with: slope 0.18 on the strips is ~0.18 x 0.13 = 23 mm of lateral correction, while the failures miss by ~80 mm at the close, 400-900 ticks and 8-17 decisions later, with true images in between.
 *(Corrected the same day: a first version of this paragraph said the tick-50 hand ignores the cube in both conditions and that the model had learned to ignore frame 0. That was read from slopes within one 6 cm strip, where a slope of 0.14 is ~8 mm against 3-6 mm noise; across the training box the effect is clear.)*
-Not tested: training with converged frame 0. (Detail: on the strips the stale tick-50 Y differs by ~15 mm between the +Y and -Y strip although frame 0 is "the same" everywhere; a likely reason, not checked, is a faint ghost of the PREVIOUS trial's cube, which is on the same side within a strip -- 3 renders were seen to leave such a ghost.)
+Not tested: training with converged frame 0. (Detail: on the strips the stale tick-50 Y differs by ~15 mm between the +Y and -Y strip although frame 0 is "the same" everywhere; explained the next morning: see "what the stale frame shows" in the v3 strip section below.)
 
 **Why the hand goes too low (GPU-free, the new `target` key).** `scripts/ur5e_fk.py` (numpy DH FK; world placement and tool offset fitted to the bridge's measured grip point, residual 0.000 mm) gives the grip-point height of the COMMANDED joints.
 * Measured height follows the command to ~0.1 mm in every attempt up to the moment of contact: placed median lowest z 35.7 mm measured / 35.8 commanded (n = 32), failed 27.9 / 29.1 (n = 28).
@@ -2795,7 +2795,40 @@ training-box centre and X < 0.42. The |Y| curve pooled the three models, so v3's
 **So edge data does help where it was collected (X 0.42-0.48): the under-following is (at least largely) a data-coverage effect, not a fixed property of the policy.** Not yet known: X 0.38-0.42 (v3 still 2/6 there), and whether v3's
 gain holds on the wide box at n=60 (the efficacy rule).
 *Consequence for the v3 6k test (already training since 01:03):* its baseline is now 33/40, so the pre-registered "+6 of 40" can hardly be reached (ceiling 40). The test still answers whether more steps raise the slope (0.93 -> ?) and
-step 2 / X < 0.42; the strip criterion is reported but cannot decide much. Left running; decision with the reviewer.
+step 2 / X < 0.42; the strip criterion is reported but cannot decide much. Left running (reviewer agreed); criteria re-set below before any 6k result exists.
+
+*Same evaluation conditions (checked in the logs):* both strip runs (v2 `strip_*` 2026-11-13, v3 `v3_strip_*` 2026-11-14) K=50 (results.csv `execute_horizon`), no position limit (no "step limit ON" in either client log),
+`VLA_BRIDGE_RESET_RENDERS` unset (stale first frame) -- so the comparison is v2 13/40 vs v3 33/40, not against the converged-frame v2 14/40 (which would not change the conclusion either).
+
+*What the stale frame shows (found while checking this).* The saved tick-0 inputs of the v3 strip runs show a bright cube (215-289 px) at ONE image position per run, the same for every trial: x = 129 in the +Y strip, x = 40 in the -Y strip, whatever
+the trial's spawn. With converged rendering the position follows the spawn (x 130-144 / 38-55). `scene.reset()` repositions the cube through PhysX after `world.reset()`, and the first render after a reset still shows the pose cached at the
+run's first Play, i.e. **the spawn of the run's first trial**. In the training box that is near the centre (the faint 26-36 px sliver at x ~ 77 seen in A1, mostly hidden by the arm); on a strip it is a cube inside the strip. So on the strips the
+stale frame was already roughly informative (right side, within ~3 cm), which is why the first-frame fix did little at tick 50 there, and why the +Y and -Y strips differ at tick 50 with "stale" frames. v2 and v3 strip runs used the same
+seeds, hence the same first-trial spawn and the same stale image: still a fair pair. In collected data the same applies per collection run (frame 0 shows that run's first episode's cube).
+
+### 2026-11-14: v3 6k decision criteria re-set BEFORE any 6k result (the strip criterion hit a ceiling)
+
+Reason for the change: the pre-registered primary measure (+6 of 40 on the strips over v3 3k) was written when v3 3k's strip result was unknown; v3 3k scored 33/40, so +6 is near-impossible (ceiling 40) and the measure cannot separate
+outcomes. Changed now, at 01:57, with training at step 550 and no 6k evaluation run. New criteria (v3 6k vs v3 3k):
+* (1) **Training box** (seeds 8000-8019): v3 3k was 16/20; **>= 19/20 = recovered** (the v3 3k regression versus v2 was under-training), <= 17/20 = not recovered.
+* (2) **Tracking slope at the close on the strips** (40 attempts): v3 3k 0.93; up by >= 0.04 (to >= 0.97) counts as better following, a drop by >= 0.05 as worse. Lateral miss median -13.5 mm reported with it.
+* (3) **X < 0.42** (step 2 at n=20 has ~10 such spawns; the n=60 run below ~20): reported, too few for a verdict on their own.
+* (4) **The decision itself is the n=60 wide-box comparison below** (v3 6k vs v3 3k, 60 pairs, exact McNemar, p < 0.05 and >= 6 more placed for an effect). Strips (33/40 baseline) reported but not used for the verdict.
+* *Prediction:* (1) 17-19/20, (2) slope 0.90-0.97 (little room above 0.93), (4) v3 6k within +-5 of v3 3k on the 60 pairs: **more steps are not the main lever now that the data covers the region**.
+
+### 2026-11-14: n=60 wide box, v2 3k / v3 3k / v3 6k + expert -- prediction written BEFORE the run
+
+* Cache guard (after the second missing-variable incident): `scripts/lib_cache_env.sh` exports the three cache variables and refuses to start unless they are set, exist, are off the root disk and pi0_base is under
+  `OPENPI_DATA_HOME` (tested: passes under `env -i`, fails with `OPENPI_DATA_HOME=~/.cache/openpi`). Every new driver sources it first. Not patched into the running `v3_6k_driver.sh` (bash reads a running script as it goes; it
+  already exports the variables since the restart).
+* Design (`scripts/n60_eval_driver.sh`, starts automatically after the v3 6k driver): X 0.38-0.48 x Y +-0.16, seeds 8000-8059 (60 paired trials per model), all three models re-run with the current settings (K=50, no limit, stale first frame,
+  images saved); the old 8000-8019 results are not reused (settings changed since). Then the scripted expert on the same 60 seeds. ~1 h per model + ~25 min expert.
+* Measures: placed per model with Wilson intervals; paired exact McNemar v3 3k vs v2 3k (the efficacy question for wider data) and v3 6k vs v3 3k; split by region: X >= 0.42 & |Y| > 0.10 (edge covered by v3 data), X < 0.42, centre; also on
+  expert-success seeds; tracking slope at the close; runaway/blow-up counts.
+* *Prediction:* v3 3k > v2 3k overall with p < 0.05 (v2 ~30-36/60, v3 ~40-48/60), the gain concentrated at X >= 0.42 & |Y| > 0.10 (v3 >= 75 %, v2 <= 45 %); X < 0.42 uncertain for both (expert success there ~0.8, v3 2/6 so far): no
+  claim either way. Centre (|Y| <= 0.10, X >= 0.42) similar for all (>= 85 %). v3 6k vs v3 3k: within +-5.
+* Decision: v3 > v2 confirmed at n=60 -> data coverage is the lever; next is how to cover X < 0.42 (expert quality there, approach posture) and whether more data at the edge helps further. Not confirmed -> the strip result
+  was specific to X 0.42-0.48 and the wide box needs the per-region look before any next step.
 
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
