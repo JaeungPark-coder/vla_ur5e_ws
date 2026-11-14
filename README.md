@@ -2989,6 +2989,35 @@ Checked before reading: converged frame in effect (tick-0 base image shows the c
   (2) under the converged frame (from now the standard evaluation condition), the stratified v2 3k vs v3 3k comparison the n=60 run could not give (edge strips + corners, fixed seeds per region);
   (3) training data: frames 0-1 of the dataset are stale too (they show the collection run's first spawn) -- a fresh first frame in the data is still untested.
 
+### 2026-11-14 (evening): stratified evaluation under the converged first frame -- design and prediction written BEFORE the run
+
+Plan agreed: (1) and (2) above merged; (3) deferred to the next data collection (the policy already uses the first image, so the gain is probably small).
+* **Condition:** converged first frame (`VLA_BRIDGE_RESET_RENDERS=30`) everywhere, K=50, no limit, policy inputs saved. This is the standard evaluation condition from now on.
+* **Part A, same-seed attribution:** v3 6k on the 7 n=60 +Y-corner seeds (8007, 8012, 8015, 8019, 8022, 8033, 8036; wide box X 0.38-0.48 x Y +-0.16, so each seed gives the same spawn as in n=60), one 1-trial run per seed.
+  These are paired with the stale-frame n=60 result (0/7, untouched/pushed).
+* **Part B, stratified:** 6 regions x **15 new seeds (9200-9214, the same seeds in every region)**:
+  * centre: X 0.42-0.48, Y -0.10..+0.10
+  * +Y strip: X 0.42-0.48, Y +0.10..+0.16
+  * -Y strip: X 0.42-0.48, Y -0.16..-0.10
+  * +Y corner: X 0.38-0.42, Y +0.11..+0.16
+  * -Y corner: X 0.38-0.42, Y -0.16..-0.11
+  * X<0.42 middle: X 0.38-0.42, Y -0.11..+0.11
+
+  Models in order: **v2 3k, v3 3k** (the data-range comparison under the real condition), then v3 6k. After that the expert on the same 90 seeds.
+  ~1.8 h per model; Part A first (~30 min). Driver: `scripts/stratified_eval_driver.sh`.
+* **Measures:**
+  * **Primary (continuous):** lateral miss at the first close (signed, + = away from the centre line) per region; the paired difference v3 3k - v2 3k per region and pooled over strips + corners, by bootstrap over seeds; the tracking slope at the close over all 90 attempts per model (paired bootstrap of the difference).
+  * **Secondary:** placed per region (Wilson) and paired exact McNemar per region and over all 90; results on expert-success seeds; outcome classes. Views at t50/t100 are reported as for the corners.
+* *Prediction:*
+  * **Part A:** v3 6k >= 6/7 on the same seeds that were 0/7 with the stale frame.
+  * **Centre:** all models >= 14/15, |miss| <= 15 mm.
+  * **Strips (X >= 0.42):** v2's edge failure is not mainly the stale frame there (v2 strips stale 13/40 vs converged 14/40, 2026-11-14), so v2 stays weak: **4-9/15 per strip, miss -40 to -90 mm**. v3 3k >= 12/15 per strip, miss within -25 mm.
+  * **Corners:** v2 has no data at X < 0.42 nor at |Y| > 0.10, so it is weak: <= 7/15 each. v3 3k: +Y >= 12/15, -Y >= 10/15 (5 episodes there).
+  * **X<0.42 middle:** v2 >= 10/15 (only ~16 mm of X extrapolation at an X slope of ~0.6), v3 3k >= 12/15.
+  * **Overall (90):** v2 ~50-62, v3 3k ~76-86, McNemar p < 0.01. Paired miss improvement v3 3k - v2 >= 30 mm (median) over strips + corners. Slope at the close: v2 0.60-0.75, v3 3k >= 0.85.
+  * **v3 6k vs v3 3k:** within +-4 overall, no claim.
+  * A large v2 improvement at the strips relative to its stale-frame numbers would mean the earlier strip comparison (13 vs 33/40) overstated the data effect; that is the main way this prediction can fail.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
