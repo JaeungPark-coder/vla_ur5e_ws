@@ -2942,6 +2942,18 @@ Caveat: the pattern was found after looking at the table (7 seeds), like the wit
 * *Prediction:* +Y corner: v3 6k places <= 6/20, median miss -60 to -110 mm, base camera blind at t50 in >= 18/20; expert >= 17/20. -Y corner: expert weaker (<= 15/20); v3 6k miss median smaller in magnitude
   than +Y by >= 30 mm and places >= 10/20 -> "+Y view loss" favoured. -Y about as bad as +Y (miss within 30 mm, placed within 4) -> "corner = far from the data centre", view not the main factor.
   If the -Y expert fails most seeds, the -Y policy result is read against the expert-success seeds only.
+* **Added before the run (14:55), after two checks:**
+  * **First frame:** the n=60 run had the stale first frame (`n60_eval_driver.sh` unsets `VLA_BRIDGE_RESET_RENDERS`; confirmed from the saved inputs: the tick-0 base image shows the cube at column 76 in every trial = the run's
+    first spawn, seed 8000 at (0.405, -0.034)). So every corner trial's first chunk (ticks 0-50) was computed from an image of a cube near the centre on the -Y side -- the stale frame can be part of the "centre-ward start",
+    and the farther from that spawn, the larger the error (the strip runs were less exposed: their first spawn lies inside the strip). **This test runs with the converged first frame (`VLA_BRIDGE_RESET_RENDERS=30`),
+    the real-robot condition.** It therefore differs from n=60 in two things for the +Y corner (fresh seeds and fresh first frame); a large +Y improvement over n=60's 0/7 would say the stale frame was part of the
+    corner failure, not that the corner is fine. Training data still has stale frames 0-1, as before.
+  * **Data per corner** (actual logged spawns of the 174 v3 collection attempts, `eval_results/v3_new_spawns_{saved,rejected}.npy`; v2's data has none at X < 0.42): **+Y corner 15 episodes (15/15 attempts succeeded),
+    -Y corner 5 episodes (5/6)**; for comparison +Y strip X >= 0.42 24, -Y strip 14, X < 0.42 & |Y| <= 0.11 35. The -Y corner has a third of the +Y data, so the reading is asymmetric: **-Y doing as badly as +Y
+    cannot reject "view" (data scarcity explains it too); -Y doing clearly better despite 5 vs 15 episodes is strong evidence for the view explanation.**
+  * Prediction revised for the fresh first frame (the earlier first-frame test raised the t50 slope -0.02 -> 0.14 in the training box): +Y corner v3 6k **<= 8/20** (was <= 6), median miss -50 to -110 mm,
+    base camera blind at t50 in **>= 15/20** (was >= 18); the -Y lines unchanged.
+* Reported with the result: placed, lateral miss at the close, base-camera pixels at t50/t100 (blind count), wrist-camera cube column and edge contact at t100, expert placed, expert-success seeds separately.
 
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
