@@ -2897,6 +2897,52 @@ Against the prediction:
 * Candidates for the next step (not started): a corner strip like the X 0.42-0.48 ones (X 0.38-0.42, Y +0.11..+0.16 and -0.16..-0.11, 20 seeds each, the three models + expert) to size the corner effect with power;
   the saved policy inputs (`VLA_BRIDGE_SAVE_IMAGES=1`) of the 7 corner trials to see whether the cube is in the wrist/base view during the descent.
 
+### 2026-11-14 (afternoon): method changes after the n=60 design fault
+
+* **Stratified evaluation from now on:** a fixed number of seeds per region of interest (strips/corners), never a uniform draw over a large box where the region of interest gets whatever falls in it (two design faults of
+  this kind: 9 edge attempts in step 2, 8 in the n=60 wide box).
+* **Primary measures are continuous:** lateral miss at the first close (mm) and the tracking slope; placed/not is secondary. Reason: identical re-runs flip 4 of 20 per-seed outcomes (physics + sampling noise), so the binary
+  outcome cannot resolve small model differences at feasible n.
+* **Baselines:** experiments keep the **v3 3k recipe** (4 h, one change at a time); **v3 6k is the current best model, marked "improvement not established"**; one long run at the end combines only confirmed changes.
+* Recorded also: away from the corner, at X < 0.42 & |Y| <= 0.11, the policies are at or above the expert (v3 6k 18/18, expert 12/18) -- the policy did not inherit the expert's stochastic failures there.
+
+### 2026-11-14 (afternoon): near +Y corner -- what the policy saw (GPU-free, saved policy inputs + dataset images)
+
+Tools: `scripts/corner_view.py` (red-cube pixels in the base/wrist images the policy was given, ticks 0-550, by region, three models; `eval_results/corner_view.json`), `scripts/corner_expert_view.py` (same on the v3
+DATASET images, grip point at the close as cube proxy, and the montage `eval_results/corner_expert_vs_6k.png`); montage of all 7 corner trials of v3 6k: `eval_results/corner_montage_v3_6k.png`.
+Caveat: the pattern was found after looking at the table (7 seeds), like the withdrawn "+Y asymmetry" -- this section describes, the confirmation test below decides.
+
+| +Y corner (X < 0.42, Y > +0.11) | base px t50 | base px t100 | wrist at t100: cube column (of 256) / touches frame edge | base px t150-300 |
+|---|---|---|---|---|
+| expert demonstrations (15 episodes) | 29, **0 of 15 blind** | 135 | **col 68, edge 0/15** (place marker also in view) | 215-226 |
+| v2 3k (7 trials) | **0, 7/7 blind in both cameras** | 82 | col ~22 | 179-215 |
+| v3 3k (7) | 0, 7/7 blind | 95 | col 22, edge 3/7 | 159-216 |
+| v3 6k (7) | 0, 7/7 blind | **0** | **col 10, edge 7/7** | 117-216 |
+| for comparison, v3 6k at the +Y edge X >= 0.42 (2; v3 works there) | 0, 2/2 blind | 217 | col 46, edge 0/2 | 248-254 |
+| v3 6k at X < 0.42, \|Y\| <= 0.11 (18, all placed) | 73 | 79 | col 63, edge 5/18 | 222-227 |
+| v3 6k in the -Y corner (3) | 46 | 156 | 72 px only, bottom edge | 180-256 |
+
+* **The cube is not invisible in the corner.** From tick 150 the base camera sees it with about the expert's pixel count; the wrist camera sees nothing after tick 100 anywhere (known: too close).
+* **What differs is the view at ticks 50-100, and it differs because of where the policy put the arm.** The expert moves toward the cube from the start (slope 0.18 at t50); its arm leaves the base camera's line of
+  sight and at t100 its wrist camera shows the cube and the place marker well inside the frame. The policy's centre-biased start leaves the arm between the base camera and the cube (0 px at t50 in 7/7, v3 6k still 0 at
+  t100), and its wrist camera shows the cube only as a fragment cut by the left edge. Those inputs are outside what the 15 corner demonstrations contain. The one corner success (v3 3k, seed 8022) had a less extreme view
+  (t100 base 128 px, wrist col 42); on the same seed v2 (51 px, col 35) and v3 6k (35 px, col 11) failed -- n = 1.
+* **Not shown:** that this view causes the failure. The +Y edge at X >= 0.42 has the same t50 blindness and v3 works there -- but there the base camera sees the cube again at t100 (217-248 px) and the wrist cube is
+  inside the frame. Reading consistent with the data: an under-following start that, only in this corner, also takes away both views at the moment the demonstrations show the cube -- a self-reinforcing loop
+  (under-follow -> off-distribution view -> no correction). Alternatives still open: 15 corner episodes too few regardless of view; reach/posture.
+* **-Y corner:** the arm is on the other side of the base camera's line of sight (base 46-160 px at t50, 156-242 at t100). If the corner fails for a view reason, -Y should do clearly better; if for a "far from the
+  training-box centre" reason, about the same. Confound: the expert itself is weak there (0/3 here, 7 dataset episodes).
+
+### 2026-11-14: corner confirmation test -- design and prediction written BEFORE the run (NOT started; waits for the go-ahead)
+
+* Design (stratified): two corner strips, **X 0.38-0.42 x Y +0.11..+0.16** and its mirror **X 0.38-0.42 x Y -0.16..-0.11**, new seeds 9100-9119 for each (20 per corner), **v3 6k** (K=50, stale first frame, images saved)
+  and the scripted expert on the same seeds. ~45 min for the policy, ~15 min expert.
+* Measures: **primary = lateral miss at the first close** (grip Y - spawn Y, signed + = away from the centre line), median and paired difference +Y vs -Y by bootstrap (seeds are not paired across corners; unpaired
+  bootstrap of the medians); secondary = placed (Wilson), expert placed; base px at t50/t100 and wrist position at t100 as in the table above.
+* *Prediction:* +Y corner: v3 6k places <= 6/20, median miss -60 to -110 mm, base camera blind at t50 in >= 18/20; expert >= 17/20. -Y corner: expert weaker (<= 15/20); v3 6k miss median smaller in magnitude
+  than +Y by >= 30 mm and places >= 10/20 -> "+Y view loss" favoured. -Y about as bad as +Y (miss within 30 mm, placed within 4) -> "corner = far from the data centre", view not the main factor.
+  If the -Y expert fails most seeds, the -Y policy result is read against the expert-success seeds only.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
