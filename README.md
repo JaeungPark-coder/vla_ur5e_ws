@@ -3018,6 +3018,60 @@ Plan agreed: (1) and (2) above merged; (3) deferred to the next data collection 
   * **v3 6k vs v3 3k:** within +-4 overall, no claim.
   * A large v2 improvement at the strips relative to its stale-frame numbers would mean the earlier strip comparison (13 vs 33/40) overstated the data effect; that is the main way this prediction can fail.
 
+### 2026-11-14 (night): stratified evaluation results (converged first frame)
+
+Ran 16:06-22:05 with no crash (expert 90/90 seeds written). Analysis: `scripts/strat_analysis.py --json eval_results/strat_analysis.json`. Raw results:
+`eval_results/strat_{model}_{region}_k50_seed9200_ff30.csv`, `eval_results/ffA_v3_6k_5999_n60posYcorner_seeds_ff30.csv`, `eval_results/expert_strat_{region}.jsonl`.
+
+**Part A (same seeds, v3 6k):** converged frame **7/7 placed** (miss -10 to -19 mm) vs stale frame 0/7 (6 untouched, 1 pushed). The spawns are identical. The n=60 +Y-corner failure was the stale first frame.
+
+**Part B: placed / 15 and lateral miss median [IQR] mm** (miss signed, - = short of the cube toward the centre line)
+
+| region | v2 3k | v3 3k | v3 6k | expert |
+|---|---|---|---|---|
+| centre | 13, -9 [-16,-2] | 13, -4 [-14,-1] | 14, -6 [-12,1] | 14 |
+| +Y strip | **4**, -50 [-68,-34] | 15, -7 [-12,-3] | 14, -7 [-13,-4] | 14 |
+| -Y strip | **6**, -42 [-62,-34] | 11, -11 [-27,-7] | 13, -16 [-24,-11] | 11 |
+| +Y corner | **1**, -58 [-73,-49] | 14, -15 [-21,-10] | 15, -11 [-13,-7] | 15 |
+| -Y corner | **4**, -51 [-57,-32] | 13, -25 [-32,-11] | 10, -28 [-36,-22] | 12 |
+| X<0.42 middle | 13, -19 [-21,-9] | 12, -10 [-22,-4] | 15, -15 [-18,-3] | 8 |
+| **total / 90** | **41** | **78** | **81** | 74 |
+
+* **Paired, v3 3k - v2 3k:**
+  * Miss improvement over strips + corners: **+32.9 mm [+29.5, +43.0]** (n=60).
+  * Per region: +Y strip +45, -Y strip +30, +Y corner +43, -Y corner +24 mm (all CIs above 0). Centre and X<0.42 middle are about 0.
+  * McNemar: strips + corners 39 / 1, all 90 41 / 4, p < 1e-4.
+* **Slope at the close:** v2 0.62, v3 3k 0.89, v3 6k 0.88. v3 3k - v2 = **+0.27 [+0.19, +0.34]**; v3 6k - v3 3k = -0.01 [-0.04, +0.01].
+* **v3 6k vs v3 3k:**
+  * Placed: 81 vs 78, McNemar 7 / 4, p = 0.55.
+  * Miss over all 90: -1.2 mm [-5.0, +1.0]. Over strips + corners: -2.7 mm [-6.4, +0.6].
+  * No difference. The one per-region miss difference with a CI excluding 0 is the -Y strip, -5.6 mm [-6.7, -3.0], and there 6k is *worse*.
+* **Expert-success seeds:** the same picture (e.g. +Y strip: v2 4/14, v3 3k 14/14).
+* **X<0.42 middle:** every policy (12-15/15) beats the expert (8/15) again, as in n=60.
+
+**Against the prediction**
+* Held:
+  * Part A (7/7, predicted >= 6/7).
+  * v2 strips (4 and 6/15, miss -50/-42 mm; predicted 4-9, -40 to -90).
+  * v2 corners (1 and 4/15, predicted <= 7).
+  * v3 3k +Y strip (15/15).
+  * v3 3k corners (14 and 13/15; predicted >= 12 and >= 10).
+  * X<0.42 middle (v2 13, v3 3k 12).
+  * v3 3k total (78, predicted 76-86), p < 0.01.
+  * Paired miss improvement (+32.9 mm, predicted >= 30; the lower CI bound, 29.5, is just under 30).
+  * Slopes (v2 0.62 in 0.60-0.75; v3 3k 0.89 >= 0.85).
+  * 6k within +-4 of 3k (+3).
+* Missed:
+  * Centre >= 14/15: v2 and v3 3k were 13/15. Their misses (-9, -4 mm) are inside the predicted 15 mm; one blow-up + one runaway for v2, one pushed + one lifted for v3 3k.
+  * v3 3k -Y strip >= 12/15: 11/15, miss -11 mm. The expert was also 11/15 there.
+  * v2 total ~50-62: **41**. v2 is *worse* than predicted, not better.
+* **Main failure mode did not happen.** v2 at the strips is 10/30 with the converged frame, against 13/40 stale and 14/40 converged on 2026-11-14. The miss is still -40 to -50 mm. The data effect on the strips measured under the stale frame was not overstated.
+
+**Observations (post hoc, not tested)**
+* **-Y side worse than +Y for both v3 models:** miss -11/-16 mm vs -7 mm at the strips, -25/-28 vs -15/-11 mm at the corners. The expert is also lower on -Y (11 and 12 vs 14 and 15). In the corner test, v3 6k -Y was miss -25 mm vs +Y -10 mm too.
+* **v3 6k -Y corner, 10/15 here vs 19/20 in the corner test (different seeds):** the miss is the same (-28 vs -25 mm). The blind-at-t50 count is high in both (14/15, 13/20). At ~-25 mm the close is on the edge of what still grasps, so the binary outcome swings while the continuous measure is stable. This is the reason continuous measures are primary.
+* **Wide-box absolute numbers** (n=60, stale frame) are now superseded by this table for the X<0.42 regions.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
