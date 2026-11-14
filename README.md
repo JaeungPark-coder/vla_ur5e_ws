@@ -3308,6 +3308,56 @@ The per-region miss medians all lie between -13 and +6 mm (table in the script o
 * **Wrist camera:** 3 deg not weak (>= 12/15). 8 deg: 6-13/15. The wrist camera is the final-approach sensor.
 * **Overall:** at least one factor weak, most likely the ground. Visual randomization data is then the next reinforcement.
 
+### 2026-11-15: visual variation -- results
+
+All 12 runs completed 15/15 trials. Every perturbation is confirmed in its `bridge.log`; the driver logged no warnings. Analysis: `python3 scripts/visual_analysis.py --json eval_results/visual_analysis.json`. Raw data: `eval_results/vis_v3_6k_*_k25_seed9200_ff30.csv`.
+
+| condition | placed | \|err\| med (mm) | signed Y err (mm) | paired \|err\| diff vs none [95 %] | McNemar none-only / cond-only | failure modes | verdict | prediction |
+|---|---|---|---|---|---|---|---|---|
+| none | 15/15 | 2.5 | -0.5 | -- | -- | -- | -- | 14-15 ✓ |
+| lat_d0 (earlier identical run) | 15/15 | 4.4 | +1.5 | +2.8 [-1.8, +4.2] | 0/0 | -- | ok | noise reference |
+| light05 | 15/15 | 6.3 | +3.2 | +1.6 [-1.6, +4.4] | 0/0 | -- | ok | not weak ✓ |
+| light2 | 14/15 | 3.8 | -2.3 | +1.3 [+0.1, +3.0] | 1/0 | 1 blow-up (seed 9202) | ok | not weak ✓ |
+| tint | 15/15 | 5.1 | +2.2 | +1.0 [-0.5, +5.9] | 0/0 | -- | ok | not weak ✓ |
+| **ground_grey** | **0/15** | 35.7 | +35.7 | **+32.6 [+23.9, +40.6]** | **15/0, p=6e-5** | **no-descent 15** | **WEAK** | weak, 3-12/15: weak ✓, count worse than the range |
+| **ground_wood** | **0/15** | 30.4 | +30.4 | **+28.3 [+18.4, +33.9]** | **15/0, p=6e-5** | **no-descent 15** | **WEAK** | (as above) |
+| cube_dark | 14/15 | 4.1 | +1.3 | +1.9 [+0.4, +3.1] | 1/0 | 1 blow-up (seed 9202) | ok | not weak ✓ |
+| cube_orange | 15/15 | 3.7 | +0.8 | +1.2 [-0.9, +4.0] | 0/0 | -- | ok | 8-15 ✓ |
+| basecam3 | 13/15 | 4.8 | +0.2 | +1.9 [+0.4, +7.2] | 2/0, p=0.5 | lateral-miss 2 (pushed, runaway) | ok | not weak ✓ |
+| basecam6 | 15/15 | 12.4 | +9.8 | **+10.7 [+4.5, +14.5]** | 0/0 | -- | **WEAK (error rule, barely)** | 7-14/15, Δ <= 15 mm: placed outside (better); Δ ✓ |
+| wrist3 | 14/15 | 6.0 | +6.0 | +3.9 [-0.7, +5.5] | 1/0 | 1 blow-up (seed 9202) | ok | not weak ✓ |
+| wrist8 | 13/15 | 13.2 | +11.7 | +9.4 [+5.4, +13.7] | 2/0, p=0.5 | 1 blow-up (seed 9202), 1 off-centre grasp (26.6 mm) | ok (just under 10 mm) | 6-13 ✓ |
+
+**Ground: both conditions 0/15, all 15 failures no-descent.** The trace check (`eval_results/visual_check/eval_trial006_start_and_preclose.png`, trial 6, start and 25-30 ticks before the close; rows: none, ground_grey, ground_wood, basecam6, wrist8):
+* Every ground trial closed the gripper in the air: grip height at the first close was 0.08-0.16 m (cube top 0.04 m). It then went to the target empty.
+* The cube was still being tracked laterally. The slope of grip Y on cube Y at the close is 0.87 (grey) and 0.90 (wood), vs 0.93 for none.
+* The grip was offset by a nearly constant amount:
+  * Y: median +35.7 mm (grey), +30.4 mm (wood);
+  * X: median -12 mm (grey), -23 mm (wood), i.e. toward the robot;
+  * none: X +2.0 mm, Y -0.5 mm.
+* In the images before the close, the wrist camera of the ground runs shows no cube between the fingers, and the base camera shows the gripper stopped above and beside it.
+* So the policy did not lose the cube. It lost the cue for "how far down" and "where exactly", and never reached the descent phase. This matches the reviewer's no-descent hypothesis: a height/distance cue lost.
+* *Caveat:* both ground conditions remove the grid lines together with the colour. This run cannot tell "grid lines are the cue" from "the background colour is the cue". A grid-on-new-colour or texture condition would separate them; it is not added now.
+* The smoke trial (seed 9900, +Y strip) failed the same way. The prediction (3-12/15) was too optimistic; it assumed a partial loss, and the loss is complete.
+
+**Seed 9202 blow-ups (light2, cube_dark, wrist3, wrist8).**
+* The same spawn blew up in four conditions. Joints went past 2π 2-85 ticks after the close (max |q| 21-1127 rad); the cube flew in two of them.
+* It placed in none and in lat_d0. This is the PhysX contact blow-up already met in the latency runs (d0 and sync10 each had one), not a visual effect.
+* `failure_mode()` labelled three of these trials "lateral-miss", because their recorded close error is taken after the blow-up. They are reported here as blow-ups. *This split was made after seeing the results*, but it changes no verdict: none of these conditions is weak with or without these trials.
+
+**Camera shifts.**
+* basecam6 is weak only by the error rule, and only just: +10.7 mm, CI [+4.5, +14.5], against the 10 mm line, with 15/15 placed. The signed Y error moved +9.8 mm, consistent with a 6 cm re-mount mapping into a ~1 cm reach bias.
+* wrist8 is just under the line: +9.4 mm [+5.4, +13.7], signed +11.7 mm, 13/15.
+* Both are biases of ~1 cm that the gripper's capture range mostly absorbed in this region. They are screening results; per the screening note they need more trials before being acted on.
+* The ground result needs no confirmation run: 15/0 discordant pairs, p=6e-5, in both conditions.
+
+**Against the prediction.**
+* All "not weak" calls held (light, tint, cube colours, basecam3, wrist3), and none was 15/15.
+* The ground was weak as predicted, but completely (0/15), not partly.
+* basecam6 placed better than predicted (15/15) and crossed the error rule by 0.7 mm.
+* wrist8 was within its range.
+* The overall call held: the ground is the weak factor.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
