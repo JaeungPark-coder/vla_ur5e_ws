@@ -2850,6 +2850,53 @@ Against the re-set criteria:
 * Decision: v3 > v2 confirmed at n=60 -> data coverage is the lever; next is how to cover X < 0.42 (expert quality there, approach posture) and whether more data at the edge helps further. Not confirmed -> the strip result
   was specific to X 0.42-0.48 and the wide box needs the per-region look before any next step.
 
+### 2026-11-14 14:20: n=60 wide-box results -- v3 > v2 NOT confirmed (44 vs 40, p = 0.39); v3 6k vs 3k +4 (p = 0.39); the remaining failures sit in the near +Y corner (X < 0.42, Y > +0.11)
+
+Runs 10:30-13:45 (`eval_runs/n60_*`, copies `eval_results/n60_*_wide_k50_seed8000.csv`); expert 13:45-14:18. The expert's first half crashed at seed 8010 (PhysX blow-up -> `LinAlgError: SVD did not converge`
+in `step_towards_diffik`); 8010-8029 were re-run (8010 then placed), so the expert's 8010 outcome comes from the second run. Analysis `scripts/n60_analysis.py` -> `eval_results/n60_analysis.json`.
+
+| placed (Wilson 95 %) | v2 3k | v3 3k | v3 6k | expert |
+|---|---|---|---|---|
+| all 60 | 40 [0.54, 0.77] | 44 [0.61, 0.83] | **48** [0.68, 0.88] | 46 |
+| edge X >= 0.42 & \|Y\| > 0.10 (8) | 4 | 6 | 5 | 6 |
+| centre X >= 0.42 & \|Y\| <= 0.10 (24) | 22 | 21 | 23 | 21 |
+| X < 0.42 (28) | 14 | 17 | 20 | 19 |
+| ... of which Y > +0.11 (7) | **0** | **1** | **0** | **7** |
+| ... of which Y < -0.11 (3) | 1 | 1 | 2 | 0 |
+| ... of which \|Y\| <= 0.11 (18) | 13 | 15 | 18 | 12 |
+| expert-success seeds (46) | 33 | 35 | 36 | 46 |
+
+| paired exact McNemar (first only / second only) | all 60 | edge | centre | X < 0.42 |
+|---|---|---|---|---|
+| v3 3k vs v2 3k (pre-registered) | 8 / 4, p = 0.39 | 2 / 0, 0.50 | 1 / 2, 1.0 | 5 / 2, 0.45 |
+| v3 6k vs v3 3k (pre-registered) | 8 / 4, p = 0.39 | 1 / 2, 1.0 | 3 / 1, 0.63 | 4 / 1, 0.38 |
+| v3 6k vs v2 3k (not pre-registered) | 9 / 1, p = 0.021 | 1 / 0 | 2 / 1 | 6 / 0, 0.031 |
+
+* **Run-to-run scale measured in the same run.** Seeds 8000-8019 here are the same box, seeds and settings as the earlier step-2 runs: v3 3k 12/20 and 12/20, v3 6k 13/20 and 13/20, and **16 of 20 seeds agree** in both
+  cases (4 flip each way). So about 1 in 5 per-seed outcomes changes between identical runs, i.e. ~12 discordant pairs in 60 from noise alone -- the 12 discordant pairs of each pre-registered comparison are at that level.
+  (The strips' 21 vs 1 is far above it.)
+* **Tracking slope at the first close** (grip Y on spawn Y, all attempts; paired bootstrap of the difference): v2 0.53, v3 3k 0.70, v3 6k 0.57. v3 3k - v2 **+0.16 [+0.04, +0.30]**; v3 6k - v3 3k -0.13 [-0.30, +0.05].
+  The 6k value is pulled down by its "untouched" failures (below): Theil-Sen 0.62 / 0.74 / 0.69, placed attempts only 0.72 / 0.82 / 0.77. X direction (grip X on spawn X at the close): 0.59 / 0.56 / 0.80;
+  failures at X < 0.42 close 15-26 mm beyond the cube in +X (toward the training-box centre), placed ones 5-10 mm.
+* **Classes:** v2 pushed 10, blow-up 4, untouched 3, runaway 2, lifted 1; v3 3k pushed 10, blow-up 4, runaway 1, untouched 1; **v3 6k pushed 6, untouched 6, no blow-up or runaway** (5 -> 0 against v3 3k, paired 5 / 0, p = 0.06).
+  All 6 of 6k's "untouched" are in the near +Y corner: the hand descends and closes ~100 mm toward the centre line (miss -77 to -109 mm) and never touches the cube. On the same seeds v2/v3 3k blew up, ran away or pushed.
+* **The near +Y corner (X < 0.42, Y > +0.11; 7 seeds) is 0/7, 1/7, 0/7 for the three policies and 7/7 for the expert.** It holds 7 of v3 6k's 12 failures, 6 of v3 3k's 16 and 7 of v2's 20. The v3 dataset has ~15 episodes
+  there (grip point at the close as proxy; ~31 in the X >= 0.42 edge strips, where v3 now works). The -Y corner (3 seeds) is too small to read and the expert failed all 3 (only ~7 dataset episodes there: the expert
+  is weak there and only successes were kept). Elsewhere at X < 0.42 (|Y| <= 0.11) the policies are at or above the expert (v3 6k 18/18, expert 12/18).
+
+Against the prediction:
+* v2 ~30-36/60: **wrong** (40). v3 ~40-48/60: held (44). **v3 > v2 with p < 0.05: not confirmed** (8 / 4, p = 0.39).
+* Gain concentrated at the edge (v3 >= 75 %, v2 <= 45 %): 6/8 vs 4/8 -- direction as predicted, v2 above its bound; **n = 8, unreadable**. Design fault, mine: the uniform wide box puts only ~22 % of spawns
+  (expected 13, drawn 8) in the region where the gain was predicted, and 47 % (28) at X < 0.42, where the prediction made no claim. The wide-box n=60 was therefore a weak test of the strip effect; the strips (40 pairs, 21 / 1)
+  remain the evidence for it, and this run neither confirms nor contradicts it.
+* Centre >= 85 % for all: held (92 / 88 / 96 %). X < 0.42: no claim made; 50 / 61 / 71 %.
+* v3 6k vs v3 3k within +-5: held (+4). 6k verdict rule (p < 0.05 and >= 6 more): **not met -> no established effect of more steps.** Every comparison so far points the same way by 1-4 (training box +3, step 2 +1,
+  strips +3, n=60 +4) and 6k had no blow-up/runaway here; consistent with a small benefit, not shown.
+* Per the decision rule (not confirmed -> per-region look): the per-region look points at **one corner, X < 0.42 & Y > +0.11, where all three policies fail and the expert does not**. The +Y side was already where v2's
+  failures sat (2026-11-13). What it does NOT show: why that corner (camera view of the cube during the approach, reach/posture, or simply 15 episodes being too few), and whether the -Y corner is the same (3 seeds).
+* Candidates for the next step (not started): a corner strip like the X 0.42-0.48 ones (X 0.38-0.42, Y +0.11..+0.16 and -0.16..-0.11, 20 seeds each, the three models + expert) to size the corner effect with power;
+  the saved policy inputs (`VLA_BRIDGE_SAVE_IMAGES=1`) of the 7 corner trials to see whether the cube is in the wrist/base view during the descent.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
