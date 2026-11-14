@@ -96,8 +96,13 @@ def boundaries(cond, g):
     for t, ks in ticks.items():
         z = np.load(os.path.join(d, "trace", f"trial_{t:03d}.npz"))
         tg = z["target"][:, :6].astype(float)
+        # added after the run (deviation, reported): from the first tick the measured joint state leaves the physical range
+        # (|q| > 2 pi, a PhysX blow-up spinning a joint to hundreds of rad) the targets follow the state and their steps are
+        # not policy boundaries. --raw keeps them (the pre-registered computation).
+        wild = np.nonzero(np.abs(z["joints"][:, :6].astype(float)).max(1) > 2 * np.pi)[0]
+        end = wild[0] if (len(wild) and "--raw" not in sys.argv) else len(tg)
         for k in ks:
-            if 0 < k < len(tg):
+            if 0 < k < end:
                 dl = np.abs(tg[k] - tg[k - 1])
                 out.append((float(dl.max()), int(dl.argmax()), phase_at(z, k)))
     return out

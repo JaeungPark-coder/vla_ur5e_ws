@@ -3182,6 +3182,75 @@ The measured round trip is ~167-170 ms, about 10 ticks at 60 Hz.
     * carry 0.0033/0.0080/0.019 (n=283).
     * All 39 large boundaries are in approach, on wrist3 (30) and wrist2 (9): the demonstrated wrist half-turn.
 
+### 2026-11-15 (early morning): inference latency results
+
+Ran 23:24-02:45, 180 trials, no crash. Analysis: `scripts/latency_analysis.py --json eval_results/latency_analysis.json`. Raw results:
+`eval_results/lat_v3_6k_{cond}_{region}_k25_seed9200_ff30.csv` and `..._boundaries.csv`.
+
+**Pooled over centre, +Y strip and -Y strip (45 trials each; paired with d0 on the same seeds)**
+
+| | placed | blow-up | miss diff vs d0, mm [95%] | slope (diff vs d0) | ticks of placed (median) | boundary jump median, rad |
+|---|---|---|---|---|---|---|
+| K50 d0 (stratified run, reference) | 41 | 1 | -4.1 [-7.3, -1.9] | 0.90 (-0.03) | 800 | 0.0029 |
+| **d0** (K=25) | **44** | 1 | -- | 0.93 | 800 | 0.0034 |
+| **sync10** | 44 | 1 | +0.7 [-1.8, +2.7] | 0.96 (+0.03 [-0.00, +0.06]) | **1155 (+44 %)** | 0.0033 |
+| **async10** | 43 | 0 | +2.0 [-4.2, +5.5] | 0.95 (+0.02 [-0.01, +0.05]) | 825 (+3 %) | **0.0082** |
+| **async20** | 40 | 3* | +0.9 [-1.4, +4.0] | 0.93 (+0.00 [-0.02, +0.03]) | 825 | **0.0142** |
+
+\* async20 "blow-ups" are grasp slips (see below), not the cube flying up. McNemar vs d0: sync10 1/1, async10 2/1, async20 5/1 (p=0.22).
+The per-region miss medians all lie between -13 and +6 mm (table in the script output).
+
+**Boundary jumps by phase: median / p95 / max rad**
+
+| | approach | contact | carry |
+|---|---|---|---|
+| d0 | 0.0047 / 0.038 / 0.047 | 0.0019 / **0.0046** / 0.0074 | 0.0040 / 0.0093 / 0.107 |
+| sync10 | 0.0052 / 0.038 / 0.046 | 0.0018 / 0.0041 / 0.012 | 0.0036 / 0.010 / 0.048 |
+| async10 | 0.0128 / 0.052 / 0.186 | 0.0024 / **0.0350** / 0.256 | 0.0097 / 0.086 / 0.394 |
+| async20 | 0.0188 / 0.068 / 0.362 | 0.0031 / **0.0495** / 0.192 | 0.0194 / 0.150 / 0.313 |
+
+* Large async boundaries are mostly on wrist3 (async10: 155/212; contact phase 14/18).
+* **Deviation, added after the run:** boundaries after the measured joint state leaves |q| > 2 pi are excluded from this table. Two physics blow-ups (d0 +Y strip #3, sync10 -Y strip #10) spun a joint to 551 and 394 rad. Because actions are relative to the state, their targets followed, which gave "jumps" of up to 78 rad. `--raw` shows the pre-registered computation: d0 carry p95 4.66 rad, sync10 4.59 rad; the contact phase is unaffected except the sync10 max (2.4).
+
+**Against the prediction**
+* d0: held (44/45, predicted 38-44). K=50 vs K=25 on the same seeds: miss -4.1 mm [-7.3, -1.9] for K=50, within the predicted +-5 mm. The CI excludes 0, so K=25 closes slightly nearer the cube.
+* **sync10: held on every point:**
+  * placed 44 = 44;
+  * miss +0.7 mm with the CI covering 0;
+  * slope +0.03;
+  * blow-ups 1 = 1;
+  * boundary median 1.0x;
+  * placed episodes +44 % longer (predicted 35-45 %).
+* **async10: primary measures held; the boundary-jump predictions failed.**
+  * Held: miss +2.0 mm (CI covers 0), slope +0.02, placed 43, 0 blow-ups, episode length +3 %.
+  * Failed:
+    * Boundary median 2.4x d0 (predicted <= 1.5x).
+    * Boundary p95 1.67x the within-chunk p95 (predicted <= 1.5x).
+    * **Contact-phase p95 0.035 vs 0.0046 = 7.6x d0, so the pre-registered RTC/blending rule (> 2x) is met.**
+* **async20:**
+  * Held: placed 40 (within -6), miss +0.9 mm (within +-8), slope 0.00.
+  * Failed: boundary median 4.2x d0 (predicted <= 2x).
+  * Contact p95 is 10.8x d0.
+
+**Post hoc: the async20 failures are chunk-boundary grasp slips**
+* All 3 async20 "blow-ups" were flagged by the trace verdict "cube moved > 20 mm in one tick" (max height 0.07-0.08 m). The cube dropped out of a half-closed grasp (gripper 0.58) during the lift, 34-43 ticks after the first close.
+* **In all 3, a chunk boundary was 1 tick before the slip, with a 0.20-0.24 rad target jump, mostly wrist3.** By chance a slip falls 1 tick after a boundary about 1 time in 25.
+* These ticks are just past the pre-registered contact window (close + 30 ticks), so they counted as "carry".
+* Over the grasp-to-lift window (first close .. +60 ticks), boundary jump median / p95 / max (rad):
+  * K50: 0.0033 / 0.0067 / 0.012.
+  * d0: 0.0031 / 0.0083 / 0.107.
+  * async10: 0.026 / 0.101 / 0.394. 23 boundaries > 0.05 rad, all in trials that were placed.
+  * async20: 0.045 / 0.226 / 0.313. 54 boundaries > 0.05 rad; 44 of them were in placed trials.
+* So async jumps at the grasp are common. At d=10 they did no measurable harm; at d=20 they produced 3 slips out of 45. Many placed trials survived jumps of 0.2-0.4 rad, so a jump raises the risk without deciding the outcome.
+* The stale observation itself costs nothing measurable even at 333 ms: miss and slope are unchanged. The cost of simple async is the chunk transition.
+
+**Reading in the agreed order**
+1. **sync10 and async10:** no difference to d0 in miss or slope. Sync costs +44 % time.
+2. **Async contact-phase jumps:** 7.6x (d=10) and 10.8x (d=20) d0, above the 2x rule. **RTC or chunk blending is needed** before asynchronous execution on the real robot.
+3. **async20 margin:** miss and slope still unchanged. The 4 fewer placed (noise level by itself) include 3 grasp slips mechanically linked to boundary jumps. The margin at 333 ms is limited by the chunk transition, not by the age of the observation.
+
+**Consequence for the real robot:** sync execution is a safe fallback with no accuracy loss, at +44 % episode time. Async needs chunk blending first.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
