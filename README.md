@@ -3072,6 +3072,32 @@ Ran 16:06-22:05 with no crash (expert 90/90 seeds written). Analysis: `scripts/s
 * **v3 6k -Y corner, 10/15 here vs 19/20 in the corner test (different seeds):** the miss is the same (-28 vs -25 mm). The blind-at-t50 count is high in both (14/15, 13/20). At ~-25 mm the close is on the edge of what still grasps, so the binary outcome swings while the continuous measure is stable. This is the reason continuous measures are primary.
 * **Wide-box absolute numbers** (n=60, stale frame) are now superseded by this table for the X<0.42 regions.
 
+**Follow-up check (GPU-free, `scripts/strat_data_density.py`): data density vs miss.** Episode position = grip point at the first close.
+
+| region | v2 episodes | v3 episodes |
+|---|---|---|
+| centre | 151 | 206 |
+| +Y strip | 0 | 25 |
+| -Y strip | 1 | 16 |
+| +Y corner | 0 | 15 |
+| -Y corner | 0 | 7 |
+| X<0.42 middle | 0 | 33 |
+
+* The -Y regions have fewer episodes because the expert failed more often there and failures were filtered at collection.
+* Per trial over strips + corners (n=60), the Spearman correlation between the miss and the number of v3 episodes within 30 mm of the spawn is v3 3k +0.40 [0.15, 0.62] and v3 6k +0.55 [0.31, 0.74]: more data, less short.
+* The -Y asymmetry is therefore consistent with data density, the same mechanism as v2 vs v3. This is post hoc and not a causal test.
+
+**Decisions after these results (2026-11-14 night)**
+* The 10k run is cancelled (6k = 3k).
+* Deployment candidate is v3 6k: same performance as 3k, with 0 runaways/blow-ups in n=60 vs 5 for 3k (p=0.06).
+* Experiments stay on the v3 3k recipe.
+* No extra data collection for now; the policy is at expert level.
+* Next is the bridge to the real robot:
+  1. latency in sim (real-time bridge mode, ~170 ms inference);
+  2. visual-variation evaluation;
+  3. `ur_rtde` validation without the policy, the position-target limit, camera calibration, then the policy at low speed.
+* STATUS.md now opens with a single "conclusion" section.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
