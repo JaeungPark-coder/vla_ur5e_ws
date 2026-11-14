@@ -3167,6 +3167,20 @@ The measured round trip is ~167-170 ms, about 10 ticks at 60 Hz.
     * Within-chunk step: 0.0033-0.0036 / 0.035 rad.
   * The async median is ~2.9x the K=50 reference boundary median (0.0029). If the evaluation shows the same, the async10 jump prediction (median within 1.5x of d0) fails.
   * Sync episodes are longer: 1225 and 725 rows plus 490 and 290 holds. `max_steps` (1800) counts policy rows only.
+* **Added before the run (reviewer request): where the boundary jumps happen, by joint and by phase.** Analysis only, no extra run.
+  * The client boundary log now also writes the trace tick, the joint with the largest step, the 6 per-joint steps, the commanded gripper and the cube z.
+  * The logged tick equals step + holds and matches the trace exactly (141/141 smoke boundaries).
+  * Phase at the boundary tick, from the trace:
+    * **approach:** before the first close (gripper > 0.5) and grip-to-cube distance > 50 mm.
+    * **contact:** before the first close within 50 mm, or the 30 ticks after it.
+    * **carry:** later (lift, transport, place, release).
+  * Reported per condition: jump n/median/p95/max per phase, and the joint and phase of the "large" boundaries (above the run's within-chunk p95).
+  * Reading: jumps in approach are mostly harmless. Jumps in contact lead directly to misses and blow-ups, so **RTC/blending is called for if async raises contact-phase jumps** (contact p95 above 2x d0's contact p95), not merely approach ones.
+  * Reference, stratified K=50 d0 (same seeds):
+    * approach 0.0033/0.038/0.047 rad (n=275).
+    * contact 0.0020/0.0046/0.0085 (n=173).
+    * carry 0.0033/0.0080/0.019 (n=283).
+    * All 39 large boundaries are in approach, on wrist3 (30) and wrist2 (9): the demonstrated wrist half-turn.
 
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 

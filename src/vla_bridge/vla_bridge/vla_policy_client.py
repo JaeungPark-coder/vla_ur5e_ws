@@ -551,14 +551,22 @@ class VLAPolicyClient(Node):
         if not self.eval_mode:
             return
         prev = self._last_target[0] if self._last_target is not None else None
-        jump = float(np.max(np.abs(np.asarray(first_new_target) - prev))) if prev is not None else float('nan')
+        delta = np.asarray(first_new_target, dtype=float) - prev if prev is not None else np.full(6, np.nan)
+        jump = float(np.max(np.abs(delta))) if prev is not None else float('nan')
+        joint = int(np.argmax(np.abs(delta))) if prev is not None else -1
+        # phase context: tick = index into the bridge trace (step + holds; checked against the trace), gripper commanded,
+        # cube position as last published (the analysis takes grip-to-cube distance from the trace at `tick`)
+        cube = self._latest_cube_position if self._latest_cube_position is not None else np.full(3, np.nan)
         path = self.results_csv_path.rsplit('.csv', 1)[0] + '_boundaries.csv'
         new = not os.path.exists(path) or self._boundary_file_fresh
         with open(path, 'w' if new else 'a', newline='') as f:
             w = csv.writer(f)
             if new:
-                w.writerow(['trial', 'step', 'hold_ticks', 'jump_rad'])
-            w.writerow([self._trial_idx + 1, self._step_count, self._hold_ticks, round(jump, 6)])
+                w.writerow(['trial', 'step', 'hold_ticks', 'jump_rad', 'tick', 'joint', 'd0', 'd1', 'd2', 'd3', 'd4', 'd5',
+                            'gripper_cmd', 'cube_z'])
+            w.writerow([self._trial_idx + 1, self._step_count, self._hold_ticks, round(jump, 6),
+                        self._step_count + self._hold_ticks, joint, *[round(float(v), 6) for v in delta],
+                        round(float(self._last_commanded_gripper), 3), round(float(cube[2]), 4)])
         self._boundary_file_fresh = False
 
     def _finish_trial(self, success, xy_error_mm=-1.0):

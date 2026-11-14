@@ -59,6 +59,50 @@ def extras(cond, g):
     return out
 
 
+PHASES = ["approach", "contact", "carry"]
+JOINTS = ["base", "shoulder", "elbow", "wrist1", "wrist2", "wrist3"]
+
+
+def phase_at(z, k):
+    """approach: before the first close and grip-to-cube > 50 mm; contact: before the first close within 50 mm, or the
+    30 ticks after it; carry: later (lift, transport, place, release). First close = first tick with gripper > 0.5."""
+    g = z["gripper"].astype(float)
+    c = np.nonzero(g > 0.5)[0]
+    fc = c[0] if len(c) else len(g)
+    if k >= fc + 30:
+        return "carry"
+    if k >= fc:
+        return "contact"
+    dist = np.linalg.norm(z["grip_point"][k].astype(float) - z["cube"][k].astype(float))
+    return "contact" if dist <= 0.05 else "approach"
+
+
+def boundaries(cond, g):
+    """(jump rad, joint index, phase) for every chunk boundary except each trial's first, from the trace targets at the
+    boundary ticks (latency runs: tick = step + hold_ticks from <run>/results_boundaries.csv; K=50 run: every 50 ticks)."""
+    d = os.path.join(E, run_dir(cond, g))
+    ticks = {}
+    p = os.path.join(d, "results_boundaries.csv")
+    if cond == "K50":
+        for f in sorted(os.listdir(os.path.join(d, "trace"))):
+            if f.endswith(".npz") and "images" not in f:
+                n = len(np.load(os.path.join(d, "trace", f))["target"])
+                ticks[int(f[6:9])] = list(range(100, n, 50))
+    elif os.path.exists(p):
+        for r in csv.DictReader(open(p)):
+            ticks.setdefault(int(r["trial"]), []).append(int(r["step"]) + int(r["hold_ticks"]))
+        ticks = {t: v[1:] for t, v in ticks.items()}
+    out = []
+    for t, ks in ticks.items():
+        z = np.load(os.path.join(d, "trace", f"trial_{t:03d}.npz"))
+        tg = z["target"][:, :6].astype(float)
+        for k in ks:
+            if 0 < k < len(tg):
+                dl = np.abs(tg[k] - tg[k - 1])
+                out.append((float(dl.max()), int(dl.argmax()), phase_at(z, k)))
+    return out
+
+
 def main():
     rng = np.random.default_rng(0)
     res = {c: {g: load(run_dir(c, g), 9200) for g in REGIONS} for c in ["K50"] + CONDS}
@@ -121,6 +165,26 @@ def main():
             line += f" | {np.median(ticks):.0f}"
         out["pooled"][c] = o
         print(line)
+    print("\nboundary jumps by phase: n, median / p95 / max rad;  and which joint carries the large ones (> within-chunk p95 of the run)")
+    out["phase"] = {}
+    for c in ["K50"] + CONDS:
+        bb = [b for g in REGIONS for b in boundaries(c, g)]
+        if not bb:
+            continue
+        thr = out["pooled"].get(c, {}).get("within", (np.nan, np.nan))[1]
+        cells, o = [], {}
+        for ph in PHASES:
+            j = np.array([b[0] for b in bb if b[2] == ph])
+            if len(j):
+                o[ph] = (len(j), float(np.median(j)), float(np.percentile(j, 95)), float(j.max()))
+                cells.append(f"{ph} n={len(j):3d} {np.median(j):.4f}/{np.percentile(j, 95):.4f}/{j.max():.4f}")
+        big = [b for b in bb if b[0] > thr]
+        o["large_by_joint"] = {JOINTS[i]: sum(b[1] == i for b in big) for i in range(6)}
+        o["large_by_phase"] = {ph: sum(b[2] == ph for b in big) for ph in PHASES}
+        out["phase"][c] = o
+        print(f"  {c:9s} " + " | ".join(cells))
+        print(f"            large (> {thr:.4f}): {len(big)}/{len(bb)}  by phase {o['large_by_phase']}  by joint "
+              + " ".join(f"{k} {v}" for k, v in o["large_by_joint"].items() if v))
     if "--json" in sys.argv:
         json.dump(out, open(sys.argv[sys.argv.index("--json") + 1], "w"), indent=1, default=float)
 
