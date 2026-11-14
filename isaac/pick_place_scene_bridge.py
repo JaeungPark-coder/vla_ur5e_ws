@@ -211,6 +211,12 @@ def main():
     scene.reset()
     if base_seed is not None:
         print(f"seeded reset 0: cube at {np.round(scene.cube_position, 4).tolist()}", flush=True)
+    # 2026-11-15: VLA_BRIDGE_VISUAL="light=0.5" etc. -- one visual perturbation for the whole run (visual_perturbation.py,
+    # README "visual variation"). Applied after the first reset (the cube prim exists then); USD attributes survive later resets.
+    _visual = os.environ.get("VLA_BRIDGE_VISUAL", "")
+    if _visual and _visual != "none":
+        import visual_perturbation
+        print(f"VLA_BRIDGE_VISUAL: {visual_perturbation.describe(visual_perturbation.apply(scene, _visual))}", flush=True)
 
     rclpy.init()
     lockstep = _lockstep_requested()

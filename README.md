@@ -3251,6 +3251,52 @@ The per-region miss medians all lie between -13 and +6 mm (table in the script o
 
 **Consequence for the real robot:** sync execution is a safe fallback with no accuracy loss, at +44 % episode time. Async needs chunk blending first.
 
+**Follow-up decisions (reviewer, 2026-11-15)**
+* K=25 is to be considered as the standard.
+* Chunk blending is deferred until async is needed on the real robot.
+  * Its blend length is at most 50 - K - d ticks (K=25: 15 ticks at d=10, 5 at d=20), so async20 would need K≈20.
+  * Pass rule: contact p95 <= 2x d0, 0 slips, no miss change.
+* Real-robot timing: one dataset row = 1/60 s, although the dataset metadata says `fps=30`. Rows must be interpolated to the 500 Hz servoJ. Start slow, because a sync hold on hardware decelerates and re-accelerates. Recorded in STATUS.
+
+### 2026-11-15: visual variation -- design and prediction written BEFORE the run
+
+**Question.** The simulated scene has never changed its look: same light, grid ground, cube colour and cameras in every demonstration and every evaluation. How weak is v3 6k to small visual changes of the kind a real camera image brings? If it is weak, visual randomization data is the next reinforcement.
+
+**How.** `isaac/visual_perturbation.py` changes one factor for a whole run. The bridge reads `VLA_BRIDGE_VISUAL`, applies it after the first reset, and logs it; USD attributes survive the later resets.
+
+| name | spec | what changes |
+|---|---|---|
+| none | -- | rerun of the unperturbed condition (pairing baseline + noise) |
+| light05 / light2 | light=0.5 / 2 | all light intensities x0.5 / x2 |
+| tint | tint=1.0:0.8:0.6 | warm dome-light colour |
+| ground_grey / ground_wood | ground=0.15:0.15:0.15 / 0.7:0.55:0.35 | ground colour. The grid texture disappears too (a plain material replaces it), a large background change |
+| cube_dark / cube_orange | cube=0.5:0.05:0.05 / 0.9:0.35:0.1 | cube colour. Dark red renders only slightly darker (mild); orange is clearly different (strong) |
+| basecam3 / basecam6 | basecam=0:0.03:0 / 0:0.06:0.03 | base camera moved 3 cm sideways / 6 cm sideways + 3 cm up, orientation unchanged (a re-mounted camera) |
+| wrist3 / wrist8 | wristtilt=3 / 8 | wrist-camera mount rotated 3 / 8 deg (the down-tilt parameter). In the image this shows as a visible rotation of the gripper view |
+
+* **Image check (no policy):** `eval_results/visual_check/variants_home_centre.png` (all conditions, home pose) and `variants_home_posYstrip.png` (cube colours with the cube in view). Every perturbation shows as intended.
+  * The red-pixel threshold of the analysis tools no longer finds the orange cube (0 px). View counts in the orange run are therefore not comparable.
+* **Setup:** v3 6k, K=25, d=0, converged first frame. Centre region (X 0.42-0.48, Y +-0.10), seeds 9200-9214. These are the same spawns as `eval_runs/lat_d0_centre` (15/15 placed), which serves as a second noise reference.
+  * The centre region is used because the model is ~15/15 there, so any drop is attributable to the visual change.
+  * 12 runs of 15 trials, ~15 min each, ~3 h in total. Driver: `scripts/visual_eval_driver.sh`. Analysis: `scripts/visual_analysis.py`.
+* **Measures:**
+  * **Primary:** the paired |lateral error| at the first close (|grip Y - spawn Y|) vs `none`, as a median of differences with a bootstrap CI. Also the signed world-Y error, for the camera shifts.
+  * **Secondary:** placed (McNemar vs none) and outcome classes.
+* **Rule:** a factor is **weak** if placed <= 11/15, or the paired |error| increase is > 10 mm with the CI above 0. If any real-world-relevant factor (light, ground, camera) is weak, visual randomization data becomes the next reinforcement candidate.
+
+**Disclosure.** A 1-trial bridge smoke run (`ground_grey`, +Y strip, seed 9900, not an evaluation seed) was looked at before this prediction was written.
+* It **failed**: the arm hovered ~0.15 m above the cube from tick ~200 to the step limit and never descended. The images are in `eval_results/visual_check/smoke_ground_grey_seed9900.png`.
+* It is n=1, in another region, but it informed the ground prediction below.
+
+*Prediction*
+* **none:** 14-15/15; |error| median within +-3 mm of `lat_d0_centre`.
+* **Light (x0.5, x2) and tint:** not weak. Each >= 13/15, |error| change <= 5 mm. Brightness and colour cast change little of the scene's layout, and the vision encoder is pretrained.
+* **Ground (grey, wood):** **weak, at least one of the two**, each 3-12/15. The background (most of both images) changes and the grid lines that may serve as position cues disappear; the smoke trial hovered.
+* **Cube:** dark red not weak (>= 13/15). Orange 8-15/15; no confident call.
+* **Base camera:** 3 cm not weak (>= 12/15, |error| change <= 10 mm). 6 cm + 3 cm up: 7-14/15, |error| change <= 15 mm, sign not predicted. The arm moves with the scene in the image, and the wrist camera guides the final approach.
+* **Wrist camera:** 3 deg not weak (>= 12/15). 8 deg: 6-13/15. The wrist camera is the final-approach sensor.
+* **Overall:** at least one factor weak, most likely the ground. Visual randomization data is then the next reinforcement.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
