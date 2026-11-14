@@ -2696,6 +2696,9 @@ would mean fingers pushed into the table (a force problem), not a spinning wrist
 
 ### 2026-11-14: first-frame test result -- no effect; the hand's low descent is commanded by the policy, not a tracking error
 
+> **Scope corrected 2026-11-14 15:49:** "no effect" holds only where the stale picture shows a cube from the same region (training box, strips: the run's first spawn lies inside). In the wide box the stale frame
+> was the main cause of the +Y-corner failure (0/7 stale vs 20/20 converged); see "corner results" below.
+
 **Prediction (above) against the result.** `eval_runs/ff_posY`, `ff_negY`, `ff_train_box`; `scripts/paired_success.py`; classes and heights `scripts/ff_height_analysis.py` -> `eval_results/ff_height_analysis.json`.
 
 | | stale first frame | converged first frame | paired (only stale / only fresh) | McNemar |
@@ -2954,6 +2957,37 @@ Caveat: the pattern was found after looking at the table (7 seeds), like the wit
   * Prediction revised for the fresh first frame (the earlier first-frame test raised the t50 slope -0.02 -> 0.14 in the training box): +Y corner v3 6k **<= 8/20** (was <= 6), median miss -50 to -110 mm,
     base camera blind at t50 in **>= 15/20** (was >= 18); the -Y lines unchanged.
 * Reported with the result: placed, lateral miss at the close, base-camera pixels at t50/t100 (blind count), wrist-camera cube column and edge contact at t100, expert placed, expert-success seeds separately.
+
+### 2026-11-14 15:49: corner results -- +Y 20/20, -Y 19/20 with the converged first frame. The n=60 corner failure (0/7) was driven by the stale first frame; prediction wrong
+
+Runs 14:57-15:49 (`scripts/corner_eval_driver.sh`, `eval_runs/corner_v3_6k_{posY,negY}`, expert `eval_results/expert_corner_{posY,negY}.jsonl`); analysis `scripts/corner_analysis.py` -> `eval_results/corner_analysis.json`.
+Checked before reading: converged frame in effect (tick-0 base image shows the cube at its real spawn, column 130-135, ~225 px; n=60 had column 76 in every trial); server loaded the v3 norm stats.
+
+| v3 6k, converged first frame | placed (Wilson) | expert | on expert-success seeds | miss at close, median [IQR] | blind in both cameras at t50 | base px t50 / t100 | wrist t100: cube column, edge contact |
+|---|---|---|---|---|---|---|---|
+| **+Y corner** (9100-9119) | **20/20** [0.84, 1.00] | 17/20 | 17/17 | **-10 mm** [-15, -1] | 6/20 | 48 / 92 | **68**, 0/20 |
+| -Y corner (9100-9119) | 19/20 [0.76, 0.99] | 17/20 | 17/17 | -25 mm [-29, -19] | 13/20 | 0 / 132 | 80, 5/20 |
+| *n=60 +Y corner, stale frame (7 seeds)* | *0/7* | *7/7* | | *-77 to -109 mm (untouched)* | *7/7* | *0 / 0* | *10, 7/7* |
+| *expert demonstrations, +Y corner (15)* | | | | | *0/15* | *29 / 135* | *68, 0/15* |
+
+* **Primary measure:** median miss +Y minus -Y = +14 mm, 95 % [+7, +22] -- the -Y corner (5 training episodes) closes slightly more toward the centre line than the +Y corner (15 episodes), both within grasp range.
+* **The first chunk follows the cube shown in frame 0.** Median hand Y at ticks 0/25/50/75/100/150/250 (v3 6k): n=60 corner trials (stale frame showing the seed-8000 cube at Y -0.034) +0.233 +0.212 **+0.173** +0.180 +0.273 +0.116 **+0.024**
+  (cube +0.120); corner run +Y (converged) +0.233 +0.226 **+0.215** +0.251 +0.350 +0.188 **+0.122** (cube +0.133); corner run -Y (converged) +0.233 +0.208 +0.166 +0.170 +0.257 +0.064 -0.112 (cube -0.137).
+  With the stale frame the +Y-corner hand moves at t50 like the -Y-corner hand -- toward the cube in the stale picture -- and never recovers, although every later input is fresh: the arm then blinds the base camera and
+  the wrist sees the cube at the frame edge (previous section), views the demonstrations do not contain. With the converged frame the t100 wrist view is the demonstrations' view (column 68 vs 68).
+* **Against the prediction:** +Y <= 8/20, miss -50 to -110 mm, blind >= 15/20 -- **all wrong** (20/20, -10 mm, 6/20). Expert +Y >= 17/20 held (17); expert -Y <= 15/20 wrong (17). The pre-registered -Y branches
+  ("-Y clearly better -> view"; "-Y as bad -> distance from data") do not apply: +Y is not bad. The question "view vs distance from the data" is answered by neither: **the corner failure in n=60 was mainly
+  the stale first frame**, through the view loss it triggers. Attribution caveat: n=60 and this run also differ in seeds (same box, similar positions: n=60 corner X 0.382-0.411, Y 0.113-0.146); 0/7 vs 20/20
+  is too large for seed draw, but a paired re-run of the n=60 seeds with the converged frame would make it direct.
+* -Y works with 5 training episodes and 13/20 blind at t50 -- t50 blindness alone does not break a trial when the first chunk heads the right way.
+* **Correction of the 2026-11-14 first-frame conclusion** (section "first-frame test result -- no effect"): that test ran on the training box and the strips, where the stale picture shows a cube from the SAME region
+  (the run's first spawn lies in it), so the stale frame was roughly right there. "The first frame is not the cause" holds only for that case. **Where the stale cube is far from the true spawn (wide box: everything
+  far from seed 8000's (0.405, -0.034)), the stale frame is a major cause of failure.** Every wide-box result with the stale frame (step 2, the n=60 run, its per-region numbers, the "remaining failures in the +Y
+  corner" finding) carries this handicap, unevenly by region; the three models were paired under the same handicap, so the n=60 comparisons stay internally valid but describe an evaluation artefact the real robot
+  would not have (its first image is current).
+* Next candidates (not started): (1) v3 6k on the n=60 seeds 8000-8059 with the converged frame, paired with its stale run -> the stale-frame effect over the whole box and per region, directly (1 h);
+  (2) under the converged frame (from now the standard evaluation condition), the stratified v2 3k vs v3 3k comparison the n=60 run could not give (edge strips + corners, fixed seeds per region);
+  (3) training data: frames 0-1 of the dataset are stale too (they show the collection run's first spawn) -- a fresh first frame in the data is still untested.
 
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
