@@ -3098,6 +3098,76 @@ Ran 16:06-22:05 with no crash (expert 90/90 seeds written). Analysis: `scripts/s
   3. `ur_rtde` validation without the policy, the position-target limit, camera calibration, then the policy at low speed.
 * STATUS.md now opens with a single "conclusion" section.
 
+### 2026-11-15: inference latency in simulation -- design and prediction written BEFORE the run
+
+**Question.** Does the deployment candidate (v3 6k) keep its accuracy when the robot does not wait for inference, as on the real UR5e?
+The measured round trip is ~167-170 ms, about 10 ticks at 60 Hz.
+
+**How latency is emulated: in ticks, lockstep kept.**
+* Not with the wall clock. A real-time bridge makes the latency differ every time, so the same seed could no longer be paired.
+* Code: `src/vla_bridge/vla_bridge/chunk_schedule.py`, which is unit-tested in `test/test_chunk_schedule.py`. Client parameters are `chunk_delay_ticks` (d) and `chunk_delay_mode`.
+* Each iteration takes one observation and makes one policy call. The answer arrives at once (lockstep), but it is used as if it took d ticks:
+  * **sync:** the robot holds its last target (zero velocity feed-forward) for d ticks, then applies rows 0..K-1 of the new chunk. An iteration is K + d ticks. This is the simplest real-robot scheme, where the robot stops while it waits.
+  * **async (simple):** for d ticks the robot keeps executing rows of the previous chunk. Then it applies the new chunk from row d, because rows 0..d-1 describe ticks that have already passed. An iteration is K ticks, and each chunk is applied at rows d..d+K-1, so **K + d <= 50**.
+    * The first chunk of a trial has no predecessor. The arm stands for d ticks and starts at row 0, as a real robot starting from rest would.
+    * This is the basic asynchronous execution of a real deployment.
+  * d = 0 is the original behaviour in both modes (same code path).
+* RTC-style chunk blending is **not** in this test. It is the next step only if simple async shows a problem.
+
+**Conditions.** Run in this order, all with **K = 25**, so that K + d <= 50 holds up to d = 20. The baseline uses the same K. Lockstep K 10/25/50 were indistinguishable earlier.
+
+| name | mode | d (ticks) | ~latency |
+|---|---|---|---|
+| d0 | either | 0 | 0 (baseline) |
+| async10 | async | 10 | 167 ms |
+| sync10 | sync | 10 | 167 ms |
+| async20 | async | 20 | 333 ms |
+
+* Model: v3 6k only.
+* First frame: converged (standard condition).
+* Regions: centre, +Y strip and -Y strip, 15 seeds each (**9200-9214**, the stratified seeds). This keeps the spawns identical and also pairs d0 with the stratified K=50 run.
+* Time: ~45-60 min per condition, ~3.5 h in total.
+* Driver: `scripts/latency_eval_driver.sh`. Analysis: `scripts/latency_analysis.py`.
+
+**Measures**
+* **Primary:**
+  * Lateral miss at the first close: the paired difference to d0 by seed, as a median of differences with a bootstrap CI, pooled over the 45 trials and per region.
+  * Tracking slope over the 45 (paired bootstrap of the difference).
+* **Secondary:**
+  * Placed (paired McNemar vs d0).
+  * Blow-ups and outcome classes.
+  * **Chunk-boundary jump:** the size of the joint-target step where a new chunk takes over (max over the 6 joints, rad). The client logs it to `<results>_boundaries.csv`, excluding the first chunk of a trial. It is compared with the per-tick target step inside chunks from the trace (hold ticks excluded).
+    * Reference (stratified K=50 d0 run, same seeds): boundary median/p95/max 0.0029/0.034/0.047 rad; within-chunk median/p95 0.0031/0.034 rad.
+    * A boundary "jumps" if its p95 exceeds 2x the within-chunk p95 of the same run, or its median exceeds 2x d0's boundary median.
+  * Episode length in ticks of placed trials (policy rows + holds).
+
+*Prediction*
+* **d0 (K=25):** 38-44/45. The paired miss vs the K=50 run on the same seeds is within +-5 mm (reference only, no claim).
+* **sync10 vs d0:**
+  * No difference: placed within +-3, paired miss difference within +-5 mm with the CI covering 0, slope difference within +-0.05, blow-ups at most +1.
+  * Boundary jump median within 1.5x d0's.
+  * Placed episodes about 35-45 % longer in ticks (10 holds per 25 rows).
+* **async10 vs d0:**
+  * Placed within -4..+2, paired miss within +-5 mm, slope within +-0.05, blow-ups at most +2.
+  * **No boundary jump:** median within 1.5x d0's, p95 within 1.5x the within-chunk p95.
+  * Episode length within +-5 % of d0.
+  * Reasoning: the scene is quasi-static. Only the arm moves before contact, and the chunk itself planned that motion, so a 167 ms old observation costs reactivity only around contact, and the approach takes ~1 s.
+* **async20 vs d0:** placed within -6, paired miss within +-8 mm, boundary jump median within 2x d0's.
+* **How this can fail:**
+  * Async boundary jumps above the 2x rule would mean consecutive chunks disagree, so the next step is RTC-style blending.
+  * A sync drop would mean the holds disturb contact.
+  * A miss shift under async at an unchanged boundary jump would mean the policy reacts to the cube late.
+
+**Code check before the run:** a 2-trial smoke run each for async10 and sync10 at seed 9900, which is not an evaluation seed. It checks that the schedule, holds and boundary logging work; the result is not used.
+* **Smoke result (2026-11-15, after the prediction above was written; the prediction is left unchanged):**
+  * Everything works: 2/2 placed in each mode. The trace has 875 ticks = 865 policy rows + 10 holds for async, and 490 holds = 490 zero-step ticks for sync. Boundaries fall every 25 rows.
+  * Boundary jump median/p95/max:
+    * async10: 0.0084 / 0.047 / 0.080 rad (61 boundaries).
+    * sync10: 0.0029 / 0.031 / 0.041 rad.
+    * Within-chunk step: 0.0033-0.0036 / 0.035 rad.
+  * The async median is ~2.9x the K=50 reference boundary median (0.0029). If the evaluation shows the same, the async10 jump prediction (median within 1.5x of d0) fails.
+  * Sync episodes are longer: 1225 and 725 rows plus 490 and 290 holds. `max_steps` (1800) counts policy rows only.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).

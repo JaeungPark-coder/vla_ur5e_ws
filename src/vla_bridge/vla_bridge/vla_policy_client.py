@@ -21,6 +21,7 @@ environment this was authored in -- treat as a solid first draft, not
 verified to run.
 """
 import csv
+import os
 
 import numpy as np
 import rclpy
@@ -37,6 +38,7 @@ from vla_bridge.isaac_robot_interface import IsaacSimRobotInterface
 from vla_bridge.gripper_command import GripperHysteresis
 from vla_bridge.feedforward import chunk_velocities, limit_target_steps
 from vla_bridge.eval_tracking import MaxHeightTracker
+from vla_bridge.chunk_schedule import HOLD, NEW, plan_iteration
 
 
 # Same cut-off collect_demos.py filters demonstrations on (normal peak ~0.16 m).
@@ -162,6 +164,11 @@ class VLAPolicyClient(Node):
         # 2026-11-13: per-tick limit on the change of the joint POSITION target (6 values, rad/tick; empty = off). See
         # feedforward.limit_target_steps. The evaluated value is 1.5x the largest per-tick change in the v2 demonstrations.
         self.declare_parameter('target_step_limit_rad', [0.0])
+        # 2026-11-15: inference latency emulated in TICKS, lockstep kept (chunk_schedule.py). chunk_delay_ticks = d (0 = the
+        # original behaviour); chunk_delay_mode 'sync' = the robot holds its last target for d ticks while it "waits" for the
+        # answer, 'async' = it keeps executing the previous chunk and the new chunk is applied from row d. lockstep only.
+        self.declare_parameter('chunk_delay_ticks', 0)
+        self.declare_parameter('chunk_delay_mode', 'sync')
         self.declare_parameter('action_dt_s', 1.0 / 60.0)  # time between consecutive chunk rows = one sim tick (the data's rate; NOT the dataset's fps=30 label)
         # Residual RL (see isaac/residual_rl_train_env.py / train_residual_policy.py,
         # README Phase 4): 'false' (default) = pi0's action is applied as-is,
@@ -247,6 +254,23 @@ class VLAPolicyClient(Node):
         if self.residual_policy is not None and self.execute_horizon != 1:
             self.get_logger().warn('use_residual_policy needs a fresh observation per action; forcing execute_horizon=1')
             self.execute_horizon = 1
+        self.chunk_delay = max(0, int(self.get_parameter('chunk_delay_ticks').value))
+        self.chunk_delay_mode = str(self.get_parameter('chunk_delay_mode').value)
+        if self.chunk_delay and (self.residual_policy is not None or self._horizon_schedule):
+            self.get_logger().warn('chunk_delay_ticks is not supported with the residual policy or a horizon schedule; set to 0')
+            self.chunk_delay = 0
+        if self.chunk_delay and not self.lockstep:
+            self.get_logger().warn('chunk_delay_ticks needs lockstep (isaac_sim backend); set to 0')
+            self.chunk_delay = 0
+        if self.chunk_delay:
+            plan_iteration(self.chunk_delay_mode, self.execute_horizon, self.chunk_delay, 50)  # fail at start, not mid-run
+            self.get_logger().info(f'emulated inference latency: {self.chunk_delay} ticks, mode {self.chunk_delay_mode}, '
+                                   f'K={self.execute_horizon}')
+        self._prev_chunk = None      # async: the chunk still being executed while the next one is "in flight"
+        self._prev_vel = None
+        self._prev_pos = None
+        self._last_target = None     # (joints[6], gripper) last commanded, for holds and boundary jumps
+        self._hold_ticks = 0
 
         self.backend = self.get_parameter('robot_backend').value
         if self.backend == 'isaac_sim':
@@ -307,7 +331,9 @@ class VLAPolicyClient(Node):
                 Float32MultiArray, '/vla/eval/cube_max_z', self._on_cube_max_z, 10,
                 callback_group=self._cb_group)
             with open(self.results_csv_path, 'w', newline='') as f:
-                csv.writer(f).writerow(['trial', 'success', 'steps', 'xy_error_mm', 'max_cube_z_sampled', 'max_cube_z_per_tick', 'blowup', 'execute_horizon'])
+                csv.writer(f).writerow(['trial', 'success', 'steps', 'xy_error_mm', 'max_cube_z_sampled', 'max_cube_z_per_tick', 'blowup', 'execute_horizon',
+                                        'delay_ticks', 'delay_mode', 'hold_ticks'])
+            self._boundary_file_fresh = True   # first boundary row of this run truncates an old <results>_boundaries.csv
             self.get_logger().info(
                 f'eval_mode=true: running {self.n_trials} trials, logging to {self.results_csv_path}')
 
@@ -419,15 +445,34 @@ class VLAPolicyClient(Node):
         if self.target_step_limit is not None:
             action_chunk = action_chunk.copy()
             action_chunk[:, :6] = limit_target_steps(action_chunk[:, :6], obs["joints"], self.target_step_limit)
-        n_apply = max(1, min(self.execute_horizon, len(action_chunk)))
         velocities = (chunk_velocities(action_chunk[:, :6], self.action_dt_s,
                                        window=self.velocity_smoothing_window,
                                        max_speed=self.velocity_clip_rad_s)
                       if (self.lockstep and self.velocity_feedforward) else None)
-        for i in range(n_apply):
-            action = action_chunk[i]
+        # Which action goes on which tick of this iteration (chunk_schedule.py). d = 0: rows 0..K-1 of this chunk, as before.
+        steps, next_prev_pos = plan_iteration(self.chunk_delay_mode, self.execute_horizon, self.chunk_delay,
+                                              len(action_chunk), self._prev_pos if self._prev_chunk is not None else None)
+        n_ticks = len(steps)
+        boundary_logged = False
+        for i, (src, row) in enumerate(steps):
+            if src == HOLD:
+                # waiting for the answer: keep the last target (or stand where the arm is), zero velocity feed-forward
+                if self._last_target is None:
+                    self._last_target = (np.asarray(obs["joints"], dtype=float).copy(),
+                                         float(np.clip(gripper_state.position, 0.0, 1.0)))
+                target_joints, target_gripper = self._last_target
+                vel = None if velocities is None else np.zeros(6)
+                self.robot.set_gripper(target_gripper)   # lockstep only (checked at start): gripper queued first
+                self.robot.move_joints(target_joints, joint_velocities=vel, publish_images=(i == n_ticks - 1))
+                self._hold_ticks += 1
+                continue
+            chunk, vels = (action_chunk, velocities) if src == NEW else (self._prev_chunk, self._prev_vel)
+            action = chunk[row]
             target_joints = action[:6]
             target_gripper = self._gripper_command(float(action[6]))
+            if src == NEW and not boundary_logged:
+                boundary_logged = True
+                self._log_boundary(target_joints)
 
             if self.residual_policy is not None:
                 # Same 14-dim observation residual_rl_train_env.py trains
@@ -445,8 +490,8 @@ class VLAPolicyClient(Node):
                 # Only the last tick of the executed block needs images: the policy looks at
                 # the observation at the START of the next chunk and nothing in between.
                 acked = self.robot.move_joints(
-                    target_joints, joint_velocities=None if velocities is None else velocities[i],
-                    publish_images=(i == n_apply - 1 or self._step_count + 1 >= self.max_steps))
+                    target_joints, joint_velocities=None if vels is None else vels[row],
+                    publish_images=(i == n_ticks - 1 or self._step_count + 1 >= self.max_steps))
                 if not acked:
                     self.get_logger().error(
                         'lockstep: no acknowledgement from the bridge -- is pick_place_scene_bridge.py '
@@ -456,9 +501,11 @@ class VLAPolicyClient(Node):
                 self.robot.move_joints(target_joints)
                 self.robot.set_gripper(target_gripper)
             self._last_commanded_gripper = target_gripper
+            self._last_target = (np.asarray(target_joints, dtype=float).copy(), target_gripper)
             self._step_count += 1
             if self._step_count >= self.max_steps:
                 break
+        self._prev_chunk, self._prev_vel, self._prev_pos = action_chunk, velocities, next_prev_pos
 
         # The observation that the command echo made impossible: the gripper
         # is somewhere other than where it was sent. On a closing command
@@ -498,6 +545,22 @@ class VLAPolicyClient(Node):
             f'gripper commanded {target_gripper:.2f}, {settled.describe()}',
             throttle_duration_sec=1.0)
 
+    def _log_boundary(self, first_new_target):
+        """Eval only: size of the joint-target step where a new chunk takes over (max over the 6 joints, rad), one row per
+        chunk to <results>_boundaries.csv. First chunk of a trial: step from where the arm stands."""
+        if not self.eval_mode:
+            return
+        prev = self._last_target[0] if self._last_target is not None else None
+        jump = float(np.max(np.abs(np.asarray(first_new_target) - prev))) if prev is not None else float('nan')
+        path = self.results_csv_path.rsplit('.csv', 1)[0] + '_boundaries.csv'
+        new = not os.path.exists(path) or self._boundary_file_fresh
+        with open(path, 'w' if new else 'a', newline='') as f:
+            w = csv.writer(f)
+            if new:
+                w.writerow(['trial', 'step', 'hold_ticks', 'jump_rad'])
+            w.writerow([self._trial_idx + 1, self._step_count, self._hold_ticks, round(jump, 6)])
+        self._boundary_file_fresh = False
+
     def _finish_trial(self, success, xy_error_mm=-1.0):
         """Logs one trial's outcome, then either wraps up the eval run (all
         n_trials done) or requests a scene reset and starts the next trial."""
@@ -511,7 +574,8 @@ class VLAPolicyClient(Node):
         blowup = self._trial_max_cube_z > CONTACT_BLOWUP_CUBE_Z_M
         with open(self.results_csv_path, 'a', newline='') as f:
             csv.writer(f).writerow([self._trial_idx, success, self._step_count, xy_error_mm,
-                                    round(sampled_max_z, 4), round(per_tick_max_z, 4), int(blowup), self.execute_horizon])
+                                    round(sampled_max_z, 4), round(per_tick_max_z, 4), int(blowup), self.execute_horizon,
+                                    self.chunk_delay, self.chunk_delay_mode, self._hold_ticks])
         if self._trial_max_cube_z > CONTACT_BLOWUP_CUBE_Z_M:
             self.get_logger().warn(
                 f'trial {self._trial_idx}: the cube reached z={self._trial_max_cube_z:.2f} m (a normal episode '
@@ -537,6 +601,8 @@ class VLAPolicyClient(Node):
         if self._horizon_schedule:
             self.execute_horizon = self._horizon_schedule[self._trial_idx % len(self._horizon_schedule)]
         self._step_count = 0
+        self._hold_ticks = 0
+        self._prev_chunk, self._prev_vel, self._prev_pos, self._last_target = None, None, None, None
         self._trial_max_cube_z = 0.0
         self._max_height.start_trial(self._min_epoch)  # 0 unless lockstep (then: ignore pre-reset messages)
         if self._gripper_filter is not None:
