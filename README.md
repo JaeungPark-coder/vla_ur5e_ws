@@ -2816,6 +2816,26 @@ outcomes. Changed now, at 01:57, with training at step 550 and no 6k evaluation 
 * (4) **The decision itself is the n=60 wide-box comparison below** (v3 6k vs v3 3k, 60 pairs, exact McNemar, p < 0.05 and >= 6 more placed for an effect). Strips (33/40 baseline) reported but not used for the verdict.
 * *Prediction:* (1) 17-19/20, (2) slope 0.90-0.97 (little room above 0.93), (4) v3 6k within +-5 of v3 3k on the 60 pairs: **more steps are not the main lever now that the data covers the region**.
 
+### 2026-11-14 10:29: v3 6k results (n=20 boxes; the verdict waits for n=60)
+
+Training 01:09-09:08 (6000 steps, final loss 0.0033-0.0034; v3 3k ended at 0.0037). Evaluations `eval_runs/v3_6k_*`, K=50, same settings and seeds as the v3 3k runs.
+
+| | v3 3k | v3 6k | paired only 3k / only 6k | exact McNemar |
+|---|---|---|---|---|
+| training box (8000-8019) | 16/20 | **19/20** | 1 / 4 | 0.375 |
+| step 2 (8000-8019) | 12/20 | 13/20 | 2 / 3 | 1.00 |
+| +Y strip (9000-9019) | 19/20 | 20/20 | 0 / 1 | 1.00 |
+| -Y strip | 14/20 | 16/20 | 2 / 4 | 0.69 |
+| strips together | 33/40 | 36/40 | 2 / 5 | 0.45 |
+
+Against the re-set criteria:
+* (1) Training box 19/20 meets ">= 19/20 = recovered" -- but only 4 vs 1 discordant pairs (p = 0.375); not a confirmed effect at n=20.
+* (2) Tracking slope at the close on the strips: 0.93 -> **0.88** (paired bootstrap of the difference -0.045, 95 % [-0.13, +0.06]); lateral miss median -13.5 -> -17.8 mm. **No change** (the -0.05 "worse" threshold is not reached and the interval spans 0).
+  Per tick: 0.12/0.28/0.48/0.75/0.84/0.85 (t50-t300) vs 0.14/0.31/0.50/0.74/0.89/0.90.
+* (3) X < 0.42 in step 2: v3 3k 5/10, v3 6k 3/10 (v2 3k 3/10). Edge (X >= 0.42, |Y| > 0.10) 2/4 -> 4/4, centre 5/6 -> 6/6. All too few to read.
+* Failure classes: strips v3 3k pushed 3, lifted 2, blow-up 2 -> v3 6k pushed 3, runaway 1; training box v3 6k: one push.
+* Prediction (1) 17-19/20 held (at the top), (2) 0.90-0.97 missed slightly low (0.88, within noise). Every box moved up by 1-3 placements, none significantly: consistent with "more steps help a little, if at all"; the n=60 run decides (4).
+
 ### 2026-11-14: n=60 wide box, v2 3k / v3 3k / v3 6k + expert -- prediction written BEFORE the run
 
 * Cache guard (after the second missing-variable incident): `scripts/lib_cache_env.sh` exports the three cache variables and refuses to start unless they are set, exist, are off the root disk and pi0_base is under
