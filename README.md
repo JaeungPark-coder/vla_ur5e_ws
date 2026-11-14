@@ -3283,9 +3283,20 @@ The per-region miss medians all lie between -13 and +6 mm (table in the script o
   * **Primary:** the paired |lateral error| at the first close (|grip Y - spawn Y|) vs `none`, as a median of differences with a bootstrap CI. Also the signed world-Y error, for the camera shifts.
   * **Secondary:** placed (McNemar vs none) and outcome classes.
 * **Rule:** a factor is **weak** if placed <= 11/15, or the paired |error| increase is > 10 mm with the CI above 0. If any real-world-relevant factor (light, ground, camera) is weak, visual randomization data becomes the next reinforcement candidate.
+  * **This is a screening test.** 4 vs 0 discordant pairs is McNemar p=0.125. A factor found weak here is confirmed with more trials in the next step before it is acted on.
+* **Failure modes:** added before the run, at the reviewer's request; the two have different causes.
+  * Every failed trial is split into one of three modes:
+    * **no-descent:** before the first close the grip point never came below 60 mm.
+    * **lateral-miss:** it descended but closed > 15 mm sideways from the cube, or never closed.
+    * **later:** it descended and closed within 15 mm, then failed (slip, drop, place error).
+  * No-descent would point to a lost height/distance cue, possibly the grid lines of the ground; lateral-miss to a lost position cue.
 
 **Disclosure.** A 1-trial bridge smoke run (`ground_grey`, +Y strip, seed 9900, not an evaluation seed) was looked at before this prediction was written.
-* It **failed**: the arm hovered ~0.15 m above the cube from tick ~200 to the step limit and never descended. The images are in `eval_results/visual_check/smoke_ground_grey_seed9900.png`.
+* It **failed**. The images are in `eval_results/visual_check/smoke_ground_grey_seed9900.png`.
+  * The arm hovered ~0.15 m above the cube from tick ~200 to ~800.
+  * It then came down only to ~0.10 m, ~40 mm beside the cube, and closed the gripper in the air (tick 914).
+  * It carried nothing to the target; its lowest point, 0.036 m, was over the target.
+  * *Corrected after the prediction was posted:* the first description said "hovered from tick ~200 to the step limit and never descended", which was wrong about the second half. The prediction is unchanged.
 * It is n=1, in another region, but it informed the ground prediction below.
 
 *Prediction*

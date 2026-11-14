@@ -23,6 +23,23 @@ CONDS = ["none", "light05", "light2", "tint", "ground_grey", "ground_wood", "cub
          "wrist3", "wrist8"]
 
 
+def failure_mode(cond, seed, row):
+    """Failed trials only (added before the run, reviewer request): 'no-descent' = before the first close (gripper > 0.5; the
+    whole trial if it never closed) the grip point never came below 60 mm (cube top 40 mm; the smoke trial hovered at ~150 mm,
+    then closed in the air at ~100 mm and went to the target empty -- its lowest point was AT the target, hence 'before the
+    first close'); 'lateral-miss' = it descended but closed > 15 mm sideways from the cube or never closed; 'later' = descended
+    and closed within 15 mm, failed afterwards (slip, drop, place error)."""
+    run = "lat_d0_centre" if cond.startswith("lat_d0") else f"vis_{cond}"
+    z = np.load(os.path.join(os.path.dirname(HERE), "eval_runs", run, "trace", f"trial_{seed - 9200 + 1:03d}.npz"))
+    grip = z["grip_point"].astype(float)
+    c = np.nonzero(z["gripper"].astype(float) > 0.5)[0]
+    upto = c[0] + 1 if len(c) else len(grip)
+    if np.nanmin(grip[:upto, 2]) > 0.06:
+        return "no-descent"
+    err = abs(row["close_y"] - row["y"]) if np.isfinite(row["close_y"]) else np.inf
+    return "lateral-miss" if err > 0.015 else "later"
+
+
 def main():
     rng = np.random.default_rng(0)
     res = {c: load(f"vis_{c}", 9200) for c in CONDS}
@@ -40,7 +57,13 @@ def main():
         cls = {}
         for s in ss:
             cls[rows[s]["cls"]] = cls.get(rows[s]["cls"], 0) + 1
-        o = {"placed": k, "n": len(ss), "abs_err_median": float(np.nanmedian(err)), "signed_err_median": float(np.nanmedian(sgn)), "classes": cls}
+        fm = {}
+        for s in ss:
+            if not rows[s]["ok"]:
+                fm[failure_mode(c, s, rows[s])] = fm.get(failure_mode(c, s, rows[s]), 0) + 1
+        o = {"placed": k, "n": len(ss), "abs_err_median": float(np.nanmedian(err)), "signed_err_median": float(np.nanmedian(sgn)), "classes": cls,
+             "failure_modes": fm}
+        cls = {**cls, **{f"fail:{m}": v for m, v in fm.items()}}
         line = f"{c:22s} {k:2d}/{len(ss)}   {np.nanmedian(err):6.1f}    {np.nanmedian(sgn):+7.1f}        "
         kk = [s for s in ss if s in base]
         if c != "none" and base and len(kk) >= 10:
