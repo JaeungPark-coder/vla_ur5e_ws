@@ -3420,7 +3420,7 @@ All 12 runs completed 15/15 trials. Every perturbation is confirmed in its `brid
 * The two successes and the two lateral misses are the trials where the arm did come down: close heights 41-134 mm, vs 91-159 for ground_grey.
 * All three predictions held.
 
-**So the policy reads height and distance from the perspective of the floor lines.** In a scene with nothing else on the floor, they are the only depth cue. A real table has no such lines. For v4 this means:
+**So the policy reads height and distance from the perspective of the floor lines.** This is **shortcut learning**: the policy picked up a feature that predicts the right action in every training and evaluation scene (the simulator's grid floor), instead of the cues that carry over to other scenes (the cube's apparent size, its shadow, the gripper's position relative to it). The shortcut was invisible to every evaluation so far, because all of them used the same floor. It was found in simulation, before the real robot, by a one-factor visual screening followed by a controlled separation (lines vs colour, with a texture-swap control). In a scene with nothing else on the floor, the lines are the only depth cue. A real table has no such lines. For v4 this means:
 * the grid family with random spacing and orientation is not enough on its own; the solid, wood and noise families force a cue other than lines;
 * the held-out set should test a line-free unseen ground as well as patterned ones. H2 (dots) and the in-family solid grounds partly do that. Adding a plain held-out colour outside the solid family's range is a possible amendment, for the reviewer to decide.
 
@@ -3478,6 +3478,40 @@ All 12 runs completed 15/15 trials. Every perturbation is confirmed in its `brid
 * **Lights, tint, cube colours:** unchanged, not weak.
 
 **Time.** Code (procedural textures, collection hook, image check; ~2 h), collection (2 collectors, ~350 attempts at ~51 s, ~2.5-4 h), norm stats (~1 h), 3k training (~4 h), evaluation (~4-6.5 h). Collection and training hold both GPUs, so no evaluation runs during them.
+
+#### v4 amendment after the grid result and the reviewer's reply (still before any v4 data; supersedes the items it names)
+
+1. **Held-out H0: a plain, line-free ground of the lab table's colour.** This is the most important test.
+   * H1-H3 all have lines or edges, so they keep a perspective cue; v3 might pass them, and they would not show whether v4 dropped the shortcut.
+   * A plain unseen ground shows it directly, and the real table is exactly such a ground.
+   * Its colour is excluded from every sampled training colour (sRGB distance < 0.12, `ground_textures.EXCLUDE_DIST`). The exclusion covers solid, grid background, wood and noise colours; grid line colours are not excluded.
+2. **Evaluation: core only (~4.3 h),** at the reviewer's call. Light, cube colour and camera were not weak for v3 and are not re-run now.
+   * **A.** Base scene stratified, 6 regions x 15, K=50: v4 3k, paired with v3 3k.
+   * **C.** Held-out H0-H3, centre, K=25: v4 3k and v3 3k.
+   * **Ground conditions:** ground_grey, ground_wood and nogrid, centre, K=25: v4 3k, paired with the v3 6k runs.
+3. **Decision rule (replaces the "Effect" bullet):**
+   * **H0, judged on its own:** v4 >= 11/15, AND exact McNemar vs v3 3k on the same seeds p < 0.05, AND no-descent <= 2/15. v4 must be clearly better than v3 here.
+   * **H1-H3 pooled:** v4 >= 30/45, and not more than 3 below v3 3k pooled.
+   * **Base scene:** the no-regression rule is unchanged (>= 74/90; paired miss CI upper end < +5 mm vs v3 3k).
+   * **Effect = all three.**
+     * H0 passes but the base scene regresses: 6k is the next candidate (underfitting).
+     * H0 passes but H1-H3 fail: partial; report as such.
+     * H0 fails: randomization did not remove the shortcut.
+4. **Prediction (added):**
+   * **v3 3k:** H0 0-3/15, mostly no-descent, like ground_grey and nogrid; H1-H3 pooled 5-35/45 (uncertain, because lines and edges are present).
+   * **v4 3k:** H0 10-15/15; H1-H3 28-42/45; base scene 74-84/90; ground_grey / ground_wood / nogrid 12-15/15 each.
+5. **Two more training-sampling rules:**
+   * Ground colours within 25° of red hue with saturation > 0.45 are redrawn, so the red cube stays distinguishable from the floor.
+   * Every texture is periodic over a 2 m tile with orientation from the material's `texture_rotate`, so there are no seams. The grid family's lines are drawn without the original's glow (emission off for all procedural grounds).
+6. **One intervention.** The camera jitter (+-3 cm, +-3°) counts with ground and lighting as one intervention, "visual randomization". The frame 0-1 fix stays a disclosed second change.
+
+**Implementation check (before collection).**
+* Image check: `isaac/render_random_scenes.py`, 16 random scenes + H1-H3 + an H0 placeholder + restore. All families render as drawn; restore returns the original grid.
+* 3-episode smoke collection (`vla_ur5e_ws/v4_smoke`, throwaway):
+  * 3 saved of 5 attempts. The 2 rejections were blow-ups in the wide box; v3's collection had 9 % blow-ups, so n=5 says nothing yet, and the rate is watched in the real run.
+  * The episode -> spec log is written.
+  * **Frame 0 now shows the episode's own ground and cube.** Each episode has a different ground, so a stale frame would be obvious. Frame 0-2 vs frame 5 differ by 7-8 (base) and 3-12 (wrist) grey levels, from arm motion only.
+* Pipeline: `scripts/v4_pipeline.sh` runs collection (152 + 150 on two GPUs, visual seeds 401-404), merge, norm stats, the 3k recipe (config `pi0_ur5e_pick_place_v4` in openpi, identical to v3 except name and repo id, checked programmatically) and the core evaluation, unattended.
 
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 

@@ -14,6 +14,10 @@ a (0.8, 0.1, 0.1) cube, a green target marker, fixed cameras. A spec string chan
                          recoloured, nothing else of the material changes. Separates "grid lines" from "ground colour".
     nogrid=1             the grid lines removed, colour kept: diffuse = flat background colour, line emission = 0.
                          `gridcolor` + `nogrid` = a flat ground of that colour through the same material.
+    heldout=1            held-out evaluation ground k (isaac/ground_textures.py: 1 checker, 2 dots, 3 stripes; 0 = plain solid,
+                         needs h0=r:g:b, the lab table colour) through the same material, emission off.
+    randomize(scene, rng, exclude) draws one v4 training scene (ground family texture, light, tint, base camera shift,
+                         wrist tilt), applies it, and returns a JSON-able dict for the episode log.
 
     e.g. "light=0.5" or "basecam=0:0.03:0,wristtilt=3". Empty / "none" = unchanged.
 Applied after the scene's first reset (the cube prim exists then). All of these are USD attributes, which a world.reset()
@@ -42,7 +46,7 @@ def parse(spec):
         k, v = item.split("=", 1)
         vals = [float(x) for x in v.split(":")]
         out[k.strip()] = vals[0] if len(vals) == 1 else vals
-    unknown = set(out) - {"light", "tint", "ground", "cube", "basecam", "wristtilt", "gridcolor", "nogrid"}
+    unknown = set(out) - {"light", "tint", "ground", "cube", "basecam", "wristtilt", "gridcolor", "nogrid", "heldout", "h0"}
     if unknown:
         raise ValueError(f"unknown visual perturbation keys {sorted(unknown)}")
     return out
@@ -105,6 +109,9 @@ def restore(scene):
         sh = UsdShade.Shader(st.GetPrimAtPath(GRID_SHADER_PATH))       # do not resolve when re-set from the root layer,
         for n, v in _defaults["grid_tex"].items():                     # so the resolved (absolute) originals go back in
             sh.GetInput(n).Set(Sdf.AssetPath(v.resolvedPath))
+        sh.GetInput("enable_emission").Set(True)
+        if sh.GetInput("texture_rotate"):
+            sh.GetInput("texture_rotate").Set(0.0)
         _defaults["grid_changed"] = False
 
 
@@ -196,7 +203,56 @@ def apply(scene, spec):
         for n, path in paths.items():
             sh.GetInput(n).Set(Sdf.AssetPath(os.path.abspath(path)))
         _defaults["grid_changed"] = True
+    if "heldout" in p:
+        import ground_textures as gt
+        k = int(p["heldout"])
+        img, rot, _ = gt.heldout_texture(k, p.get("h0"))
+        tag = f"heldout{k}" + ("_" + "_".join(f"{x:.3f}" for x in p["h0"]) if k == 0 else "")
+        set_ground_image(scene, img, rot, os.path.join(TEX_CACHE, tag + ".png"), reuse=True)
     return p
+
+
+def set_ground_image(scene, img, rotate_deg, path, reuse=False):
+    """Puts one procedural tile (ground_textures.py, float 0-1) on the grid material: diffuse texture, emission off (the
+    original's glowing lines belong to its own texture), rotation by the material's texture_rotate (seamless tiling).
+    A new `path` per image: the renderer caches textures by path."""
+    import ground_textures as gt
+    _capture(scene)
+    if not (reuse and os.path.exists(path)):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        Image.fromarray(gt.to_uint8(img)).save(path)
+    sh = UsdShade.Shader(scene.stage.GetPrimAtPath(GRID_SHADER_PATH))
+    sh.GetInput("diffuse_texture").Set(Sdf.AssetPath(os.path.abspath(path)))
+    sh.GetInput("enable_emission").Set(False)
+    (sh.GetInput("texture_rotate") or sh.CreateInput("texture_rotate", Sdf.ValueTypeNames.Float)).Set(float(rotate_deg))
+    _defaults["grid_changed"] = True
+
+
+_random_files = []
+_rand_count = [0]
+
+
+def randomize(scene, rng, exclude=None):
+    """One v4 training scene (README "v4 ... design"): ground family texture + lights x log-U[0.5, 2] + dome tint U[0.75, 1]
+    per channel + base camera shift U[-3, 3] cm per axis + wrist tilt U[-3, 3] deg. Returns the episode log dict."""
+    import ground_textures as gt
+    light = float(np.exp(rng.uniform(np.log(0.5), np.log(2.0))))
+    tint = rng.uniform(0.75, 1.0, 3)
+    cam = rng.uniform(-0.03, 0.03, 3)
+    tilt = float(rng.uniform(-3.0, 3.0))
+    spec = (f"light={light:.4f},tint={tint[0]:.4f}:{tint[1]:.4f}:{tint[2]:.4f},"
+            f"basecam={cam[0]:.4f}:{cam[1]:.4f}:{cam[2]:.4f},wristtilt={tilt:.3f}")
+    apply(scene, spec)                                        # restores everything first, then the numeric factors
+    img, rot, params = gt.random_texture(rng, exclude)
+    _rand_count[0] += 1
+    path = os.path.join(TEX_CACHE, "random", f"{os.getpid()}_{_rand_count[0]:05d}.png")
+    set_ground_image(scene, img, rot, path)
+    _random_files.append(path)
+    while len(_random_files) > 3:                             # keep disk use bounded; the renderer has loaded older ones
+        old = _random_files.pop(0)
+        if os.path.exists(old):
+            os.remove(old)
+    return dict(spec=spec, ground=params)
 
 
 def describe(p):

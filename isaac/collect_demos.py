@@ -109,7 +109,8 @@ def max_attempts_for(num_episodes: int) -> int:
 
 
 def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_m: float = 0.03,
-            overwrite: bool = False, max_cube_z_m: float = 0.25):
+            overwrite: bool = False, max_cube_z_m: float = 0.25, reset_renders: int = 0, visual_random: bool = False,
+            visual_exclude_rgb=None, visual_seed=None, visual_log=None):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.utils.constants import HF_LEROBOT_HOME
 
@@ -200,6 +201,18 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
         raise RuntimeError(
             "preflight check failed -- refusing to collect:\n  " + "\n  ".join(problems))
 
+    # 2026-11-15 (v4): per-episode visual randomization (isaac/visual_perturbation.randomize, README "v4 ... design") and the
+    # frame 0-1 fix (`reset_renders` renders after every reset, before the first recorded frame -- the evaluation's converged
+    # first frame, VLA_BRIDGE_RESET_RENDERS=30; without them the first frames show the previous episode).
+    vis_rng = np.random.default_rng(visual_seed)
+    if visual_random:
+        import json
+        import visual_perturbation as vp
+        visual_log = visual_log or str(output_path) + "_episode_visuals.jsonl"
+        open(visual_log, "w").close()
+        print(f"visual randomization ON (exclude {visual_exclude_rgb}, seed {visual_seed}), log {visual_log}", flush=True)
+    print(f"reset_renders={reset_renders}", flush=True)
+
     attempted = 0
     n_success = 0
     place_errors = []
@@ -218,6 +231,11 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
                 f"GRIPPER_OPEN_POS/GRIPPER_CLOSED_POS match this gripper's real joint limits.")
 
         obs = scene.reset()
+        vis = vp.randomize(scene, vis_rng, visual_exclude_rgb) if visual_random else None
+        for _ in range(reset_renders):
+            scene.world.render()
+        if vis is not None or reset_renders:
+            obs = scene.get_observation()
         policy = ScriptedPickPlace(obs["tool_pos"], scene.cube_position, PLACE_TARGET_POSITION)
         diffik_start, diffik_end = policy.diffik_frame_range()
         settle3_end = policy.settle3_end_tick()
@@ -291,6 +309,10 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
         if lifted and placed and not blown_up:
             dataset.save_episode()
             n_success += 1
+            if vis is not None:
+                with open(visual_log, "a") as f:
+                    f.write(json.dumps(dict(episode_index=n_success - 1, attempt=attempted,
+                                            cube=np.round(scene.cube_position, 4).tolist(), **vis)) + "\n")
             place_errors.append(place_error)
             outcome = "OK"
         else:
@@ -391,6 +413,17 @@ def main():
                              "permanent dataset means a NEW repo_id + a separate "
                              "`lerobot-edit-dataset --operation.type merge` step, not rerunning "
                              "this with the same --repo_id.")
+    parser.add_argument("--reset_renders", type=int, default=0,
+                        help="renders after every reset before the first recorded frame (v4: 30, the evaluation's converged "
+                             "first frame; 0 = the old behaviour, whose first frames show the previous episode)")
+    parser.add_argument("--visual_random", action="store_true",
+                        help="v4: draw a random visual scene per attempt (visual_perturbation.randomize) and log it per saved episode")
+    parser.add_argument("--visual_exclude_rgb", type=float, nargs=3, default=None,
+                        help="the held-out plain ground colour (sRGB 0-1): no sampled ground colour comes within "
+                             "ground_textures.EXCLUDE_DIST of it")
+    parser.add_argument("--visual_seed", type=int, default=None)
+    parser.add_argument("--visual_log", type=str, default=None,
+                        help="episode -> visual spec JSONL (default: <dataset dir>_episode_visuals.jsonl)")
     args = parser.parse_args()
     import pick_place_scene as _pps
     if args.x_range:
@@ -403,7 +436,8 @@ def main():
     # Kit's fastShutdown, which kills the process before Python can report an
     # escaping exception, making a crash look like a clean exit.
     try:
-        collect(args.num_episodes, args.repo_id, args.push_to_hub, args.place_tolerance_m, args.overwrite, args.max_cube_z_m)
+        collect(args.num_episodes, args.repo_id, args.push_to_hub, args.place_tolerance_m, args.overwrite, args.max_cube_z_m,
+                args.reset_renders, args.visual_random, args.visual_exclude_rgb, args.visual_seed, args.visual_log)
     except BaseException:
         import traceback
         print("\n=== FAILED ===\n" + traceback.format_exc(), flush=True)
