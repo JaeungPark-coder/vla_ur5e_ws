@@ -3615,6 +3615,48 @@ All 12 runs completed 15/15 trials. Every perturbation is confirmed in its `brid
   2. **Base scene at K=25** for v4 and v3 3k (2 x 1.5 h): K=25 is already the intended deployment K. D1 hints that v4 does better there; one region is not enough.
   3. **The original glowing grid as a training family**, since the base scene is now an unseen ground for v4. Matters only for the simulator benchmark, not for the real table.
 
+### 2026-11-16: K=25 additional evaluation -- design and prediction, written BEFORE these runs
+
+**Why.** The pre-set verdict for v4 ("not an effect", base scene 54/90 vs 78/90 at K=50) **stands and is not rewritten**. This is an additional evaluation, added after the results, at the reviewer's call. Two things made the base-scene comparison a poor answer to its own question ("did randomization hurt the basic skill?"):
+* **K:**
+  * the base scene was run at K=50, to match the earlier stratified runs;
+  * every other ground was run at K=25, the standard set after the latency runs;
+  * at the centre, v4 on the original ground got 9 and 11/15 at K=50, and 14/15 at K=25.
+* **Fairness:** the original glowing grid is a training scene for v3 and an unseen ground for v4. This cannot be removed. It is noted, and it argues that a remaining gap at K=25 is an upper bound on the harm.
+
+**Runs.** Stratified 6 regions x seeds 9200-9214, converged frame, K=25. About 16 min per region, 18 runs, ~4.8 h.
+
+| set | model | ground | output |
+|---|---|---|---|
+| E1 | v4 3k | original | `strat_k25_v4_3k_<region>` |
+| E2 | v3 3k | original | `strat_k25_v3_3k_<region>` |
+| E3 | v4 3k | **H0**, plain (0.85, 0.85, 0.83) | `strat_h0_k25_v4_3k_<region>` |
+
+v3 is not run on H0: 0/15 at the centre.
+
+**Measures.**
+* Primary: **|lateral miss| at the first close**. It is absolute this time, because of the sign mistake in the earlier rule. Compared as the paired median difference, bootstrap 95 %.
+* Secondary: placed, McNemar, failure classes, close height.
+
+**Decision rule (fixed now).**
+* **E1 vs E2, no harm at K=25:**
+  * v4 placed >= v3 3k placed - 4 (of 90);
+  * AND paired |miss| difference v4 - v3, CI upper end < +5 mm.
+* **E3, the table-like ground across the box:**
+  * v4 >= 74/90;
+  * AND no region below 10/15;
+  * AND no-descent <= 3 of 90.
+* **Branches:**
+  * Both pass: v4 3k becomes the deployment candidate (replacing v3 6k), and the next step is real-robot preparation.
+  * Either fails on lateral precision (|miss| or pushes): v4 6k, the pre-set next candidate.
+  * E3 fails by no-descent: the shortcut is not fully gone away from the centre. Report it; this changes the plan more than 6k would.
+
+**Prediction.**
+* **E2:** v3 3k 74-84/90. At the centre, v3 6k did not change from K=50 to K=25, and the latency runs found K=25 4 mm better.
+* **E1:** v4 70-84/90, |miss| within +5 mm of v3: pass, leaning. The K=25 centre run (14/15) suggests most of the K=50 drop goes away. The 4 blow-ups and 3 runaways may remain.
+* **E3:** 68-84/90, no-descent <= 2. The corners are the risk.
+* **Confidence:** low to moderate for E1, low for E3. Away from the centre, nothing on an unseen ground has been measured yet.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
