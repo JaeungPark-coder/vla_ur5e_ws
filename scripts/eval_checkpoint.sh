@@ -21,7 +21,8 @@ grep -q "server listening" "$OUT/server.log" || { echo "server did not start, se
 # the norm stats must belong to the config (v3 weights with v2 statistics would be a silent mistake): print the lines and stop on a mismatch
 grep "Loaded norm stats from" "$OUT/server.log"
 case "$POLICY_CONFIG" in
-  *_v3) grep "Loaded norm stats from" "$OUT/server.log" | grep -q "ur5e_pick_place_v3" || { echo "WRONG norm stats for $POLICY_CONFIG, see $OUT/server.log"; exit 1; } ;;
+  *_v[0-9]*) v="${POLICY_CONFIG##*_}"   # pi0_ur5e_pick_place_vN must load ur5e_pick_place_vN statistics (v4 was missing here, 2026-11-15)
+        grep "Loaded norm stats from" "$OUT/server.log" | grep -q "ur5e_pick_place_${v}/" || { echo "WRONG norm stats for $POLICY_CONFIG, see $OUT/server.log"; exit 1; } ;;
   *)    grep "Loaded norm stats from" "$OUT/server.log" | grep -q "ur5e_pick_place_v2" || { echo "unexpected norm stats for $POLICY_CONFIG, see $OUT/server.log"; exit 1; } ;;
 esac
 ( cd "$OPENPI" && uv run --no-sync python "$REPO/scripts/warmup_policy_server.py" 2>&1 | tail -3 )

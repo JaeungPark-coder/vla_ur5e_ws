@@ -10,6 +10,9 @@ export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$BIG/hf_cache/datasets}"
 export OPENPI_DATA_HOME="${OPENPI_DATA_HOME:-$BIG/openpi_cache}"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-$BIG/uv_cache}"
 export PYTHONUNBUFFERED=1
+# Every dataset is local (linked under ~/.cache/huggingface/lerobot). Offline mode keeps lerobot/openpi from asking the Hub,
+# which fails once the stored token expires (2026-11-15: v4 norm stats got a 401 instead of a clear "not found locally").
+export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 
 require_cache_env() {
     local bad=0 v d

@@ -39,19 +39,33 @@ wait $A; ra=$?; wait $B; rb=$?
 
 # ---- 2. merge -> vla_ur5e_ws/ur5e_pick_place_v4, link as Jaeung12/ur5e_pick_place_v4 -------------------------------------
 DS=$HF_LEROBOT_HOME/vla_ur5e_ws/ur5e_pick_place_v4
-if [ -f "$DS/meta/info.json" ]; then
+# meta/info.json is written when the merge STARTS, so completion is marked separately (.merge_ok).  A failed merge leaves a
+# partial $DS that must be removed by hand before a rerun.
+# The merge reads every source parquet through `datasets`, which writes ~95 GB of arrow copies that nothing uses afterwards
+# (the disk filled on 2026-11-15).  It gets its own cache directory, deleted when the merge ends, successful or not.
+MERGE_CACHE=/media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/hf_cache/merge_tmp_datasets_cache
+if [ -f "$DS/.merge_ok" ]; then
     say "merge already done -- skipped"
 else
-    say "merge start"
-    HF_HUB_OFFLINE=1 /home/icrs/bigdisk/conda_envs/env_isaaclab/bin/lerobot-edit-dataset --repo_id vla_ur5e_ws/ur5e_pick_place_v4 \
-        --operation.type merge \
+    [ -e "$DS" ] && { say "partial merge output $DS exists -- remove it first"; exit 1; }
+    say "merge start (free on big disk: $(df -h --output=avail "$HF_LEROBOT_HOME" | tail -1))"
+    mkdir -p "$MERGE_CACHE"
+    HF_HUB_OFFLINE=1 HF_DATASETS_CACHE="$MERGE_CACHE" /home/icrs/bigdisk/conda_envs/env_isaaclab/bin/lerobot-edit-dataset \
+        --repo_id vla_ur5e_ws/ur5e_pick_place_v4 --operation.type merge \
         --operation.repo_ids "['vla_ur5e_ws/v4_old_a','vla_ur5e_ws/v4_old_b','vla_ur5e_ws/v4_wide_a','vla_ur5e_ws/v4_wide_b']" \
-        > eval_runs/collect/v4_merge.log 2>&1 || { say "merge FAILED"; exit 1; }
+        > eval_runs/collect/v4_merge.log 2>&1; rc=$?
+    rm -rf /media/icrs/0549ec1c-684e-41a5-beca-53599cda1267/hf_cache/merge_tmp_datasets_cache
+    say "merge arrow cache removed (free: $(df -h --output=avail "$HF_LEROBOT_HOME" | tail -1))"
+    [ $rc -eq 0 ] || { say "merge FAILED"; exit 1; }
+    python3 -c "import json,sys;d=json.load(open('$DS/meta/info.json'));sys.exit(d['total_episodes']!=302)" \
+        || { say "merged episode count is not 302"; exit 1; }
+    touch "$DS/.merge_ok"
 fi
 python3 -c "import json;d=json.load(open('$DS/meta/info.json'));print('merged episodes',d['total_episodes'],'frames',d['total_frames'])"
 cat $HF_LEROBOT_HOME/vla_ur5e_ws/v4_{old_a,old_b,wide_a,wide_b}_episode_visuals.jsonl > eval_runs/collect/v4_episode_visuals_all.jsonl
 LINK=$HOME/.cache/huggingface/lerobot/Jaeung12/ur5e_pick_place_v4
 [ -e "$LINK" ] || ln -s "$DS" "$LINK"
+unset HF_LEROBOT_HOME   # from here on (openpi training, serving) the default lookup through $LINK is used, as for v3
 
 # ---- 3. norm stats --------------------------------------------------------------------------------------------------------
 NS="$OPENPI_DIR/assets/pi0_ur5e_pick_place_v4/Jaeung12/ur5e_pick_place_v4/norm_stats.json"
@@ -59,7 +73,8 @@ if [ -f "$NS" ]; then
     say "norm stats already done -- skipped"
 else
     say "norm stats start"
-    (cd "$OPENPI_DIR" && uv run --no-sync python "$REPO/scripts/compute_norm_stats_workers.py" pi0_ur5e_pick_place_v4 --workers 32 \
+    # openpi must NOT inherit HF_LEROBOT_HOME (set above for collection): it finds Jaeung12/... via ~/.cache/huggingface/lerobot
+    (cd "$OPENPI_DIR" && env -u HF_LEROBOT_HOME uv run --no-sync python "$REPO/scripts/compute_norm_stats_workers.py" pi0_ur5e_pick_place_v4 --workers 32 \
         > "$REPO/eval_runs/collect/norm_stats_v4.log" 2>&1)
     [ -f "$NS" ] || { say "norm stats FAILED"; exit 1; }
 fi
@@ -70,7 +85,7 @@ if [ -d "$OPENPI_DIR/$CK" ]; then
     say "training already done -- skipped"
 else
     say "v4 3k training start"
-    (cd "$OPENPI_DIR" && CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run --no-sync scripts/train.py pi0_ur5e_pick_place_v4 \
+    (cd "$OPENPI_DIR" && env -u HF_LEROBOT_HOME CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run --no-sync scripts/train.py pi0_ur5e_pick_place_v4 \
         --exp-name=v4_3k --num-train-steps=3000 --lr-schedule.decay-steps=3000 --lr-schedule.warmup-steps=300 --save-interval=1000 \
         --keep-period=3000 --log-interval=50 --num-workers=16 --no-wandb-enabled > "$OPENPI_DIR/v4_3k.log" 2>&1)
     say "v4 3k training ended"
@@ -92,4 +107,13 @@ done
 VIS_SET=v4core V4_H0="$H0" VIS_CKPT="$CK" VIS_CONFIG=pi0_ur5e_pick_place_v4 VIS_TAG=_v4_3k scripts/visual_eval_driver.sh
 VIS_SET=heldout V4_H0="$H0" VIS_CKPT=checkpoints/pi0_ur5e_pick_place_v3/v3_3k/2999 VIS_CONFIG=pi0_ur5e_pick_place_v3 VIS_TAG=_v3_3k \
     scripts/visual_eval_driver.sh
-say "v4 pipeline finished"
+# every evaluation must have its 15 rows; a run that stops early (2026-11-15: a norm-stats check unaware of v4 made all 13 v4 runs
+# exit in seconds) must not end as "finished"
+short=""
+for d in $(for r in $REGIONS; do echo "strat_v4_3k_${r%%:*}"; done) vis_v4_3k_{heldout0,heldout1,heldout2,heldout3,ground_grey,ground_wood,nogrid} \
+         vis_v3_3k_{heldout0,heldout1,heldout2,heldout3}; do
+    n=$(($(wc -l < "eval_runs/$d/results.csv" 2>/dev/null || echo 1) - 1))
+    [ "$n" -ge 15 ] || short="$short $d($n)"
+done
+[ -z "$short" ] || { say "evaluation INCOMPLETE:$short"; exit 1; }
+say "v4 pipeline finished (all 17 evaluations have 15 rows)"
