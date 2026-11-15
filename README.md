@@ -3481,7 +3481,7 @@ All 12 runs completed 15/15 trials. Every perturbation is confirmed in its `brid
 
 #### v4 amendment after the grid result and the reviewer's reply (still before any v4 data; supersedes the items it names)
 
-1. **Held-out H0: a plain, line-free ground of the lab table's colour.** This is the most important test.
+1. **Held-out H0: a plain, line-free ground of the lab table's colour, white / light grey: sRGB (0.85, 0.85, 0.83)** (the user's answer). This is the most important test.
    * H1-H3 all have lines or edges, so they keep a perspective cue; v3 might pass them, and they would not show whether v4 dropped the shortcut.
    * A plain unseen ground shows it directly, and the real table is exactly such a ground.
    * Its colour is excluded from every sampled training colour (sRGB distance < 0.12, `ground_textures.EXCLUDE_DIST`). The exclusion covers solid, grid background, wood and noise colours; grid line colours are not excluded.
