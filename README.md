@@ -3513,6 +3513,108 @@ All 12 runs completed 15/15 trials. Every perturbation is confirmed in its `brid
   * **Frame 0 now shows the episode's own ground and cube.** Each episode has a different ground, so a stale frame would be obvious. Frame 0-2 vs frame 5 differ by 7-8 (base) and 3-12 (wrist) grey levels, from arm motion only.
 * Pipeline: `scripts/v4_pipeline.sh` runs collection (152 + 150 on two GPUs, visual seeds 401-404), merge, norm stats, the 3k recipe (config `pi0_ur5e_pick_place_v4` in openpi, identical to v3 except name and repo id, checked programmatically) and the core evaluation, unattended.
 
+#### 2026-11-16: v4 diagnostic, written AFTER the core results were seen (disclosed), BEFORE these two runs
+
+**Seen so far** (full write-up follows when the diagnostic is in):
+* Held-out H0 14/15 vs v3 3k 0/15, H1-H3 43/45 vs 0/45, ground conditions 14-15/15. All centre, K=25.
+* Base scene (stratified, K=50): 54/90 vs v3 3k 78/90, centre 9/15. By the pre-set rule: base regression, so not an effect.
+
+**The gap to explain.** v4 places 14-15/15 on 7 different grounds at the centre with K=25, and 9/15 at the centre of the original scene with K=50. Two things differ:
+* **K=50 vs K=25:** a less-fitted policy may need the more frequent replanning.
+  * For v3 the K change made little difference: v3 6k gets 15/15 at K=25 on `vis_none` and 14/15 at K=50 on strat centre.
+* **The original ground:** v4 never trained on it. Its grid has glowing (emissive) lines; the procedural grid family has none. So for v4 it may be an unseen ground of a kind it handles worse.
+
+**Two runs, centre, seeds 9200-9214, converged frame:**
+
+| run | ground | K | separates |
+|---|---|---|---|
+| D1 `vis_v4_3k_none` | original | 25 | the original ground at K=25 |
+| D2 `vis_v4_3k_ground_grey_k50` | ground_grey (training family) | 50 | K=50 on a ground v4 handles |
+
+**Reading:**
+* D1 high and D2 low: K=50 is the cause.
+* D1 low and D2 high: the original ground is the cause.
+* Both low: an interaction, or run-to-run noise in the 9/15.
+* Both high: the strat 9/15 is not reproduced. The next check is the strat centre at K=25.
+
+**Prediction:** D1 13-15/15, D2 7-11/15, i.e. K=50 is the cause. Confidence: low to moderate. A partly-fitted policy relying on closed-loop correction fits the fact that v4's base-scene failures are mostly pushes and lifts (pushed 19, lifted 7), not no-descent.
+
+**Result (04:22-04:53):**
+* D1 (original ground, K=25): 14/15, 1 blow-up.
+* D2 (ground_grey, K=50): 13/15, 1 push, 1 lift.
+* Both high: the strat-centre 9/15 is not reproduced. The prediction for D2 (7-11) was wrong.
+* D1 already is the "strat centre at K=25" check. The bridge treats `VLA_BRIDGE_VISUAL=none` as unset, and the seeds and spawn box are the same.
+* D1 vs strat centre, same seeds: McNemar 0/5, p=0.06.
+
+**Follow-up R1, written before it runs:** a replicate of the strat centre run, K=50, set up exactly like the pipeline (`strat_v4_3k_centre_rep`).
+* R1 <= 10/15: original ground and K=50 interact. K=50 hurts v4 only on the ground it never trained on.
+* R1 >= 12/15: the 9/15 was mostly run-to-run variation. pi0 samples its flow-matching noise, so runs are not deterministic. That variation is then the main uncertainty in the 54/90 too.
+* Prediction: 10-14/15, leaning toward variation. Confidence: low.
+
+**What it changes:**
+* The pre-set verdict stands either way.
+* The diagnostic only says what to try next:
+  * K=25 as the deployment K, which is already the standard;
+  * 6k training (the pre-set next candidate);
+  * or adding the original-style glowing grid to the training families.
+
+### 2026-11-16: v4 (visual randomization) -- results
+
+**Run:**
+* Collection: 302 episodes from 340 attempts, 18 blow-ups (5.3 %; v3: 9 %). Visual randomization does not touch physics, so this difference is chance or another factor, not a v4 property.
+* The 3k recipe: final loss 0.0044 at step 2950 (v3 3k: 0.0037). Norm stats equal v3's to the third decimal.
+* Core evaluation 22:08-04:19, after one restart: the v4 runs first exited in seconds on a norm-stats check that did not know v4 (fixed in `eval_checkpoint.sh`).
+* Analysis: `scripts/v4_analysis.py`, `eval_results/v4_analysis.json`. Per-episode ground specs: `eval_results/v4_episode_visuals_all.jsonl`.
+
+**Results by the pre-set rule, in its order:**
+
+| part | v4 3k | v3 3k | test | rule | verdict | prediction |
+|---|---|---|---|---|---|---|
+| **Base scene**, 6 regions x 15, K=50 | **54/90** | 78/90 | McNemar 27/3, p<1e-4 | >= 74 | **FAIL** | 74-84 ✗ |
+| base scene, signed miss (+ = away from centre line), median | -18.3 mm | -10.7 mm | paired -8.0 [-14.1, -0.6] | CI upper < +5 | passes as written, but see below | ±3 ✗ |
+| **H0** plain, lab table colour | **14/15** | **0/15** | McNemar 0/14, p=1e-4; no-descent 0 | >= 11, p<0.05, no-descent <= 2 | **PASS** | v4 10-15 ✓, v3 0-3 ✓ |
+| **H1-H3** pooled | **43/45** | **0/45** | H1 14 vs 0, H2 15 vs 0, H3 14 vs 0 | >= 30, not > 3 below v3 | **PASS** | v4 28-42 (just above), v3 5-35 ✗ (below) |
+| ground_grey / ground_wood / nogrid (vs v3 6k) | 14 / 14 / 15 | (v3 6k: 0 / 0 / 2) | McNemar 0/14, 0/14, 0/13 | -- | -- | 12-15 each ✓ |
+
+**Verdict: not an effect**, because the base scene regressed.
+* The rule for this case is "held-out passes but the base scene regresses: 6k is the next candidate".
+* **Mis-specified criterion (found while writing this up, disclosed):** the miss criterion "paired CI upper end < +5 mm" has the wrong sign.
+  * In this measure, + means away from the centre line. The bad direction is negative, i.e. short of the cube toward the centre (v2's -40 to -50 mm).
+  * By |miss| v4 is worse by **+7.3 mm [+1.4, +12.8]** (medians 19.3 vs 12.3 mm).
+  * The verdict does not change, since the placed count fails anyway.
+
+**What the held-out results show.**
+* **v4 no longer uses the grid lines.**
+  * On a plain unseen ground of the table colour v4 places 14/15, with the close at 42 mm (= cube height). v3 3k places 0/15.
+  * The same holds on all 3 patterned held-out grounds and on all 3 earlier ground conditions.
+* v3 3k failed differently from the prediction: on H0-H3 mostly **lateral misses** (55 of 60), not no-descent.
+  * Close heights are 45-174 mm (H0 53 mm), so on the plain ground v3 did come down to about cube height, but in the wrong place.
+  * The ground change breaks v3's lateral reference as well as its height reference.
+
+**The base-scene regression.**
+* v4 does come down on the original scene (close height median 42 mm, same as v3). The failures are lateral:
+  * pushed 19, lifted 7, untouched 3;
+  * 4 blow-ups and 3 runaways (v3 3k: 0).
+* The pushes close 30-55 mm short toward the centre line.
+
+**Diagnostic (designed after the core results, above): what the regression is made of.**
+
+| run (centre, same seeds) | ground | K | placed |
+|---|---|---|---|
+| strat centre (core) | original | 50 | 9/15 |
+| R1, strat centre replicate | original | 50 | 11/15 |
+| D1 | original | 25 | 14/15 |
+| D2 | ground_grey | 50 | 13/15 |
+
+* **R1 = 11/15 falls between the pre-stated bands** (<= 10 interaction, >= 12 variation), so it decides neither.
+  * Pooled, original ground at K=50 is 20/30, vs 14/15 at K=25 and 13/15 for grey at K=50.
+  * Seeds 9200, 9202 and 9203 fail in both K=50 replicates (9203 is a blow-up both times), so part of it is seed-specific, not only sampling noise.
+* **The centre is only one of six regions.** The regression is spread out: v4 vs v3 3k per region is 9/13, 11/15, 7/11, 12/14, 6/13, 9/12. negY_corner (6/15) and negY_strip (7/15) are the worst.
+* What is open, and needs the reviewer's call:
+  1. **v4 6k** (the pre-set next candidate, ~4 h training + 1.5 h strat): tests underfitting. Visual variety makes the same 302 episodes harder to fit; the final loss is 19 % above v3's.
+  2. **Base scene at K=25** for v4 and v3 3k (2 x 1.5 h): K=25 is already the intended deployment K. D1 hints that v4 does better there; one region is not enough.
+  3. **The original glowing grid as a training family**, since the base scene is now an unseen ground for v4. Matters only for the simulator benchmark, not for the real table.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
