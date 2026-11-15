@@ -262,6 +262,74 @@
   ],
   "weak": false
  },
+ "gridrebuilt": {
+  "placed": 15,
+  "n": 15,
+  "abs_err_median": 1.6743203830187972,
+  "signed_err_median": 0.9560098904023533,
+  "classes": {
+   "placed": 15
+  },
+  "failure_modes": {},
+  "abs_err_diff": [
+   -0.016254123533267162,
+   -0.6020848604507482,
+   1.3538937308654813
+  ],
+  "mcnemar": [
+   0,
+   0,
+   1.0
+  ],
+  "weak": false
+ },
+ "gridgrey": {
+  "placed": 15,
+  "n": 15,
+  "abs_err_median": 4.9915077182973775,
+  "signed_err_median": 0.41647368461250267,
+  "classes": {
+   "placed": 15
+  },
+  "failure_modes": {},
+  "abs_err_diff": [
+   1.6201659916217777,
+   -1.2046728090702938,
+   2.430234220003131
+  ],
+  "mcnemar": [
+   0,
+   0,
+   1.0
+  ],
+  "weak": false
+ },
+ "nogrid": {
+  "placed": 2,
+  "n": 15,
+  "abs_err_median": 48.334856191140915,
+  "signed_err_median": 48.334856191140915,
+  "classes": {
+   "untouched": 11,
+   "pushed": 2,
+   "placed": 2
+  },
+  "failure_modes": {
+   "no-descent": 11,
+   "lateral-miss": 2
+  },
+  "abs_err_diff": [
+   42.70076371823556,
+   28.633899328680453,
+   49.25458790150927
+  ],
+  "mcnemar": [
+   13,
+   0,
+   0.000244140625
+  ],
+  "weak": true
+ },
  "lat_d0 (earlier run)": {
   "placed": 15,
   "n": 15,
@@ -273,7 +341,7 @@
   "failure_modes": {},
   "abs_err_diff": [
    2.804651610785789,
-   -1.843695333218383,
+   -0.829286932763792,
    4.166949635620415
   ],
   "mcnemar": [

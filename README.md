@@ -3400,6 +3400,85 @@ All 12 runs completed 15/15 trials. Every perturbation is confirmed in its `brid
 * **gridgrey:** not weak, >= 11/15, |error| change <= 10 mm.
 * **Confidence: moderate.** "Both weak" is the main alternative, because grey changes most pixels of both images in hue.
 
+### 2026-11-15: grid lines or ground colour? -- results
+
+| condition | placed | \|err\| med | paired \|err\| diff vs none [95 %] | McNemar | failure modes | close height med (range) | grip-cube offset at close dX / dY | verdict | prediction |
+|---|---|---|---|---|---|---|---|---|---|
+| none | 15/15 | 2.5 | -- | -- | -- | 41 mm (40-43) | +2.0 / -0.5 | -- | -- |
+| gridrebuilt (control) | 15/15 | 1.7 | -0.0 [-0.6, +1.4] | 0/0 | -- | 40 (40-42) | +2.0 / +1.0 | ok | 14-15, <= 3 mm ✓ |
+| **gridgrey** (grey, lines kept) | **15/15** | 5.0 | **+1.6 [-1.2, +2.4]** | 0/0 | -- | 41 (40-43) | -0.3 / +0.4 | **ok** | not weak ✓ |
+| **nogrid** (blue, lines removed) | **2/15** | 48.3 | **+42.7 [+28.6, +49.3]** | **13/0, p=2e-4** | no-descent 11, lateral-miss 2 | 90 (41-134) | -11.9 / +48.3 | **WEAK** | weak, 0-8 ✓ |
+| ground_grey (earlier; colour and lines changed) | 0/15 | 35.7 | +32.6 | 15/0 | no-descent 15 | 114 (91-159) | -12.1 / +35.7 | WEAK | -- |
+
+**The grid lines are the cue, not the ground colour.**
+* The control equals none: the texture swap itself changes nothing.
+* With the lines kept, a grey ground is as good as the original blue: 15/15, +1.6 mm.
+* With the lines removed and the colour kept, the policy fails as on the grey and wood grounds:
+  * closes in the air;
+  * the same offset toward the robot (dX ≈ -12 mm) and toward +Y (+48 mm);
+  * still tracks the cube laterally (slope 0.88 vs 0.93).
+* The two successes and the two lateral misses are the trials where the arm did come down: close heights 41-134 mm, vs 91-159 for ground_grey.
+* All three predictions held.
+
+**So the policy reads height and distance from the perspective of the floor lines.** In a scene with nothing else on the floor, they are the only depth cue. A real table has no such lines. For v4 this means:
+* the grid family with random spacing and orientation is not enough on its own; the solid, wood and noise families force a cue other than lines;
+* the held-out set should test a line-free unseen ground as well as patterned ones. H2 (dots) and the in-family solid grounds partly do that. Adding a plain held-out colour outside the solid family's range is a possible amendment, for the reviewer to decide.
+
+### 2026-11-15: v4 (visual randomization) -- design and prediction written BEFORE any v4 data exists
+
+**Question.** v3 uses the ground's appearance as its height and position reference: both ground changes gave 0/15, all no-descent. A real table has no simulated grid. Does per-episode visual randomization at collection time remove this shortcut, without losing the unperturbed scene?
+
+**What changes.**
+1. **Visual randomization (the one intended change).** Before each episode one random visual spec is drawn and applied (`visual_perturbation.py`) and logged to a sidecar `episode_visuals.jsonl` (episode index -> spec).
+   * **Ground** (the weak factor), one of four families with equal probability:
+     * *solid:* a random colour (HSV, any hue, S 0-0.8, V 0.15-0.95).
+     * *grid:* random background and line colours, minimum contrast ΔV >= 0.15; line spacing 5-40 cm; line width 2-10 mm; random orientation 0-90°.
+     * *wood:* procedural grain (noisy stripes and rings), brown/tan palette with random hue, value and stripe scale.
+     * *noise:* multi-scale value noise between two random colours.
+     * All of these go through the existing grid material (OmniPBR, world-projected, emission off), so the ground mesh, shading and lighting path stay the same.
+   * **Lighting:** all intensities x log-uniform [0.5, 2]; dome colour a random tint with each channel in [0.75, 1].
+   * **Cameras:** base camera translated uniform +-3 cm per axis; wrist camera tilt uniform +-3°.
+   * **Cube colour: unchanged**, as it was not a weak factor.
+2. **Frame 0-1 fix (a second change, disclosed).** After every reset (and after the visual spec is applied), 30 renders run before the first frame is recorded. This is the same converged-frame rule as the evaluation (`VLA_BRIDGE_RESET_RENDERS=30`). Until now the first frames showed the previous episode. The effect should be small and points toward the evaluation condition.
+3. **Kept the same as v3:**
+   * Spawn distribution: **152 episodes in X 0.42-0.48 x |Y| <= 0.10** (v3's v2 part) + **150 in X 0.38-0.48 x Y +-0.16**, unseeded, successes only, blow-ups excluded.
+   * Everything else: expert, prompt, place tolerance, cube colour.
+   * All 302 episodes are re-collected in randomized scenes; no v3 episode is reused.
+   * The 3k recipe; a new repo id `ur5e_pick_place_v4` and config `pi0_ur5e_pick_place_v4`, with norm stats recomputed.
+   * The original blue grid is not deliberately included; the grid family can land near it by chance.
+
+**Held-out grounds (fixed now; never used in training).** These are families the randomization cannot produce. A real table is an unseen ground; these stand in for it.
+* **H1 checkerboard:** 8 cm squares, beige (0.85, 0.82, 0.75) / mid grey (0.45). Not a family in training.
+* **H2 polka dots:** 3 cm white dots on 7 cm spacing, on dark green (0.15, 0.35, 0.20).
+* **H3 wide stripes:** 4 cm stripes at 50 % duty, 30°, navy / orange. Outside the grid family's line width (2-10 mm).
+
+`ground_grey` and `ground_wood` from the visual table become *in-family* checks: solid and wood are training families.
+
+**Evaluation (three parts).**
+* **A. Base scene, no regression.** Stratified 6 regions x seeds 9200-9214, K=50, converged frame, exactly as the stratified runs (~1.5 h). Paired with v3 3k (same recipe) and v3 6k.
+* **B. The visual conditions.** The 12 conditions of the visual table plus gridgrey/nogrid, at the centre, K=25, seeds 9200-9214 (~3.5 h). Paired with the v3 6k runs, which equal v3 3k on the base scene; v3 3k is also run on ground_grey for a recipe-matched reference.
+* **C. Held-out grounds H1-H3.** Centre, K=25, same seeds. Both v4 3k and v3 3k are run (6 runs, ~1.5 h); v3 3k is expected near 0.
+* About 6.5 h of evaluation, more than the 3 h estimate. A+C+ground is the core (~4 h); the rest of B can be cut if time matters.
+
+**Decision rule (fixed now).**
+* **No regression on the base scene:** v4 3k placed >= 74/90 (v3 3k: 78) AND paired miss difference vs v3 3k over the 90 trials with the CI's upper end < +5 mm.
+* **Effect:**
+  * held-out H1-H3 pooled >= 30/45 placed with no-descent <= 3;
+  * ground_grey and ground_wood each >= 12/15;
+  * no light or camera condition worse than v3 6k by the weak rule.
+* **v4 counts as an effect only if both hold.**
+* **If held-out passes but the base scene regresses** (placed < 74 or miss CI above +5 mm), the data may be underfit at 3k steps. 6k is then the next candidate, the same recipe with 6000 steps, as the reviewer noted. It is not a claim of no effect.
+* **If held-out fails** (< 20/45): randomization in these families does not transfer to unseen ones. Next: wider families, or real-photo textures.
+
+*Prediction (v4 3k)*
+* **Base scene:** no regression, 74-84/90, paired miss within +-3 mm. Risk of underfitting about 30 %.
+* **ground_grey / ground_wood:** 13-15/15 each.
+* **Held-out H1-H3:** pooled 28-42/45. H1 (checkerboard: strong lines in a new arrangement) is the hardest.
+* **basecam6:** the |error| increase falls to <= 6 mm (the ±3 cm jitter covers half of it). **wrist8:** <= 6 mm.
+* **Lights, tint, cube colours:** unchanged, not weak.
+
+**Time.** Code (procedural textures, collection hook, image check; ~2 h), collection (2 collectors, ~350 attempts at ~51 s, ~2.5-4 h), norm stats (~1 h), 3k training (~4 h), evaluation (~4-6.5 h). Collection and training hold both GPUs, so no evaluation runs during them.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
