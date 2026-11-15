@@ -14,6 +14,9 @@ V36=checkpoints/pi0_ur5e_pick_place_v3/v3_6k/5999
 # name|spec
 CONDITIONS="none|none light05|light=0.5 light2|light=2 tint|tint=1.0:0.8:0.6 ground_grey|ground=0.15:0.15:0.15 ground_wood|ground=0.7:0.55:0.35
 cube_dark|cube=0.5:0.05:0.05 cube_orange|cube=0.9:0.35:0.1 basecam3|basecam=0:0.03:0 basecam6|basecam=0:0.06:0.03 wrist3|wristtilt=3 wrist8|wristtilt=8"
+# grid lines vs ground colour follow-up (README "grid lines or ground colour?"):  VIS_SET=grid scripts/visual_eval_driver.sh
+[ "${VIS_SET:-}" = grid ] && CONDITIONS="gridrebuilt|gridcolor=0.278:0.451:0.584 gridgrey|gridcolor=0.424:0.424:0.424
+nogrid|gridcolor=0.278:0.451:0.584,nogrid=1"
 for c in $CONDITIONS; do
     IFS='|' read -r name spec <<< "$c"
     echo "$(date +%H:%M) $name ($spec) start"

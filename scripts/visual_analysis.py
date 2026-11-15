@@ -20,7 +20,7 @@ from n60_analysis import mcnemar  # noqa: E402
 from strat_analysis import boot_median_diff, load  # noqa: E402
 
 CONDS = ["none", "light05", "light2", "tint", "ground_grey", "ground_wood", "cube_dark", "cube_orange", "basecam3", "basecam6",
-         "wrist3", "wrist8"]
+         "wrist3", "wrist8", "gridrebuilt", "gridgrey", "nogrid"]
 
 
 def failure_mode(cond, seed, row):

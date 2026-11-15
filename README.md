@@ -3358,6 +3358,48 @@ All 12 runs completed 15/15 trials. Every perturbation is confirmed in its `brid
 * wrist8 was within its range.
 * The overall call held: the ground is the weak factor.
 
+### 2026-11-15: grid lines or ground colour? -- design and prediction written BEFORE the run
+
+**Question.** Both ground conditions changed the colour and removed the grid lines at once. Which of the two did the policy use as its height and position reference? The reviewer asked for this separation before v4: v4 randomizes both anyway, but knowing the shortcut matters for explaining the result.
+
+**How.**
+* The default ground is an OmniPBR material ("theGrid") with three textures (`isaac/dump_ground_material.py` prints them):
+  * the diffuse `Wireframe_blue.png`: exactly two colours, dark blue (16, 44, 76) and white lines;
+  * a 16-bit line-glow emission;
+  * a blurred blue/white emission mask.
+* `visual_perturbation.py` gains two keys that rewrite these textures and change nothing else of the material:
+  * **`gridcolor=r:g:b`** replaces the background colour and keeps the lines. Each pixel's line weight is its blend fraction from blue to white.
+  * **`nogrid=1`** removes the lines: the diffuse becomes flat background and the line emission is zero.
+* The textures are generated from the originals at run time into `eval_runs/ground_textures/` (git-ignored).
+* **Calibration** (image check, no policy):
+  * The renderer decodes the original texture differently from a rewritten one, so the original blue (16, 44, 76) rewritten renders navy.
+  * The rewritten colour that renders like the original is (71, 115, 149), i.e. the original values read as linear.
+  * Ground patches with it: base (150, 197, 217) vs none (145, 195, 217); wrist (138, 191, 214) vs (140, 191, 215). Image means 192.1 / 160.5 vs 190.6 / 160.1.
+  * The grey with lines (108, the sRGB of 0.15) renders like the earlier `ground_grey`: image mean 190 vs 187.
+  * `restore()` returns the original textures; `none` renders the same before and after (190.6 / 189.9).
+
+| name | spec | what it is |
+|---|---|---|
+| gridgrey | gridcolor=0.424:0.424:0.424 | grey ground (like ground_grey), grid lines kept |
+| nogrid | gridcolor=0.278:0.451:0.584,nogrid=1 | original blue, grid lines removed |
+| gridrebuilt | gridcolor=0.278:0.451:0.584 | **control:** rewritten textures, original blue and lines. Should equal none; if not, the texture swap itself is a confound and the two above cannot be read |
+
+* **Setup:** the same as the visual-variation runs: v3 6k, K=25, centre, seeds 9200-9214, converged frame, paired with `vis_none`. 3 runs, ~45 min.
+* **Rule:** the same weak rule.
+* **Reading:**
+  * nogrid weak and gridgrey not weak: the lines are the cue.
+  * The reverse: the colour is the cue.
+  * Both weak: the ground's appearance as a whole is the cue.
+  * Neither weak: the combination is needed, i.e. either cue alone is enough.
+
+*Prediction*
+* **gridrebuilt:** 14-15/15, |error| change <= 3 mm.
+* **nogrid:** weak, 0-8/15, failures mostly no-descent.
+  * The failure was a lost height reference. Perspective lines on the floor are the only height and distance cue in an otherwise uniform scene.
+  * Brightness and colour-cast changes (light x0.5 / x2, tint) did not hurt, which argues against colour as such.
+* **gridgrey:** not weak, >= 11/15, |error| change <= 10 mm.
+* **Confidence: moderate.** "Both weak" is the main alternative, because grey changes most pixels of both images in hue.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).

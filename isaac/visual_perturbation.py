@@ -9,13 +9,22 @@ a (0.8, 0.1, 0.1) cube, a green target marker, fixed cameras. A spec string chan
     cube=0.5:0.05:0.05   cube display colour
     basecam=0:0.03:0     base camera moved by (dx:dy:dz) m, orientation unchanged (a re-mounted camera, not re-aimed)
     wristtilt=5          wrist camera tilted down by this many degrees (set_wrist_camera_flange_rotation's down_tilt_deg)
+    gridcolor=0.42:0.42:0.42   the grid ground's background colour (sRGB 0-1), grid lines kept: the grid material's own textures
+                         (OmniPBR, Wireframe_blue.png = dark blue (16,44,76) + white lines, plus a glowing-line emission) are
+                         recoloured, nothing else of the material changes. Separates "grid lines" from "ground colour".
+    nogrid=1             the grid lines removed, colour kept: diffuse = flat background colour, line emission = 0.
+                         `gridcolor` + `nogrid` = a flat ground of that colour through the same material.
 
     e.g. "light=0.5" or "basecam=0:0.03:0,wristtilt=3". Empty / "none" = unchanged.
 Applied after the scene's first reset (the cube prim exists then). All of these are USD attributes, which a world.reset()
 (Stop+Play) does not touch, so they hold for every trial of the run. `restore(scene)` puts the defaults back (for the
 image check that renders several variants in one process).
 """
+import io
+import os
+
 import numpy as np
+from PIL import Image
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdShade
 
 import pick_place_scene as pps
@@ -33,7 +42,7 @@ def parse(spec):
         k, v = item.split("=", 1)
         vals = [float(x) for x in v.split(":")]
         out[k.strip()] = vals[0] if len(vals) == 1 else vals
-    unknown = set(out) - {"light", "tint", "ground", "cube", "basecam", "wristtilt"}
+    unknown = set(out) - {"light", "tint", "ground", "cube", "basecam", "wristtilt", "gridcolor", "nogrid"}
     if unknown:
         raise ValueError(f"unknown visual perturbation keys {sorted(unknown)}")
     return out
@@ -67,6 +76,8 @@ def _capture(scene):
     g = _ground_prim(st)
     _defaults["ground_prim"] = g
     _defaults["ground_binding"] = UsdShade.MaterialBindingAPI(g).GetDirectBinding().GetMaterial()
+    sh = st.GetPrimAtPath(GRID_SHADER_PATH)
+    _defaults["grid_tex"] = {n: UsdShade.Shader(sh).GetInput(n).Get() for n in GRID_TEX_INPUTS} if sh.IsValid() else {}
 
 
 def restore(scene):
@@ -90,6 +101,53 @@ def restore(scene):
                else "") == GROUND_MATERIAL_PATH:
             cb.UnbindDirectBinding()
     scene.set_wrist_camera_flange_rotation(pps.WRIST_CAMERA_FLANGE_ROT_EULER, down_tilt_deg=pps.WRIST_CAMERA_DOWN_TILT_DEG)
+    if _defaults.get("grid_changed"):        # only if apply() swapped them; the authored relative paths ("./Materials/...")
+        sh = UsdShade.Shader(st.GetPrimAtPath(GRID_SHADER_PATH))       # do not resolve when re-set from the root layer,
+        for n, v in _defaults["grid_tex"].items():                     # so the resolved (absolute) originals go back in
+            sh.GetInput(n).Set(Sdf.AssetPath(v.resolvedPath))
+        _defaults["grid_changed"] = False
+
+
+GRID_SHADER_PATH = "/World/defaultGroundPlane/Looks/theGrid/Shader"
+GRID_TEX_INPUTS = ("diffuse_texture", "emissive_color_texture", "emissive_mask_texture")
+GRID_BG = np.array([16, 44, 76], float)          # the only non-line colour of Wireframe_blue.png (checked: 2 unique colours)
+TEX_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "eval_runs", "ground_textures")   # git-ignored
+
+
+def _read_original(name):
+    """(PIL image, raw bytes) of an original grid texture."""
+    import omni.client
+    v = _defaults["grid_tex"][name]
+    res, _, content = omni.client.read_file(v.resolvedPath)
+    if res != omni.client.Result.OK:
+        raise RuntimeError(f"cannot read {v.resolvedPath}: {res}")
+    raw = memoryview(content).tobytes()
+    return Image.open(io.BytesIO(raw)), raw
+
+
+def _grid_textures(bg, lines):
+    """Writes recoloured copies of the grid textures and returns {input: path}. bg: background sRGB 0-255 (3,); lines: keep
+    them (True) or remove them (False). The line weight t of a pixel is its blend fraction from the blue background to
+    white (exact 0/1 in the diffuse texture, blurred in the emission mask); the new pixel is bg*(1-t) + 255*t."""
+    tag = f"bg{int(bg[0])}_{int(bg[1])}_{int(bg[2])}_{'lines' if lines else 'nolines'}"
+    d = os.path.join(TEX_CACHE, tag)
+    paths = {n: os.path.join(d, n + ".png") for n in GRID_TEX_INPUTS}
+    if all(os.path.exists(p) for p in paths.values()):
+        return paths
+    os.makedirs(d, exist_ok=True)
+    for n in ("diffuse_texture", "emissive_mask_texture"):
+        im, _ = _read_original(n)                 # 8-bit RGB / RGBA with an embedded sRGB ICC profile: both kept, since
+        a = np.asarray(im).astype(float)           # the renderer's colour-space choice follows the file
+        rgb = a[..., :3]
+        t = np.clip(((rgb - GRID_BG) / (255.0 - GRID_BG)).mean(-1, keepdims=True), 0, 1) if lines else 0.0
+        a[..., :3] = bg * (1 - t) + 255.0 * t
+        Image.fromarray(np.round(a).astype(np.uint8), im.mode).save(paths[n], icc_profile=im.info.get("icc_profile"))
+    em, raw = _read_original("emissive_color_texture")                  # 16-bit line glow, 0 off the lines
+    if lines:
+        open(paths["emissive_color_texture"], "wb").write(raw)          # unchanged, byte for byte
+    else:
+        Image.fromarray(np.zeros(np.asarray(em).shape, np.uint16)).save(paths["emissive_color_texture"])
+    return paths
 
 
 def _ground_material(stage, rgb):
@@ -129,6 +187,15 @@ def apply(scene, spec):
     if "wristtilt" in p:
         scene.set_wrist_camera_flange_rotation(pps.WRIST_CAMERA_FLANGE_ROT_EULER,
                                                down_tilt_deg=pps.WRIST_CAMERA_DOWN_TILT_DEG + p["wristtilt"])
+    if "gridcolor" in p or "nogrid" in p:
+        if not _defaults["grid_tex"]:
+            raise RuntimeError("no grid material at " + GRID_SHADER_PATH)
+        bg = np.round(np.array(p["gridcolor"], float) * 255) if "gridcolor" in p else GRID_BG
+        paths = _grid_textures(bg, lines=not p.get("nogrid", 0))
+        sh = UsdShade.Shader(st.GetPrimAtPath(GRID_SHADER_PATH))
+        for n, path in paths.items():
+            sh.GetInput(n).Set(Sdf.AssetPath(os.path.abspath(path)))
+        _defaults["grid_changed"] = True
     return p
 
 
