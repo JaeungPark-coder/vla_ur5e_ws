@@ -4163,6 +4163,35 @@ The "posY" regions in world coordinates lie at negative Y on the pendant, on the
 * The base view shows no gripper in v5 at this pose, because it points along the now-horizontal wrist_3 axis, away from the camera behind the wrist. The side camera still renders only the far floor (`set_camera_view` did not take); the numbers carry the verdict.
 * Disclosed: the measurement was fixed twice after seeing void results. Each time the negative control (v4) exposed the fault, and the pass rule (≤ 2 mm) and the validity bar (v4 ≥ 100 mm) were not changed.
 
+#### 2026-11-17: table-press test -- design and prediction, written BEFORE the run (reviewer's request)
+
+**Why.**
+* All 5 v5 pilot failures, and the v4 6k blow-ups, look alike: the open hand comes down beside the cube, lower than the data, and the cube is flung 0.7-1.6 m.
+* On the real robot a finger pressing the table stops the arm or nudges the cube. In the sim it ends in a physics blow-up, so the sim punishes the same mistake far more harshly than reality.
+* This must be fixed before the v5 data is made, because the data and the evaluation inherit it.
+
+**Test.** `isaac/table_press_test.py`, deterministic, no policy.
+* Cube at (0.45, 0). The hand points tool-down with the gripper commanded open, moved by the expert's own controller (`step_towards`, RMPflow, v5 speed cap).
+* Motion per case: approach 200 ticks -> descend 150 -> hold 180 -> drag +6 cm in y 120 -> lift 120.
+* Nine cases (grip point relative to the cube centre; z above the table):
+  * table beside the cube, cube clear: dx −7 cm, z −1 and −2 cm;
+  * pilot geometry: dx −22 mm, z +2 / 0 / −1 cm;
+  * the same offset along y: dy −22 mm, z +2 / −1 cm;
+  * straddling the cube 1 and 2 cm too deep.
+* Every tick is judged with the evaluation's blow-up criteria (`vla_bridge/blowup_criteria.py`). Also logged: max one-tick jump, cube displacement per phase, lowest grip point reached.
+* Run on v5 (the target), then v4 for reference. Output: `eval_results/table_press/<profile>/table_press.json`.
+
+**Reading.**
+* A case "explodes" if it trips any blow-up criterion.
+* "Real-like" means the cube stays put or is pushed smoothly (max one-tick jump ≤ 8 mm, the cube's depenetration cap) and ends within the drag distance.
+* If any case explodes, the contact settings are tuned against this test before the v5 collection: contact/rest offsets, max depenetration velocity, solver iterations.
+* The tuned settings must then keep the expert's success, re-checked with a smoke run.
+
+**Prediction.**
+* Table beside the cube, cube clear: no blow-up (the cube is not touched).
+* Pilot geometry and straddle −2 cm: at least one blow-up, most likely in the hold or drag phase.
+* Confidence low on where exactly; the pilot traces show the fling after a long low hover, not at first contact.
+
 #### 2026-11-17 02:21: v5 PILOT results -- PIPELINE TEST, NOT FOR CONCLUSIONS
 
 `eval_runs/v5_pilot/driver.log`, `eval_results/v5_pilot/pilot_check.json`, evaluation `eval_runs/v5pilot_1k_centre`.
