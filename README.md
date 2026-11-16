@@ -3735,6 +3735,34 @@ v3 is not run on H0: 0/15 at the centre.
 
 ### 2026-11-16 (night): v4 6k -- results: both bars FAIL, v4 3k stays; v5 uses 3k
 
+#### 2026-11-17: code-contamination recheck of the 6k evaluation -- design written BEFORE the run
+
+**The question is wider than the 20:31 client edit.**
+* The whole 6k evaluation (20:05-23:43) ran on code after `71b02fe` (15:08). That commit is the v5 code: `pick_place_scene.py` +121 lines, bridge +8, plus the client changes of `5996482`.
+* The 3k comparison runs E1-E3 (05:xx-10:37) ran on code that did not change until 15:08.
+* `71b02fe` claims "default v4 unchanged", but that was checked statically, never in a closed loop.
+* So the 6k-vs-3k difference could be partly code, not model.
+
+**Arm A.**
+* Run v4 6k (`v4_6k/5999`) on H0 centre: seeds 9200-9214, K = 25, `VLA_BRIDGE_RESET_RENDERS=30`, images saved, as in the driver.
+* Use the code of the 3k runs: a git worktree at `a5449c5`. Its isaac/, src/ and scripts/ equal those of 05:00-15:08.
+* Output: `eval_runs/recheck_h0_k25_v4_6k_centre_oldcode`.
+* The original 6k H0 centre run (new code) placed 11/15; its 4 failures were all blow-ups (seeds 9204, 9206, 9208, 9212). v4 3k there placed 15/15.
+* Run-to-run scale: 4 of 20 seeds flip on an identical re-run.
+
+**Reading rule (fixed now).**
+
+| Arm A failures | Reading | Next step |
+|---|---|---|
+| ≥ 3 | Code not implicated; the 6k verdict stands. | none |
+| ≤ 1 | Contamination suspected. | **Arm B:** the same run on the code the original H0 centre stratum ran on (worktree at `03a9c53`; that stratum started 21:51, after the last mid-run edit at 21:01). |
+| 2 | Inconclusive. | Arm B. |
+
+* If Arm B runs:
+  * B ≥ 3 failures, while A ≤ 1: the code is implicated. The 6k results are void until all 12 strata are re-run on the old code.
+  * B ≤ 1: the original 4 failures were run-to-run noise. The verdict stands, but with that caveat.
+* *Prediction:* A shows 2-5 blow-up failures. The blow-ups are a 6k-model trait, also seen on the original ground (1 -> 7). Confidence moderate.
+
 Training finished before 20:05; evaluation 20:05-23:43 (`scripts/v4_6k_driver.sh`, checkpoint `v4_6k/5999` confirmed in `server.log`).
 Analysis: `scripts/k25_analysis.py` (extended with the rule above, unchanged) -> `eval_results/k25_analysis.json`.
 

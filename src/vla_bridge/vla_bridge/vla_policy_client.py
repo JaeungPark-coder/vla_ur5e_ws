@@ -45,7 +45,8 @@ from vla_bridge.safety_limits import SafetyLimits
 
 
 # Same cut-off collect_demos.py filters demonstrations on (normal peak ~0.16 m).
-CONTACT_BLOWUP_CUBE_Z_M = 0.25
+from vla_bridge.blowup_criteria import BLOWUP_Z_M as CONTACT_BLOWUP_CUBE_Z_M  # noqa: E402  (one definition, 2026-11-17)
+from vla_bridge.blowup_criteria import judge_tick, mask_to_reasons, reasons_to_mask  # noqa: E402
 
 class VLAPolicyClient(Node):
     def __init__(self):
@@ -383,6 +384,7 @@ class VLAPolicyClient(Node):
             self._trial_successes = 0
             self._was_holding = False
             self._trial_max_cube_z = 0.0  # see _finish_trial: a cube far above its normal ~0.16 m peak means a contact blow-up
+            self._trial_sampled_mask = 0  # blow-up criteria on the cube positions the client sampled itself
             self._latest_cube_position = None
             self._max_height = MaxHeightTracker()  # lockstep bridge: max cube z over every tick (eval_tracking.py)
             self._eval_reset_pub = self.create_publisher(Empty, '/vla/eval/reset', 10)
@@ -394,7 +396,7 @@ class VLAPolicyClient(Node):
                 callback_group=self._cb_group)
             with open(self.results_csv_path, 'w', newline='') as f:
                 csv.writer(f).writerow(['trial', 'success', 'steps', 'xy_error_mm', 'max_cube_z_sampled', 'max_cube_z_per_tick', 'blowup', 'execute_horizon',
-                                        'delay_ticks', 'delay_mode', 'hold_ticks'])
+                                        'delay_ticks', 'delay_mode', 'hold_ticks', 'blowup_reasons'])
             self._boundary_file_fresh = True   # first boundary row of this run truncates an old <results>_boundaries.csv
             self.get_logger().info(
                 f'eval_mode=true: running {self.n_trials} trials, logging to {self.results_csv_path}')
@@ -457,7 +459,7 @@ class VLAPolicyClient(Node):
 
     def _on_cube_max_z(self, msg: Float32MultiArray):
         if len(msg.data) >= 2:
-            self._max_height.update(msg.data[0], msg.data[1])
+            self._max_height.update(msg.data[0], msg.data[1], msg.data[2] if len(msg.data) >= 3 else 0)
 
     def _run_step(self):
         if self._step_count >= self.max_steps:
@@ -606,6 +608,7 @@ class VLAPolicyClient(Node):
             is_holding = (holding_position >= self.holding_gripper_threshold
                           and self._latest_cube_position[2] > self.lifted_z_threshold)
             self._trial_max_cube_z = max(self._trial_max_cube_z, float(self._latest_cube_position[2]))
+            self._trial_sampled_mask |= reasons_to_mask(judge_tick(self._latest_cube_position))
             self._trial_max_cube_z = max(self._trial_max_cube_z, self._max_height.value)
             xy_error_mm = 1000.0 * float(np.linalg.norm(
                 self._latest_cube_position[:2] - self.eval_target_position[:2]))
@@ -682,16 +685,22 @@ class VLAPolicyClient(Node):
         sampled_max_z = self._trial_max_cube_z
         per_tick_max_z = self._max_height.value
         self._trial_max_cube_z = max(sampled_max_z, per_tick_max_z)
-        blowup = self._trial_max_cube_z > CONTACT_BLOWUP_CUBE_Z_M
+        # blow-up: the bridge trace's per-tick verdict (all five criteria, vla_bridge.blowup_criteria) OR'd with the same
+        # criteria on what the client sampled itself (no `jump` there: one sample per block); before 2026-11-17 only z > 0.25 m
+        mask = self._max_height.blowup_mask | self._trial_sampled_mask
+        if self._trial_max_cube_z > CONTACT_BLOWUP_CUBE_Z_M:
+            mask |= reasons_to_mask(['z_high'])
+        blowup = bool(mask)
         with open(self.results_csv_path, 'a', newline='') as f:
             csv.writer(f).writerow([self._trial_idx, success, self._step_count, xy_error_mm,
                                     round(sampled_max_z, 4), round(per_tick_max_z, 4), int(blowup), self.execute_horizon,
-                                    self.chunk_delay, self.chunk_delay_mode, self._hold_ticks])
-        if self._trial_max_cube_z > CONTACT_BLOWUP_CUBE_Z_M:
+                                    self.chunk_delay, self.chunk_delay_mode, self._hold_ticks,
+                                    '+'.join(mask_to_reasons(mask))])
+        if blowup:
             self.get_logger().warn(
-                f'trial {self._trial_idx}: the cube reached z={self._trial_max_cube_z:.2f} m (a normal episode '
-                f'peaks near 0.16 m) -- most likely a PhysX contact blow-up, not a policy result; consider '
-                f'excluding or re-running it (collect_demos.py drops such episodes at > {CONTACT_BLOWUP_CUBE_Z_M} m).')
+                f'trial {self._trial_idx}: blow-up ({"+".join(mask_to_reasons(mask))}; max cube z '
+                f'{self._trial_max_cube_z:.2f} m, a normal episode peaks near 0.16 m) -- most likely a PhysX contact '
+                f'blow-up, not a policy result (criteria: vla_bridge/blowup_criteria.py).')
         self.get_logger().info(
             f'trial {self._trial_idx}/{self.n_trials}: '
             f'{"SUCCESS" if success else "FAILURE"} (steps={self._step_count}, xy_error_mm={xy_error_mm:.1f}, '
@@ -715,6 +724,7 @@ class VLAPolicyClient(Node):
         self._hold_ticks = 0
         self._prev_chunk, self._prev_vel, self._prev_pos, self._last_target = None, None, None, None
         self._trial_max_cube_z = 0.0
+        self._trial_sampled_mask = 0
         self._max_height.start_trial(self._min_epoch)  # 0 unless lockstep (then: ignore pre-reset messages)
         if self._gripper_filter is not None:
             self._gripper_filter.reset()

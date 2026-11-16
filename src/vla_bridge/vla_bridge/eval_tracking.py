@@ -6,7 +6,8 @@ invisible, and the trial was scored as an ordinary failure. The bridge now keeps
 maximum of the cube's height over EVERY tick and publishes it with each observation on
 /vla/eval/cube_max_z as [epoch, max_z] (std_msgs/Float32MultiArray). `epoch` is the bridge's
 reset counter, so a message produced before the scene was reset for the next trial can never
-count towards that trial.
+count towards that trial.  2026-11-17: a third field carries the trace's blow-up reasons bitmask
+(vla_bridge.blowup_criteria); the tracker ORs it over the trial, so results.csv uses the same verdict as the trace.
 """
 
 
@@ -14,16 +15,19 @@ class MaxHeightTracker:
     def __init__(self):
         self.min_epoch = 0
         self.value = 0.0
+        self.blowup_mask = 0
 
     def start_trial(self, min_epoch):
         """Call when a reset has been requested. Messages from an earlier epoch (the previous
         trial, still being re-published while the reset runs) are ignored from now on."""
         self.min_epoch = int(min_epoch)
         self.value = 0.0
+        self.blowup_mask = 0
 
-    def update(self, epoch, max_z):
-        """Feed one [epoch, max_z] message. Returns True when it counted."""
+    def update(self, epoch, max_z, blowup_mask=0):
+        """Feed one [epoch, max_z(, blowup_mask)] message. Returns True when it counted."""
         if int(epoch) < self.min_epoch:
             return False
         self.value = max(self.value, float(max_z))
+        self.blowup_mask |= int(blowup_mask)
         return True

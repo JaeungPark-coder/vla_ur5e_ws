@@ -117,9 +117,12 @@ class PickPlaceSceneBridge(Node):
         pos = scene.get_cube_position()
         self.eval_cube_position_pub.publish(Point(x=float(pos[0]), y=float(pos[1]), z=float(pos[2]) - TABLE_Z_M))
 
-    def publish_cube_max_z(self, max_z):
+    def publish_cube_max_z(self, max_z, blowup_mask=0):
+        """[epoch, max cube z above the table, blow-up reasons bitmask so far this trial (vla_bridge.blowup_criteria)].
+        The mask (2026-11-17) lets the client's results.csv use the trace's own verdict instead of a height-only one."""
         from pick_place_scene import TABLE_Z_M
-        self.eval_cube_max_z_pub.publish(Float32MultiArray(data=[float(self.reset_count), float(max_z) - TABLE_Z_M]))
+        self.eval_cube_max_z_pub.publish(Float32MultiArray(
+            data=[float(self.reset_count), float(max_z) - TABLE_Z_M, float(int(blowup_mask))]))
 
     def publish_joint_state(self, obs, ack_id):
         """joint_state only (lockstep ticks that need no images)."""
@@ -236,7 +239,8 @@ def main():
               "window will not refresh between requests.", flush=True)
     # Every tick of every trial -> VLA_BRIDGE_TRACE_DIR/trial_NNN.npz + .json (trial_trace.py: cube/grip point/joints/gripper
     # per tick and the blow-up verdict). Unset = no trace.
-    trace = TrialTrace(os.environ.get("VLA_BRIDGE_TRACE_DIR") or None)
+    from pick_place_scene import TABLE_Z_M as _TABLE_Z_M
+    trace = TrialTrace(os.environ.get("VLA_BRIDGE_TRACE_DIR") or None, table_z=_TABLE_Z_M)
     # 2026-11-13: scene.reset() renders once; that first frame still shows the cube at its authored default pose (a faint sliver at
     # one fixed image position, every trial -- README 2026-11-13 late). N render-only passes fix it (30 = clean, 10 leaves a ghost).
     reset_renders = int(os.environ.get("VLA_BRIDGE_RESET_RENDERS", "0") or 0)
@@ -286,7 +290,7 @@ def main():
                     # cube messages BEFORE the observation: the client treats the observation (joint_state) as
                     # the "tick done" signal and reads the cube values right after it
                     bridge.publish_cube_position(scene)
-                    bridge.publish_cube_max_z(tick_max_z)
+                    bridge.publish_cube_max_z(tick_max_z, trace.reasons_mask)
                     bridge.publish_observation(last_obs, ack_id=bridge.gate.last_executed_id)
                     last_republish = time.time()
                 request = bridge.gate.take()
@@ -318,7 +322,7 @@ def main():
                         if save_images:   # the policy's own inputs of this trial, to see later what it saw
                             trace.add_images(trace.ticks, np.asarray(last_obs["base_rgb"])[..., :3], np.asarray(last_obs["wrist_rgb"])[..., :3])
                         bridge.publish_cube_position(scene)
-                        bridge.publish_cube_max_z(tick_max_z)
+                        bridge.publish_cube_max_z(tick_max_z, trace.reasons_mask)
                         tick_max_z = float(scene.get_cube_position()[2])  # start the next window at the current height
                         bridge.publish_observation(last_obs, ack_id=request_id)
                     else:
@@ -328,7 +332,7 @@ def main():
                 elif last_obs is not None and time.time() - last_republish > 0.5:
                     trace.flush_if_dirty()   # the last trial of a run gets no reset after it
                     bridge.publish_cube_position(scene)
-                    bridge.publish_cube_max_z(tick_max_z)   # repeat only: the window is not cleared here
+                    bridge.publish_cube_max_z(tick_max_z, trace.reasons_mask)   # repeat only: the window is not cleared here
                     bridge.publish_observation(last_obs, ack_id=bridge.gate.last_executed_id)
                     last_republish = time.time()
                 continue

@@ -6,50 +6,29 @@ not" but "was it a PhysX contact blow-up", and a later diagnosis (which contact 
 was) must not need the trial to be run again. The bridge therefore records EVERY sim tick of a trial -- cube
 position, grip-point position, joints, gripper -- and judges it with criteria fixed BEFORE the run:
 
-  z_high   cube centre above BLOWUP_Z_M       (a normal episode peaks near 0.16 m; collect_demos drops > 0.25 m)
-  jump     cube moved more than JUMP_M in ONE tick (1.2 m/s at 60 Hz; the arm carries it at 2-4 mm/tick and the
-           cube's maxDepenetrationVelocity is capped at 0.5 m/s = 8 mm/tick, so anything above is not a push)
-  fell     cube centre below FELL_Z_M         (rests at 0.02 m; below the table top = off the edge / through it)
-  far      cube centre farther than FAR_M in the table plane from the task's centre (everything the task uses lies
-           within ~0.3 m of it)
-  nan      a non-finite cube coordinate
+  the criteria live in src/vla_bridge/vla_bridge/blowup_criteria.py (2026-11-17: one definition shared with the client's
+  results.csv column): z_high, jump, fell, far, nan.  Heights are judged relative to the table top (table_z).
 
 `blowup` = any of them. The verdict carries the first tick that tripped, the context at that tick (cube, grip point,
 gripper, joints, previous cube position) and the largest one-tick cube displacement of the whole trial.
 """
 import json
 import os
+import sys
 
 import numpy as np
 
-BLOWUP_Z_M = 0.25
-JUMP_M = 0.02
-FELL_Z_M = 0.0
-FAR_M = 0.5
-TASK_CENTRE_XY = (0.45, 0.10)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "vla_bridge"))
+from vla_bridge.blowup_criteria import (  # noqa: E402,F401  (re-exported: tests and older scripts import them from here)
+    BLOWUP_Z_M, FAR_M, FELL_Z_M, JUMP_M, TASK_CENTRE_XY, judge_tick, reasons_to_mask)
+
 SAVE_EVERY_TICKS = 600
 
 
-def judge_tick(cube, prev_cube):
-    """Reasons ([] = fine) that this tick's cube position trips a criterion."""
-    cube = np.asarray(cube, dtype=float)
-    reasons = []
-    if not np.all(np.isfinite(cube)):
-        return ["nan"]
-    if cube[2] > BLOWUP_Z_M:
-        reasons.append("z_high")
-    if cube[2] < FELL_Z_M:
-        reasons.append("fell")
-    if float(np.hypot(cube[0] - TASK_CENTRE_XY[0], cube[1] - TASK_CENTRE_XY[1])) > FAR_M:
-        reasons.append("far")
-    if prev_cube is not None and float(np.linalg.norm(cube - np.asarray(prev_cube, dtype=float))) > JUMP_M:
-        reasons.append("jump")
-    return reasons
-
-
 class TrialTrace:
-    def __init__(self, out_dir=None):
+    def __init__(self, out_dir=None, table_z=0.0):
         self.out_dir = out_dir
+        self.table_z = float(table_z)   # criteria heights are above the table top
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
         self.epoch = 0
@@ -81,7 +60,7 @@ class TrialTrace:
             self.max_jump = max(self.max_jump, jump)
         if np.isfinite(cube[2]):
             self.max_z = max(self.max_z, float(cube[2]))
-        reasons = judge_tick(cube, self._prev)
+        reasons = judge_tick(cube - [0.0, 0.0, self.table_z], None if self._prev is None else self._prev - [0.0, 0.0, self.table_z])
         for r in reasons:
             self.reasons_seen[r] = self.reasons_seen.get(r, 0) + 1
         if reasons and self.first_trip is None:
@@ -111,6 +90,10 @@ class TrialTrace:
         self.img_base.append(np.array(base_rgb, dtype=np.uint8))
         self.img_wrist.append(np.array(wrist_rgb, dtype=np.uint8))
         self._dirty = True
+
+    @property
+    def reasons_mask(self):
+        return reasons_to_mask(self.reasons_seen)
 
     def summary(self):
         return {
