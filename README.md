@@ -3977,6 +3977,77 @@ From the lab photo (relayed by the reviewer):
 5. **Ready pose:** the 6 joint values from the pendant.
 6. **Is there a Robotiq 2F-85 in the lab?** It would remove the sim gripper swap.
 
+#### 2026-11-16 (night): ready pose, the workspace in the UR base frame, and the v5 GPU checks queued (written before any v5 run)
+
+The RG2 model download is on hold until the Robotiq 2F-85 coupling is checked in the lab tomorrow.
+
+**Ready pose** (`scripts/ready_pose_candidates.py`, `eval_results/ready_pose/candidates_tcp0.16_ursim.json`).
+* **Why:** v1–v4 start every episode at q = 0, with the arm stretched out horizontally. That is a singular pose, and nobody starts a real robot there.
+* **How the candidates are built:**
+  * damped-least-squares IK puts the fingertip at a target with the tool straight down, seeded elbow-up;
+  * from there, every corner of the wide box, its centre (fingertip at the cube centre) and the place point are solved again with the same yaw.
+* **Checks:**
+  * tool axis < 0.5° from down;
+  * elbow bent up, sin q3 > 0.5;
+  * wrist clear, |sin q5| > 0.5;
+  * wrist centre > 0.20 m from the base axis;
+  * all targets reachable on the same IK branch, without coming near a singularity.
+
+| candidate | fingertip target (UR base) | q at TCP 0.16 m (rad) | sin q3 | largest joint move to a target |
+|---|---|---|---|---|
+| A over the spawn box | (-0.45, 0.00, +0.25) | -0.301 -1.701 1.891 -1.762 -1.571 -0.013 | 0.95 | 0.70 rad |
+| **B between spawn and place** | (-0.42, -0.12, +0.25) | -0.032 -1.734 1.920 -1.756 -1.571 -0.015 | 0.94 | 0.71 rad |
+| C pulled back | (-0.32, -0.08, +0.30) | -0.171 -2.034 1.991 -1.528 -1.571 -0.033 | 0.91 | 0.94 rad |
+
+* **All three pass offline and on URSim.** Each candidate visited its ready pose, the 6 targets and its ready pose again, 8 poses in total, by moveJ:
+  * flange vs FK 0.000 mm, tool axis 0.000° from down;
+  * safety mode normal throughout.
+* **The joints depend on the TCP length,** because the target is the fingertip height. Rerun with `--tcp_m` once the gripper is known; the joints taught on the pendant replace them.
+* **v5 now starts every episode at `sim_profile.READY_JOINTS`**, set in `PickPlaceScene.reset` (both the positions and the drive target).
+  * The placeholder is B at TCP 0.12 m (the sim 2F-85).
+  * v4 is unchanged: it still starts at q = 0.
+  * This is a v5 change made before its first run. It is part of the v5 baseline, and the pre-set verdicts are unchanged.
+
+**Workspace in the UR base frame** (`scripts/workspace_ur_frame.py`, `eval_results/workspace_ur_frame.json`). World (x, y) maps to UR (−x, −y); z is kept. Table z = 0 (placeholder), cube 0.04 m, cube centre z 0.02.
+
+| | world X / Y (m) | UR base X / Y (m) |
+|---|---|---|
+| training box (v1–v4 default) | 0.42…0.48 / −0.10…0.10 | −0.48…−0.42 / −0.10…0.10 |
+| wide box (half of the v4 data) | 0.38…0.48 / −0.16…0.16 | −0.48…−0.38 / −0.16…0.16 |
+| region centre | 0.42…0.48 / −0.10…0.10 | −0.48…−0.42 / −0.10…0.10 |
+| region posY_strip | 0.42…0.48 / 0.10…0.16 | −0.48…−0.42 / −0.16…−0.10 |
+| region negY_strip | 0.42…0.48 / −0.16…−0.10 | −0.48…−0.42 / 0.10…0.16 |
+| region posY_corner | 0.38…0.42 / 0.11…0.16 | −0.42…−0.38 / −0.16…−0.11 |
+| region negY_corner | 0.38…0.42 / −0.16…−0.11 | −0.42…−0.38 / 0.11…0.16 |
+| region mid_lowX | 0.38…0.42 / −0.11…0.11 | −0.42…−0.38 / −0.11…0.11 |
+| place target (success radius 30 mm) | (0.45, 0.30) | (−0.45, −0.30) |
+| lift threshold | z 0.08 above the table | same |
+| v4 base camera / aim point | (0.90, 0, 0.50) / (0.45, 0.10, 0.02) | (−0.90, 0, 0.50) / (−0.45, −0.10, 0.02) |
+
+The "posY" regions in world coordinates lie at negative Y on the pendant, on the place side.
+
+**Mount render: the verdict uses the measured fingertip.**
+* `render_mount_check.py` now also reads the two inner-finger link origins from the stage. Their midpoint lies on the gripper's centre line by symmetry, and the verdict ("≤ 2 mm while wrist_3 turns 0/90/180°") is computed on it.
+* `grip_point_world` is `sim_profile`'s formula, so it would pass v5 by construction.
+* Tonight's v4 render (started by the existing waiter) runs the same script and logs both.
+
+**Queued: `scripts/v5_smoke_driver.sh`.** It waits for the v4 waiter, which ends after the v4 6k evaluation and the v4 mount render, then runs:
+1. the v5 mount render;
+2. the v5 expert smoke run on the 2F-85, placeholders allowed, visual randomization, reset_renders 30, held-out colour as in v4. It is stratified by the evaluation regions: 20 saved episodes = centre 5 + 3 in each of the other five, visual seeds 501–506, with the six regions split over the two GPUs;
+3. `v5_expert_check.py` over the six datasets, then `scripts/v5_smoke_summary.py`, which writes `eval_results/v5_smoke/summary.json`.
+
+* **Verdicts as set earlier,** pooled over all attempts: success ≥ 80 %, blow-ups ≤ 10 %, expert check PASS, mount ≤ 2 mm. Per-region numbers are reported, not judged; n = 3–5.
+* **Prediction:**
+  * the mount passes;
+  * expert success between 75 and 90 %.
+  * Main risks: RMPflow's tool frame after the re-mount, the descent timing under the speed cap, and the new start pose.
+* The smoke datasets (`hf_cache/vla_ur5e_ws/v5smoke_*`) are throwaway, but are deleted only after asking.
+
+**Safety confirmation dialogs:**
+* Nothing in the repository clicks or confirms anything on a teach pendant or a controller, simulated or real.
+* The URSim "confirm safety configuration" click on 2026-11-16 was a one-off on the simulator, done by hand through VNC from the scratchpad, and is not in the repository.
+* On the real robot it is confirmed by a person at the pendant, always.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).

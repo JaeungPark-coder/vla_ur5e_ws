@@ -38,7 +38,7 @@ def test_flange_to_tool0_assumption():
 def test_v4_is_the_old_computation(monkeypatch):
     sp = load_profile(monkeypatch, "v4")
     assert sp.placeholders() == [] and sp.EXPERT_MAX_JOINT_SPEED_RAD_S is None and sp.TABLE_Z_M == 0.0
-    assert sp.blockers() == [] and sp.BASE_IMAGE_CROP is None and sp.base_image_wh() == (256, 256)
+    assert sp.blockers() == [] and sp.READY_JOINTS is None and sp.BASE_IMAGE_CROP is None and sp.base_image_wh() == (256, 256)
     target = np.array([0.45, 0.0, 0.04])
     fpos, r_t0 = sp.flange_target(target, DOWN, R_F2T)
     np.testing.assert_allclose(fpos, target - 0.12 * DOWN.apply([0, 0, 1]))              # old: step back 0.12 along approach
@@ -71,6 +71,12 @@ def test_v5_lists_lab_placeholders_and_rejects_a_short_tcp(monkeypatch):
     # 2026-11-16: the real gripper is an RG2 -> blocked until the sim has one; v4 never is
     assert sp.REAL_GRIPPER == "onrobot_rg2" and any("onrobot_rg2" in b for b in sp.blockers())
     assert {"BASE_IMAGE_CROP", "GRIPPER_CLOSE_TIME_S"} <= set(sp.placeholders())
+    # the ready pose placeholder (candidate B, checked on URSim): tool straight down, elbow bent up
+    import os as _os
+    sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "..", "src", "vla_bridge"))
+    from vla_bridge.ur5e_kinematics import flange
+    T = flange(sp.READY_JOINTS)[0]
+    assert "READY_JOINTS" in sp.placeholders() and T[2, 2] < -0.9999 and sp.READY_JOINTS[2] > 0.8
     monkeypatch.setenv("VLA_SIM_PROFILE", "v6")
     sys.modules.pop("sim_profile", None)
     with pytest.raises(ValueError):

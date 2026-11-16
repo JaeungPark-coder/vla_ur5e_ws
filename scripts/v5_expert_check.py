@@ -7,7 +7,7 @@
      (v1-v4: 89.6 deg from down, median over 89 grasps -- the BLOCKER);
   3. the fingertip at that moment (FK + --tcp_m along the tool axis), so the grasp heights can be compared with the cube.
 
-    python3 scripts/v5_expert_check.py <lerobot dataset dir> [--tcp_m 0.12] [--cap 1.5708] [--json out.json]
+    python3 scripts/v5_expert_check.py <lerobot dataset dir> [<more dirs> ...] [--tcp_m 0.12] [--cap 1.5708] [--json out.json]
 Pass: every episode's peak speed <= cap x 1.05 on every joint, and every grasp axis within --axis_tol_deg of straight down.
 """
 import argparse
@@ -24,7 +24,7 @@ from vla_bridge.ur5e_kinematics import flange  # noqa: E402
 
 WORLD_FROM_BASE = np.diag([-1.0, -1.0, 1.0])
 ap = argparse.ArgumentParser()
-ap.add_argument('dataset')
+ap.add_argument('dataset', nargs='+')
 ap.add_argument('--tcp_m', type=float, default=0.12)
 ap.add_argument('--cap', type=float, default=np.pi / 2)
 ap.add_argument('--row_hz', type=float, default=60.0)
@@ -33,14 +33,14 @@ ap.add_argument('--json', default=None)
 a = ap.parse_args()
 
 eps = []
-for f in sorted(glob.glob(os.path.join(a.dataset, 'data', 'chunk-*', '*.parquet'))):
+for ds, f in [(d, f) for d in a.dataset for f in sorted(glob.glob(os.path.join(d, 'data', 'chunk-*', '*.parquet')))]:
     t = pq.read_table(f, columns=['joints', 'actions', 'episode_index']).to_pandas()
     for e, ep in t.groupby('episode_index'):
         j = np.stack(ep['joints'].to_numpy()).astype(float)
         act = np.stack(ep['actions'].to_numpy()).astype(float)
         speed = np.abs(np.diff(np.vstack([j[:1], act[:, :6]]), axis=0)) * a.row_hz
         c = np.nonzero(act[:, 6] > 0.5)[0]
-        rec = dict(episode=int(e), frames=len(j), peak_speed=speed.max(0).round(3).tolist(),
+        rec = dict(dataset=os.path.basename(os.path.normpath(ds)), episode=int(e), frames=len(j), peak_speed=speed.max(0).round(3).tolist(),
                    p99_speed=np.percentile(speed, 99, axis=0).round(3).tolist())
         if len(c):
             T = flange(j[c[0]])[0]
@@ -54,7 +54,7 @@ peak = np.array([r['peak_speed'] for r in eps])
 axis = np.array([r.get('axis_from_down_deg', np.nan) for r in eps])
 speed_ok = bool(np.all(peak <= a.cap * 1.05))
 axis_ok = bool(np.all(np.isfinite(axis)) and np.all(axis <= a.axis_tol_deg))
-summary = dict(dataset=os.path.abspath(a.dataset), episodes=len(eps), cap_rad_s=a.cap,
+summary = dict(datasets=[os.path.abspath(d) for d in a.dataset], episodes=len(eps), cap_rad_s=a.cap,
                peak_speed_max=peak.max(0).round(3).tolist(), peak_speed_median=np.median(peak, 0).round(3).tolist(),
                episodes_over_cap=int(np.sum(np.any(peak > a.cap * 1.05, axis=1))),
                grasp_axis_from_down_deg=dict(median=float(np.nanmedian(axis)), max=float(np.nanmax(axis)),

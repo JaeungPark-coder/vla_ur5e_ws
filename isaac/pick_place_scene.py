@@ -761,6 +761,12 @@ class PickPlaceScene:
         # every episode after the first. See reapply_drive_gains's own
         # docstring for the full mechanism.
         self.gripper.reapply_drive_gains()
+        if sim_profile.READY_JOINTS is not None:   # v5: start where the real robot starts (sim_profile READY_JOINTS)
+            from isaacsim.core.utils.types import ArticulationAction
+            ready = np.asarray(sim_profile.READY_JOINTS, dtype=float)
+            self.robot.set_joint_positions(ready, joint_indices=np.arange(6))
+            self.robot.set_joint_velocities(np.zeros(6), joint_indices=np.arange(6))
+            self.robot.apply_action(ArticulationAction(joint_positions=ready, joint_indices=np.arange(6)))  # drive target too
 
         if self.cube_rigid_prim is None:
             # Only constructible once physics has Played at least once

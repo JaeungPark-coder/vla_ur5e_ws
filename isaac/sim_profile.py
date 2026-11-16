@@ -61,6 +61,7 @@ if PROFILE == "v4":
     BASE_IMAGE_CROP = None              # the policy sees the render as is
     BASE_IMAGE_SIZE = None
     GRIPPER_CLOSE_TIME_S = None         # the asset's own drive
+    READY_JOINTS = None                 # every episode starts at q = 0 (the arm stretched out), as collected
 else:
     GRIPPER_MOUNT = "coaxial"
     # Rotation of the fingers about the tool axis.  0 keeps the finger closing direction where v4 had it relative to the grip
@@ -92,6 +93,10 @@ else:
     # LAB: the RG2's open-to-cube closing time at the grip force used (gripper_force_n); the RG2 model's drive is tuned
     # to it, or the policy learns to lift before the real fingers have closed.  Used once the RG2 model exists.
     GRIPPER_CLOSE_TIME_S = _lab("GRIPPER_CLOSE_TIME_S", None)
+    # LAB: the ready pose every episode starts from -- the joint values taught on the pendant (the real robot starts there).
+    # Placeholder = candidate B of scripts/ready_pose_candidates.py at TCP 0.12 m (2026-11-16, checked on URSim): tool
+    # straight down, elbow bent up, fingertips 0.25 m above the table between the spawn box and the place point.
+    READY_JOINTS = _lab("READY_JOINTS", (-0.0318, -1.7102, 2.0045, -1.8651, -1.5708, -0.0146))
     # LAB: wrist camera in the TOOL0 frame (z along the tool axis, x/y as the teach pendant shows the tool flange): position
     # (m) and a point it looks at (m), plus its horizontal FOV.  None = keep v4's camera pose relative to the gripper.
     WRIST_CAMERA_TOOL0 = _lab("WRIST_CAMERA_TOOL0", None)

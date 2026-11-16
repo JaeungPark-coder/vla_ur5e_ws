@@ -1,0 +1,676 @@
+{
+ "tcp_m": 0.16,
+ "table_z": 0.0,
+ "frame": "UR base",
+ "candidates": [
+  {
+   "name": "A_over_spawn",
+   "fingertip_target": [
+    -0.45,
+    0.0,
+    0.25
+   ],
+   "q": [
+    -0.3007,
+    -1.7005,
+    1.8912,
+    -1.7615,
+    -1.5708,
+    -0.0134
+   ],
+   "ik_pos_err_m": 4.5956119365578945e-11,
+   "ik_rot_err": 9.018708763378027e-12,
+   "axis_from_down_deg": 0.0,
+   "elbow_sin": 0.9491041028104285,
+   "wrist_sin_q5": -1.0,
+   "shoulder_radius_m": 0.4499999999637876,
+   "manipulability": 0.06799552362669808,
+   "elbow_up": true,
+   "branch": [
+    1,
+    -1
+   ],
+   "reach": [
+    {
+     "target": "spawn(-0.48,-0.16)",
+     "q": [
+      0.0551,
+      -1.2753,
+      2.1055,
+      -2.401,
+      -1.5708,
+      0.3425
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.6395650873782184,
+     "time_at_pi_over_2_s": 0.40715978034097366,
+     "elbow_sin": 0.8604081084010375,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.5059644256259669
+    },
+    {
+     "target": "spawn(-0.48,+0.16)",
+     "q": [
+      -0.5884,
+      -1.2753,
+      2.1055,
+      -2.401,
+      -1.5708,
+      -0.301
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.6395650873781087,
+     "time_at_pi_over_2_s": 0.40715978034090383,
+     "elbow_sin": 0.8604081084013111,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.5059644256261671
+    },
+    {
+     "target": "spawn(-0.38,-0.16)",
+     "q": [
+      0.0693,
+      -1.4657,
+      2.3589,
+      -2.464,
+      -1.5708,
+      0.3567
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.7025271474864898,
+     "time_at_pi_over_2_s": 0.44724267271489543,
+     "elbow_sin": 0.7052012120130088,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.4123105625570998
+    },
+    {
+     "target": "spawn(-0.38,+0.16)",
+     "q": [
+      -0.7277,
+      -1.4657,
+      2.3589,
+      -2.464,
+      -1.5708,
+      -0.4404
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.702527147476897,
+     "time_at_pi_over_2_s": 0.4472426727087885,
+     "elbow_sin": 0.7052012120103539,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.4123105625545672
+    },
+    {
+     "target": "spawn_centre",
+     "q": [
+      -0.3152,
+      -1.4274,
+      2.3124,
+      -2.4558,
+      -1.5708,
+      -0.0278
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.6943585272739903,
+     "time_at_pi_over_2_s": 0.4420423675746567,
+     "elbow_sin": 0.7373906288979377,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.42999999999978333
+    },
+    {
+     "target": "place",
+     "q": [
+      0.339,
+      -1.2625,
+      1.98,
+      -2.2883,
+      -1.5708,
+      0.6263
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.6396994858935503,
+     "time_at_pi_over_2_s": 0.4072453410932108,
+     "elbow_sin": 0.9174243496536097,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.5408326912954999
+    }
+   ],
+   "checks": {
+    "tool_down": true,
+    "elbow_bent_up": true,
+    "wrist_clear": true,
+    "shoulder_clear": true,
+    "all_targets_reachable": true,
+    "no_branch_flip": true,
+    "targets_clear_of_singularities": true
+   },
+   "pass": true,
+   "ursim": [
+    {
+     "at": "ready",
+     "moveJ_ok": true,
+     "joint_err_rad": 2.220446049250313e-16,
+     "flange_vs_fk_mm": 4.564686247276687e-08,
+     "axis_from_down_deg": 0.00029763533850329303,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn(-0.48,-0.16)",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 3.8065385952087735e-08,
+     "axis_from_down_deg": 0.00029763166487733247,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn(-0.48,+0.16)",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 3.806539769533797e-08,
+     "axis_from_down_deg": 0.0002976328894243574,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn(-0.38,-0.16)",
+     "moveJ_ok": true,
+     "joint_err_rad": 2.220446049250313e-16,
+     "flange_vs_fk_mm": 3.806645407283292e-08,
+     "axis_from_down_deg": 0.0002976341139663443,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn(-0.38,+0.16)",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 3.806638685062645e-08,
+     "axis_from_down_deg": 0.0002976377875620767,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn_centre",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 3.806555042023988e-08,
+     "axis_from_down_deg": 0.0002976341139663443,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "place",
+     "moveJ_ok": true,
+     "joint_err_rad": 2.220446049250313e-16,
+     "flange_vs_fk_mm": 3.5769768621195085e-08,
+     "axis_from_down_deg": 0.00029763533850329303,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "ready_again",
+     "moveJ_ok": true,
+     "joint_err_rad": 2.220446049250313e-16,
+     "flange_vs_fk_mm": 4.564686247276687e-08,
+     "axis_from_down_deg": 0.00029763533850329303,
+     "safety_mode": 1,
+     "robot_mode": 7
+    }
+   ],
+   "ursim_pass": true
+  },
+  {
+   "name": "B_spawn_to_place",
+   "fingertip_target": [
+    -0.42,
+    -0.12,
+    0.25
+   ],
+   "q": [
+    -0.0318,
+    -1.7344,
+    1.9196,
+    -1.756,
+    -1.5708,
+    -0.0146
+   ],
+   "ik_pos_err_m": 3.125027473611651e-11,
+   "ik_rot_err": 9.252892744650872e-12,
+   "axis_from_down_deg": 0.0,
+   "elbow_sin": 0.9397783917738403,
+   "wrist_sin_q5": -1.0,
+   "shoulder_radius_m": 0.43680659334977207,
+   "manipulability": 0.06516043901416173,
+   "elbow_up": true,
+   "branch": [
+    1,
+    -1
+   ],
+   "reach": [
+    {
+     "target": "spawn(-0.48,-0.16)",
+     "q": [
+      0.0551,
+      -1.2753,
+      2.1055,
+      -2.401,
+      -1.5708,
+      0.0724
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.6450227962121713,
+     "time_at_pi_over_2_s": 0.4106342656964933,
+     "elbow_sin": 0.860408108403025,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.5059644256268659
+    },
+    {
+     "target": "spawn(-0.48,+0.16)",
+     "q": [
+      -0.5884,
+      -1.2753,
+      2.1055,
+      -2.401,
+      -1.5708,
+      -0.5711
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.6450227966219657,
+     "time_at_pi_over_2_s": 0.41063426595737657,
+     "elbow_sin": 0.8604081078526149,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.5059644252414803
+    },
+    {
+     "target": "spawn(-0.38,-0.16)",
+     "q": [
+      0.0693,
+      -1.4657,
+      2.3589,
+      -2.464,
+      -1.5708,
+      0.0866
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.707984856216612,
+     "time_at_pi_over_2_s": 0.45071715800431433,
+     "elbow_sin": 0.7052012120407982,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.4123105625614724
+    },
+    {
+     "target": "spawn(-0.38,+0.16)",
+     "q": [
+      -0.7277,
+      -1.4657,
+      2.3589,
+      -2.464,
+      -1.5708,
+      -0.7105
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.7079848562075033,
+     "time_at_pi_over_2_s": 0.4507171579985156,
+     "elbow_sin": 0.7052012120427472,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.4123105625616339
+    },
+    {
+     "target": "spawn_centre",
+     "q": [
+      -0.3152,
+      -1.4274,
+      2.3124,
+      -2.4558,
+      -1.5708,
+      -0.2979
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.6998162361324889,
+     "time_at_pi_over_2_s": 0.4455168529458026,
+     "elbow_sin": 0.737390628893254,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.4299999999988895
+    },
+    {
+     "target": "place",
+     "q": [
+      0.339,
+      -1.2625,
+      1.98,
+      -2.2883,
+      -1.5708,
+      0.3562
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.5322753188934843,
+     "time_at_pi_over_2_s": 0.33885699235085176,
+     "elbow_sin": 0.9174243496893091,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.5408326913194019
+    }
+   ],
+   "checks": {
+    "tool_down": true,
+    "elbow_bent_up": true,
+    "wrist_clear": true,
+    "shoulder_clear": true,
+    "all_targets_reachable": true,
+    "no_branch_flip": true,
+    "targets_clear_of_singularities": true
+   },
+   "pass": true,
+   "ursim": [
+    {
+     "at": "ready",
+     "moveJ_ok": true,
+     "joint_err_rad": 3.95516952522712e-16,
+     "flange_vs_fk_mm": 4.564871181794054e-08,
+     "axis_from_down_deg": 0.0002976341139663443,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn(-0.48,-0.16)",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 3.806539904543286e-08,
+     "axis_from_down_deg": 0.0002976341139663443,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn(-0.48,+0.16)",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 3.806539769533797e-08,
+     "axis_from_down_deg": 0.0002976328894243574,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn(-0.38,-0.16)",
+     "moveJ_ok": true,
+     "joint_err_rad": 2.220446049250313e-16,
+     "flange_vs_fk_mm": 3.806645407283292e-08,
+     "axis_from_down_deg": 0.0002976365630352039,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn(-0.38,+0.16)",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 3.806638685062645e-08,
+     "axis_from_down_deg": 0.0002976328894243574,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn_centre",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 3.806555042023988e-08,
+     "axis_from_down_deg": 0.0002976377875620767,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "place",
+     "moveJ_ok": true,
+     "joint_err_rad": 2.220446049250313e-16,
+     "flange_vs_fk_mm": 3.5769768621195085e-08,
+     "axis_from_down_deg": 0.0002976365630352039,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "ready_again",
+     "moveJ_ok": true,
+     "joint_err_rad": 3.95516952522712e-16,
+     "flange_vs_fk_mm": 4.564871181794054e-08,
+     "axis_from_down_deg": 0.0002976341139663443,
+     "safety_mode": 1,
+     "robot_mode": 7
+    }
+   ],
+   "ursim_pass": true
+  },
+  {
+   "name": "C_pulled_back",
+   "fingertip_target": [
+    -0.32,
+    -0.08,
+    0.3
+   ],
+   "q": [
+    -0.171,
+    -2.0338,
+    1.9908,
+    -1.5278,
+    -1.5708,
+    -0.0327
+   ],
+   "ik_pos_err_m": 4.730957625954468e-13,
+   "ik_rot_err": 1.396087519437683e-13,
+   "axis_from_down_deg": 0.0,
+   "elbow_sin": 0.9130717605708091,
+   "wrist_sin_q5": -1.0,
+   "shoulder_radius_m": 0.32984845004937974,
+   "manipulability": 0.045919405178780896,
+   "elbow_up": true,
+   "branch": [
+    1,
+    -1
+   ],
+   "reach": [
+    {
+     "target": "spawn(-0.48,-0.16)",
+     "q": [
+      0.0551,
+      -1.2753,
+      2.1055,
+      -2.401,
+      -1.5708,
+      0.1934
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.8732032069480848,
+     "time_at_pi_over_2_s": 0.5558984268379318,
+     "elbow_sin": 0.8604081083288857,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.5059644255830048
+    },
+    {
+     "target": "spawn(-0.48,+0.16)",
+     "q": [
+      -0.5884,
+      -1.2753,
+      2.1055,
+      -2.401,
+      -1.5708,
+      -0.4501
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.8732032068137936,
+     "time_at_pi_over_2_s": 0.5558984267524394,
+     "elbow_sin": 0.8604081084016707,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.5059644256256884
+    },
+    {
+     "target": "spawn(-0.38,-0.16)",
+     "q": [
+      0.0693,
+      -1.4657,
+      2.3589,
+      -2.464,
+      -1.5708,
+      0.2076
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.9361652672338512,
+     "time_at_pi_over_2_s": 0.5959813193248503,
+     "elbow_sin": 0.7052012114593295,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.4123105622714126
+    },
+    {
+     "target": "spawn(-0.38,+0.16)",
+     "q": [
+      -0.7277,
+      -1.4657,
+      2.3589,
+      -2.464,
+      -1.5708,
+      -0.5894
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.9361652667908087,
+     "time_at_pi_over_2_s": 0.5959813190428007,
+     "elbow_sin": 0.705201212022692,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.41231056254818427
+    },
+    {
+     "target": "spawn_centre",
+     "q": [
+      -0.3152,
+      -1.4274,
+      2.3124,
+      -2.4558,
+      -1.5708,
+      -0.1769
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.927996647331361,
+     "time_at_pi_over_2_s": 0.5907810143819697,
+     "elbow_sin": 0.7373906281356758,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.42999999960771307
+    },
+    {
+     "target": "place",
+     "q": [
+      0.339,
+      -1.2625,
+      1.98,
+      -2.2883,
+      -1.5708,
+      0.4773
+     ],
+     "ok": true,
+     "same_branch": true,
+     "max_joint_move_rad": 0.7712599922856624,
+     "time_at_pi_over_2_s": 0.49099936072512096,
+     "elbow_sin": 0.9174243496895869,
+     "wrist_sin_q5": -1.0,
+     "shoulder_radius_m": 0.5408326913195807
+    }
+   ],
+   "checks": {
+    "tool_down": true,
+    "elbow_bent_up": true,
+    "wrist_clear": true,
+    "shoulder_clear": true,
+    "all_targets_reachable": true,
+    "no_branch_flip": true,
+    "targets_clear_of_singularities": true
+   },
+   "pass": true,
+   "ursim": [
+    {
+     "at": "ready",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 5.301799040893013e-08,
+     "axis_from_down_deg": 0.0002976365630352039,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn(-0.48,-0.16)",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 3.806539904543286e-08,
+     "axis_from_down_deg": 0.0002976365630352039,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn(-0.48,+0.16)",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 3.806539769533797e-08,
+     "axis_from_down_deg": 0.00029763533850329303,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn(-0.38,-0.16)",
+     "moveJ_ok": true,
+     "joint_err_rad": 2.220446049250313e-16,
+     "flange_vs_fk_mm": 3.806645407283292e-08,
+     "axis_from_down_deg": 0.0002976328894243574,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn(-0.38,+0.16)",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 3.806638685062645e-08,
+     "axis_from_down_deg": 0.0002976328894243574,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "spawn_centre",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 3.806555042023988e-08,
+     "axis_from_down_deg": 0.0002976377875620767,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "place",
+     "moveJ_ok": true,
+     "joint_err_rad": 2.220446049250313e-16,
+     "flange_vs_fk_mm": 3.5769768621195085e-08,
+     "axis_from_down_deg": 0.0002976341139663443,
+     "safety_mode": 1,
+     "robot_mode": 7
+    },
+    {
+     "at": "ready_again",
+     "moveJ_ok": true,
+     "joint_err_rad": 4.440892098500626e-16,
+     "flange_vs_fk_mm": 5.301799040893013e-08,
+     "axis_from_down_deg": 0.0002976365630352039,
+     "safety_mode": 1,
+     "robot_mode": 7
+    }
+   ],
+   "ursim_pass": true
+  }
+ ]
+}
