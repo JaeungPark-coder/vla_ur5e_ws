@@ -3733,6 +3733,43 @@ v3 is not run on H0: 0/15 at the centre.
 * H0: 84-90/90, pass.
 * Confidence: low for the original ground.
 
+### 2026-11-16: real-robot preparation -- BLOCKER: the simulated gripper is mounted 90° off the wrist_3 axis
+
+Found while checking the joint conventions (preparation step 2), GPU-free.
+
+**What the sim does:**
+* The policy's joint targets put the fingertips at **0.12 m along DH y6**, i.e. perpendicular to the wrist_3 axis z6, not along it.
+  * `scripts/ur5e_fk.py` (standard UR5e DH, world = DH base rotated 180° about z, base at the origin) reproduces the sim grip point with residual 0.000 mm and tool offset (0, 0.12, 0) in DH frame 6.
+  * A tool offset restricted to z6 leaves 120 mm residual.
+  * `pick_place_scene.py` says the same in its own words (2026-09-10): "the fingertips sit 120 mm out from the flange along the FLANGE'S +Z, while the frame RMPflow drives (tool0) has its +Z along the flange's +X -- exactly 90 degrees apart".
+  * tool0 is the real UR tool flange frame.
+* **At all 89 grasps** of `strat_k25_v3_3k`:
+  * the wrist_3 axis is horizontal (median 89.6° from vertical, min 75°);
+  * the fingers point straight down along y6 (median 2°).
+  * Rotating wrist_3 swings the fingertips on a 12 cm radius. That fits the old "wrist_3 runaway flings the cube" blow-ups.
+
+**What it means for the real UR5e:**
+* A Robotiq on the tool flange is coaxial with wrist_3: its fingertips lie on z6, about 0.15-0.17 m out.
+* Sent the same joint vector, the real gripper at a sim grasp pose points horizontally toward the robot base.
+  * Example: seed 9200 centre close, q = (-0.21, -0.96, 1.65, -0.68, -1.76, 3.17).
+  * The real fingertips would sit about 16 cm above the table, ~16 cm closer to the base than the cube.
+* **No policy trained so far (v2, v3, v4) can run on a real arm with a coaxial gripper.** The joint targets would be valid, but the hand would be oriented 90° off.
+
+**Options (the reviewer's call):**
+1. **Fix the sim mount** (gripper coaxial on tool0, real TCP offset), then re-collect and retrain (v5 = v4 recipe on the corrected robot).
+   * The expert's waypoints were written around the 90° frame (`r_flange_to_tool0`), so the expert needs re-checking.
+   * About a day of GPU time, plus code.
+2. **Match the real robot to the sim:** an L-bracket that puts the fingertip centre 0.12 m along the flange's y6 with no axial offset.
+   * Geometrically awkward: the gripper body would sit beside the wrist.
+   * Unusual on a real UR.
+3. Retarget the policy's joint output through IK: not sound. The arm configurations differ, so the images and states the policy sees would not match training.
+
+**Status:** v4 3k is no longer usable as a real-robot candidate until this is resolved. Simulator results (shortcut, K, grounds) are unaffected as simulator findings. Steps that do not depend on the mount continue:
+* row timing and the 500 Hz streamer;
+* safety limits;
+* gripper count mapping;
+* the table photo.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
