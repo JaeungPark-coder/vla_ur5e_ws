@@ -54,21 +54,38 @@ try:
     except Exception as exc:  # noqa: BLE001
         print("side camera aim failed:", exc, flush=True)
 
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "vla_bridge"))
+    from vla_bridge.ur5e_kinematics import flange as dh_flange
+
     def physics_fingertip():
-        """Midpoint of the left/right inner-finger links from the articulation's physics view, plus every finger link."""
+        """Midpoint of the left/right inner-finger CENTRES OF MASS in world, from the articulation's physics view, plus
+        every finger link.  (2026-11-17, second fix: this asset's gripper link frames all sit at the attachment point,
+        so link origins -- USD or physics -- never move with wrist_3; the COM is in the finger geometry.)"""
         av = scene.robot._articulation_view
         names = list(av.body_names)
         tf = np.asarray(av._physics_view.get_link_transforms(), dtype=float).reshape(-1, len(names), 7)[0]
+        com = np.asarray(av._physics_view.get_coms(), dtype=float).reshape(-1, len(names), 7)[0]
+        world_com = np.stack([tf[i, :3] + Rot.from_quat(tf[i, 3:7]).apply(com[i, :3]) for i in range(len(names))])
 
         def one(side):
             exact = [i for i, n in enumerate(names) if n == f"{side}_inner_finger"]
             loose = [i for i, n in enumerate(names) if n.startswith(f"{side}_inner_finger")]
             return (exact or loose or [None])[0]
         li, ri = one("left"), one("right")
-        links = {n: np.round(tf[i, :3], 4).tolist() for i, n in enumerate(names) if "finger" in n or "knuckle" in n}
+        links = {n: dict(origin=np.round(tf[i, :3], 4).tolist(), com_world=np.round(world_com[i], 4).tolist(),
+                         com_local=np.round(com[i, :3], 4).tolist())
+                 for i, n in enumerate(names) if "finger" in n or "knuckle" in n}
         if li is None or ri is None:
             return None, dict(body_names=names)
-        return 0.5 * (tf[li, :3] + tf[ri, :3]), dict(used=[names[li], names[ri]], finger_links=links)
+        tip = 0.5 * (world_com[li] + world_com[ri])
+        # angle between (finger-COM midpoint - flange origin) and the wrist_3 axis (DH tool0 z, UR base -> world)
+        T = dh_flange(np.asarray(scene.robot.get_joint_positions()[:6], float))[0]
+        W = np.diag([-1.0, -1.0, 1.0])
+        flange_w, z6_w = W @ T[:3, 3], W @ T[:3, 2]
+        v = tip - flange_w
+        ang = float(np.degrees(np.arccos(np.clip(np.dot(v, z6_w) / max(np.linalg.norm(v), 1e-9), -1, 1))))
+        return tip, dict(used=[names[li], names[ri]], finger_links=links, dh_flange_world=np.round(flange_w, 4).tolist(),
+                         tip_from_flange_mm=float(np.linalg.norm(v) * 1000), tip_angle_from_wrist3_axis_deg=ang)
     q0 = np.asarray(args.q, float)
     rows, info = [], []
     for dq in (0.0, np.pi / 2, np.pi):
@@ -103,7 +120,8 @@ try:
         t0 = np.asarray(tips[0])
         swing = [float(np.linalg.norm(np.asarray(t) - t0) * 1000) for t in tips[1:]]
         verdict = dict(profile=sim_profile.PROFILE, measured_fingertip_shift_mm_at_90_180=swing,
-                       coaxial_pass=bool(max(swing) <= 2.0))
+                       coaxial_pass=bool(max(swing) <= 2.0),
+                       tip_angle_from_wrist3_axis_deg=[(d["measured_info"] or {}).get("tip_angle_from_wrist3_axis_deg") for d in info])
     else:
         verdict = dict(profile=sim_profile.PROFILE, error="inner finger links not found in the articulation")
     print("VERDICT", json.dumps(verdict), flush=True)

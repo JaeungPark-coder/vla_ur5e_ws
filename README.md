@@ -4119,6 +4119,22 @@ The "posY" regions in world coordinates lie at negative Y on the pendant, on the
 * *Prediction:* v4 ~170 / ~240 mm; v5 ≤ 2 mm.
 * The void outputs are kept in place (`isaac/eval_results/mount_check{,_v5}/`); nothing deleted.
 
+**02:23 result of that fix: VOID again.** v4 0.0 / 0.0 mm. All eight gripper link ORIGINS read the flange origin in the physics view too: this asset's gripper link frames all sit at the attachment point, and the finger shape lives only in the meshes. Kept as `eval_*/mount_check_fixed_attempt2_void/`.
+
+**Second fix and result (02:25-02:26, `eval_results/mount_check_fixed/`, `verdict.json`):** the fingertip proxy is the midpoint of the left/right inner-finger **centres of mass**: physics-view link pose × local COM. Also logged: the angle between (that midpoint − DH flange) and the DH wrist_3 axis.
+
+| wrist_3 turned | v4: proxy shift | v4: angle from wrist_3 axis | v5: proxy shift | v5: angle from wrist_3 axis |
+|---|---|---|---|---|
+| 0° | -- | 90.0° | -- | 0.0003° |
+| 90° | 161 mm | 90.0° | 0.0 mm | 0.002° |
+| 180° | 228 mm | 90.0° | 0.0 mm | 0.0005° |
+
+* **Negative control valid:** v4's 180° shift is 228 mm, above the 100 mm bar. A proxy 113.9 mm off the axis swings 161 / 228 mm, matching the formula's ~170 / ~240 mm.
+* **v5 mount: PASS** (≤ 2 mm). The finger-COM midpoint lies on the wrist_3 axis, 113.9 mm out from the flange. The COM is not the fingertip, so this checks the axis, not the 0.12 m TCP.
+* Prediction "v4 ~170 / ~240, v5 ≤ 2 mm": held.
+* The base view shows no gripper in v5 at this pose, because it points along the now-horizontal wrist_3 axis, away from the camera behind the wrist. The side camera still renders only the far floor (`set_camera_view` did not take); the numbers carry the verdict.
+* Disclosed: the measurement was fixed twice after seeing void results. Each time the negative control (v4) exposed the fault, and the pass rule (≤ 2 mm) and the validity bar (v4 ≥ 100 mm) were not changed.
+
 #### 2026-11-17 02:21: v5 PILOT results -- PIPELINE TEST, NOT FOR CONCLUSIONS
 
 `eval_runs/v5_pilot/driver.log`, `eval_results/v5_pilot/pilot_check.json`, evaluation `eval_runs/v5pilot_1k_centre`.
