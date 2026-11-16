@@ -3821,6 +3821,86 @@ v4 6k runs to the end: "does more training help on varied data" decides 3k vs 6k
 4. Match the cameras (model, FOV, pose) and the scene (table height, object size) to what can actually be installed.
 5. Only then collect.
 
+#### 2026-11-16: GPU-free preparation (real-robot execution path tested on URSim; v5 code waiting for lab values)
+
+Done while v4 6k trains. Everything that needs a lab measurement is a marked placeholder.
+
+**A. Real-robot execution path** (`src/vla_bridge/vla_bridge/`; tests `test/test_joint_streamer.py`):
+* **`joint_streamer.py`: the row-timing bug is fixed.**
+  * Before: the `rtde` path sent a chunk's K rows with servoJ back to back. servoJ returns at once and tracks only the latest target, so the arm skipped to the last row.
+  * Now: every row gets `action_dt_s` = 1/60 s (÷ `speed_scale`). The segment between rows is interpolated and sent every 2 ms (500 Hz, `initPeriod`/`waitPeriod`).
+  * A row that would need more than the joint-speed cap is stretched, not clipped: the path is kept and only the timing changes.
+* **`safety_limits.py` + `scripts/derive_safety_limits.py`:** a joint box, a per-row step limit and a tool-point workspace box (FK, UR base frame), all derived from the training demonstrations.
+  * A chunk that violates any of them is refused whole: the arm stops and the node halts.
+  * The client refuses to start on `rtde` without a limits file unless `allow_no_safety_limits:=true`.
+* **`gripper_mapping.py`:** sim 0–1 ↔ Robotiq counts, piecewise linear.
+  * The default is the old linear 0→0, 1→255.
+  * Add one calibration point: the sim value while holding the cube against the Robotiq counts while holding the real cube of the same size. The policy reads this value as state.
+* **`ur5e_kinematics.py`:** DH FK, pinned by a test to the URSim reading at home.
+* **`vla_policy_client.py`, `rtde` only:** rows are collected and executed by `_execute_rtde_rows`:
+  1. tracking-gap check (measured vs last streamed target ≤ 0.08 rad, otherwise halt);
+  2. safety check;
+  3. stream.
+  * New parameters: `speed_scale` (default 0.25), `max_joint_speed_rad_s` (1.0), `safety_limits_json`, `allow_no_safety_limits`, `max_tracking_gap_rad`, `gripper_calibration`.
+  * Sync only: infer, execute K rows, infer.
+  * The lockstep/Isaac path is untouched.
+* **`scripts/replay_on_robot.py`** (preparation step 4): replays one demonstration's action rows through exactly this path in blocks of K=25, records the joints at 500 Hz, and reports timing and tracking.
+  * `--lift_m` re-solves every row by IK for an "in the air" replay.
+  * Near-singular passages can make that IK jump. The safety limits then refuse the replay (seen on v4 episode 0 with `--lift_m 0.10`, rows 29–40), which is the intended behaviour.
+
+**URSim test** (5.26.3, `eval_results/replay_ursim/`).
+* RTDE control first failed with "Failed to start RTDE data synchronization". The controller was sending "Safety Setup has not been confirmed yet, therefore no data will be send yet".
+* A fresh URSim needs its safety configuration confirmed once in PolyScope; this was done via VNC. A real robot shows the same pop-up after a safety change.
+
+Replay of v4 episode 0 (1061 rows), K=25, 0.1 s pause between blocks:
+
+| cap | rows slowed | planned (nominal 17.7 s) | tracking error at the row's time, median / p95 / max | same, 0.1 s (lookahead) later | peak joint speed (rad/s) |
+|---|---|---|---|---|---|
+| 3.14 rad/s (none) | 0 | 17.7 s | 0.017 / 0.180 / 0.284 rad | 0.004 / 0.041 / 0.102 rad | up to 1.94 (wrist_3) |
+| 1.57 rad/s (half) | 75 | 18.1 s | 0.017 / 0.157 / 0.220 rad | 0.004 / 0.035 / 0.081 rad | up to 1.49 |
+
+* Wall time is the planned time plus the pauses: 23.7 s and 24.1 s.
+* The errors at the row's own time are mostly servoJ's lookahead lag (0.1 s × up to 2 rad/s). Compared 0.1 s later they drop to a few mrad at the median.
+* The final position error is 1e-6 rad.
+* Every block ends where the policy expects the next observation to start.
+
+**B. v5 code** (`isaac/sim_profile.py`; `VLA_SIM_PROFILE=v5`; default v4).
+* **Default v4 is bit-for-bit the old scene.** Tonight's v4 6k evaluation and every earlier result are unaffected. The launchers pass `VLA_SIM_PROFILE` through, defaulting to v4.
+* **Coaxial gripper:** `isaac_sim_common.realign_gripper_mount`.
+  * It finds the one joint welding the variant's gripper to the arm, rewrites its arm-side frame, and moves the gripper links in USD. The move is 90° about the flange prim's y, taking the gripper's +Z to the tool axis +X, plus a spacer of real TCP − 0.12 m along the new axis.
+  * It runs before the articulation is built and raises unless exactly one weld joint is found.
+  * Tested on a hand-built USD stage with the same structure (usd-core, no Isaac): the links move rigidly, the weld stays consistent, and the gripper axis lands on the flange's +X.
+* **Grip-frame algebra:** `sim_profile.flange_target`, `grip_point`.
+  * Tested: with the fingers pointing down, the commanded tool0 z (the wrist_3 axis) points straight down. v4 gives a horizontal axis, which is the blocker.
+  * Waypoints round-trip, and the expert's grasp yaw is unchanged.
+* **Expert joint-speed cap:** `PickPlaceScene._rate_limit_targets`. Each expert command may move at most (π/2 rad/s) × 1/60 s from the previous one.
+  * Only the expert paths are capped (RMPflow `step_towards`, diff-IK `step_towards_diffik`).
+  * The policy's path in evaluation (`apply_joint_targets`) is not.
+* **Lab values (placeholders until measured):**
+  * table height: ground plane, cube rest height, place target, lift and blow-up thresholds all measured from the table; the bridge publishes heights above the table;
+  * cube size;
+  * base camera pose (UR base frame) and FOV;
+  * wrist camera pose (tool0 frame) and FOV; until then the v4 wrist camera is carried with the re-mounted gripper;
+  * image aspect ratio: non-square resolution with square pixels;
+  * finger roll;
+  * TCP length.
+* `collect_demos.py` refuses to write a v5 dataset while placeholders remain, unless `--allow_placeholders` (expert checks only).
+* **`scripts/v5_expert_check.py`** (from the dataset, no Isaac) checks:
+  * the peak per-row joint speed against the cap;
+  * the tool axis at the first close command.
+  * Negative control on the v4 dataset: all 302 episodes over the cap (wrist_3 peak 4.87 rad/s), grasp axis 90.3° from down, FAIL as expected.
+
+**Tomorrow on GPU, verdicts set now:**
+1. `VLA_SIM_PROFILE=v5 GPU=0 scripts/isaac_py.sh render_mount_check.py --out eval_results/mount_check_v5`.
+   * Coaxial passes if the fingertip moves ≤ 2 mm while wrist_3 turns 0/90/180°.
+   * Tonight's v4 render should show the 12 cm swing instead: about 170 mm and 240 mm.
+2. A v5 expert smoke run with placeholders: 20 episodes, visual randomization, reset_renders 30, throwaway repo id. It passes if all of these hold:
+   * success rate (saved / attempts) ≥ 80 %, against v4's 89 %;
+   * blow-ups ≤ 10 % of attempts;
+   * `v5_expert_check.py` PASS: every peak ≤ 1.05 × cap, every grasp axis ≤ 5° from down.
+   * A failure is debugged in the expert (waypoints, timing at the slower speed) before any lab value goes in.
+3. After the lab values: the same two checks, then the full v5 collection (v4 recipe: 152 old box + 150 wide box), at the length the v4 6k result picks.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).

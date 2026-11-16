@@ -65,7 +65,8 @@ def test_every_constant_the_analysis_needs_is_readable(scene, key):
 
 
 def test_numpy_array_literals_are_parsed_too(scene):
-    assert scene['PLACE_TARGET_POSITION'] == [0.45, 0.30, 0.0]
+    # an np.array expression on sim_profile.TABLE_Z_M since 2026-11-16 (v4: 0.0), evaluated rather than literal-parsed
+    assert list(map(float, scene['PLACE_TARGET_POSITION'])) == [0.45, 0.30, 0.0]
 
 
 def test_the_cube_size_is_read_from_the_scene(scene):

@@ -189,7 +189,9 @@ class ScriptedPickPlace:
         # already encodes its own resting half-height) to target_position
         # too, so the cube's centre ends up at target_position's table
         # height plus its own half-height, not AT that table height.
-        cube_centre_height_above_table = cube_position[2]
+        # 2026-11-16: measured from the table surface, which is target_position's z (pick_place_scene.TABLE_Z_M; 0 for
+        # v1-v4, so unchanged) -- a v5 table need not sit at the robot base height.
+        cube_centre_height_above_table = cube_position[2] - target_position[2]
         above_cube = cube_position + np.array([0.0, 0.0, STANDOFF_HEIGHT])
         at_cube = cube_position + np.array([0.0, 0.0, GRASP_HEIGHT])
         above_target = target_position + PLACE_TCP_TRIM_M + np.array([0.0, 0.0, STANDOFF_HEIGHT])

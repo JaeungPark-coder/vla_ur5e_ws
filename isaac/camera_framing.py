@@ -70,7 +70,31 @@ def read_constants(path):
     """
     tree = ast.parse(open(path, encoding="utf-8").read())
     out = {}
+    # 2026-11-16: table height, cube size, resolution and (v5) the base camera are expressions on sim_profile now, not
+    # literals.  Non-literal assignments -- and the `if sim_profile...:` override blocks -- are therefore evaluated in
+    # order with numpy and sim_profile in scope (VLA_SIM_PROFILE picks the profile, v4 by default); anything that needs
+    # Isaac Sim or another module still just fails and is skipped.
+    import os
+    import sys
+    import numpy as np
+    namespace = {"np": np}
+    sys.path.insert(0, os.path.dirname(os.path.abspath(path)))
+    try:
+        import sim_profile
+        namespace["sim_profile"] = sim_profile
+    except Exception:
+        pass
+    finally:
+        sys.path.pop(0)
     for node in tree.body:
+        if isinstance(node, ast.If):
+            names = [t.id for n in ast.walk(node) if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)]
+            try:
+                exec(compile(ast.Module(body=[node], type_ignores=[]), path, "exec"), namespace)
+                out.update({k: namespace[k] for k in names if k in namespace})
+            except Exception:
+                pass
+            continue
         if not isinstance(node, ast.Assign) or len(node.targets) != 1:
             continue
         target = node.targets[0]
@@ -78,7 +102,14 @@ def read_constants(path):
             continue
         try:
             out[target.id] = _literal(node.value)
+            namespace[target.id] = out[target.id]
+            continue
         except ValueError:
+            pass
+        try:
+            exec(compile(ast.Module(body=[node], type_ignores=[]), path, "exec"), namespace)
+            out[target.id] = namespace[target.id]
+        except Exception:
             continue
     return out
 

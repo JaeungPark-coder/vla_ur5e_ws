@@ -45,7 +45,8 @@ simulation_app = SimulationApp({"headless": HEADLESS})
 # --- everything below must be imported AFTER SimulationApp() starts Kit ---
 from pick_place_scene import (  # noqa: E402
     PickPlaceScene, PLACE_TARGET_POSITION, MIN_CUBE_PIXELS_IN_BASE_VIEW, ROBOT_PRIM_PATH,
-    GRIPPER_FINGER_KP, GRIPPER_FINGER_KD, GRIPPER_FINGER_EFFORT_LIMIT)
+    GRIPPER_FINGER_KP, GRIPPER_FINGER_KD, GRIPPER_FINGER_EFFORT_LIMIT, TABLE_Z_M, CAMERA_RESOLUTION)
+import sim_profile  # noqa: E402
 from isaac_sim_common import (  # noqa: E402
     GRIPPER_DRIVE_JOINT_NAME, set_joint_max_force, zero_follower_joint_drives)
 from scripted_pick_place import ScriptedPickPlace  # noqa: E402
@@ -110,7 +111,7 @@ def max_attempts_for(num_episodes: int) -> int:
 
 def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_m: float = 0.03,
             overwrite: bool = False, max_cube_z_m: float = 0.25, reset_renders: int = 0, visual_random: bool = False,
-            visual_exclude_rgb=None, visual_seed=None, visual_log=None):
+            visual_exclude_rgb=None, visual_seed=None, visual_log=None, allow_placeholders=False):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.utils.constants import HF_LEROBOT_HOME
 
@@ -126,6 +127,12 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
           f"place_correction_tolerance_m={PLACE_CORRECTION_TOLERANCE_M} "
           f"place_correction_max_ticks={PLACE_CORRECTION_MAX_TICKS} "
           f"place_tolerance_m={place_tolerance_m}", flush=True)
+    # 2026-11-16: v5 is the simulator matched to the real robot; a dataset collected with lab values still at their
+    # placeholders would silently be a v4-like setup under a v5 name.
+    print(sim_profile.describe(), flush=True)
+    if sim_profile.placeholders() and not allow_placeholders:
+        raise RuntimeError(f"sim profile {sim_profile.PROFILE} still has LAB placeholders {sim_profile.placeholders()} -- "
+                           "fill them in isaac/sim_profile.py, or pass --allow_placeholders for an expert check only")
 
     # CONFIRMED 2026-09-29: this used to unconditionally shutil.rmtree an
     # existing repo_id -- fine for smoke tests, a real hazard now that
@@ -149,7 +156,7 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
                 f"append mode and would otherwise silently destroy what's already there.")
         shutil.rmtree(output_path)
 
-    image_shape = (256, 256, 3)  # keep in sync with pick_place_scene.CAMERA_RESOLUTION
+    image_shape = (CAMERA_RESOLUTION[1], CAMERA_RESOLUTION[0], 3)  # (height, width, channel); (256, 256, 3) for v1-v4
     # Field names here are chosen to match openpi's examples/ur5/README.md
     # LeRobotUR5DataConfig repack_transform verbatim (image/wrist_image/
     # joints/gripper on the dataset side, remapped to base_rgb/wrist_rgb/
@@ -305,7 +312,7 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
         lifted = scene.grasp_succeeded(max_cube_z)
         place_error = scene.place_error_m()
         placed = place_error <= place_tolerance_m
-        blown_up = max_cube_z > max_cube_z_m
+        blown_up = max_cube_z > TABLE_Z_M + max_cube_z_m   # measured from the table surface (z = 0 for v1-v4)
         if lifted and placed and not blown_up:
             dataset.save_episode()
             n_success += 1
@@ -422,6 +429,8 @@ def main():
                         help="the held-out plain ground colour (sRGB 0-1): no sampled ground colour comes within "
                              "ground_textures.EXCLUDE_DIST of it")
     parser.add_argument("--visual_seed", type=int, default=None)
+    parser.add_argument("--allow_placeholders", action="store_true",
+                        help="v5: collect even though isaac/sim_profile.py still has LAB placeholders (expert checks only)")
     parser.add_argument("--visual_log", type=str, default=None,
                         help="episode -> visual spec JSONL (default: <dataset dir>_episode_visuals.jsonl)")
     args = parser.parse_args()
@@ -437,7 +446,8 @@ def main():
     # escaping exception, making a crash look like a clean exit.
     try:
         collect(args.num_episodes, args.repo_id, args.push_to_hub, args.place_tolerance_m, args.overwrite, args.max_cube_z_m,
-                args.reset_renders, args.visual_random, args.visual_exclude_rgb, args.visual_seed, args.visual_log)
+                args.reset_renders, args.visual_random, args.visual_exclude_rgb, args.visual_seed, args.visual_log,
+                args.allow_placeholders)
     except BaseException:
         import traceback
         print("\n=== FAILED ===\n" + traceback.format_exc(), flush=True)

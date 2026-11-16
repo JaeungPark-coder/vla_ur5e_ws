@@ -110,12 +110,16 @@ class PickPlaceSceneBridge(Node):
     def _on_reset_request(self, msg: Empty):
         self.reset_requested = True
 
+    # 2026-11-16: heights go out measured from the table surface (pick_place_scene.TABLE_Z_M; 0 for v1-v4, so unchanged),
+    # so the client's lifted_z_threshold (0.08) and blow-up cut (0.25) mean the same thing at any v5 table height.
     def publish_cube_position(self, scene):
+        from pick_place_scene import TABLE_Z_M
         pos = scene.get_cube_position()
-        self.eval_cube_position_pub.publish(Point(x=float(pos[0]), y=float(pos[1]), z=float(pos[2])))
+        self.eval_cube_position_pub.publish(Point(x=float(pos[0]), y=float(pos[1]), z=float(pos[2]) - TABLE_Z_M))
 
     def publish_cube_max_z(self, max_z):
-        self.eval_cube_max_z_pub.publish(Float32MultiArray(data=[float(self.reset_count), float(max_z)]))
+        from pick_place_scene import TABLE_Z_M
+        self.eval_cube_max_z_pub.publish(Float32MultiArray(data=[float(self.reset_count), float(max_z) - TABLE_Z_M]))
 
     def publish_joint_state(self, obs, ack_id):
         """joint_state only (lockstep ticks that need no images)."""

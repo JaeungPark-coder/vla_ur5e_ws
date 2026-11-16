@@ -31,12 +31,13 @@ from isaacsim.core.utils.stage import add_reference_to_stage, get_current_stage
 from isaacsim.core.prims import SingleArticulation, SingleRigidPrim
 
 import camera_framing
+import sim_profile
 from isaac_sim_common import (
     UR5E_ASSET_RELATIVE_PATH, ROBOT_PRIM_PATH, TOOL_LINK_PRIM_PATH,
     select_gripper_variant, add_gripper_colliders, rescale_gripper_mass_to_spec,
     GripperController, setup_rmpflow, prim_world_pose,
     GRIPPER_VARIANT_SET_NAME,
-    add_cube, add_shape, add_place_target_marker, NullGripper,
+    add_cube, add_shape, add_place_target_marker, NullGripper, realign_gripper_mount,
 )
 import object_configs
 
@@ -84,9 +85,12 @@ WRIST_CAMERA_PRIM_PATH = f"{TOOL_LINK_PRIM_PATH}/wrist_camera"
 # too repetitive for domain randomization (reset()'s own comment).
 CUBE_X_RANGE = (0.42, 0.48)
 CUBE_Y_RANGE = (-0.10, 0.10)
-CUBE_SIZE_M = 0.04  # edge length of the spawned cube
-CUBE_Z = 0.02  # resting height for a 4cm cube on the table surface
-PLACE_TARGET_POSITION = np.array([0.45, 0.30, 0.0])
+# 2026-11-16: table height and cube size come from sim_profile (v4: 0.0 and 0.04, unchanged; v5: the lab's values).
+# Everything below that is a height is measured from the table surface TABLE_Z_M, so a v4 run is bit-for-bit as before.
+TABLE_Z_M = float(sim_profile.TABLE_Z_M)
+CUBE_SIZE_M = float(sim_profile.CUBE_SIZE_M)  # edge length of the spawned cube
+CUBE_Z = TABLE_Z_M + CUBE_SIZE_M / 2.0  # resting height of the cube centre on the table surface
+PLACE_TARGET_POSITION = np.array([0.45, 0.30, TABLE_Z_M])
 
 # 2026-09-29: single source of truth for the finger_joint config the
 # 2026-09-28 first-ever successful grasp-lift actually used (IsaacLab's
@@ -117,7 +121,7 @@ GRIPPER_FINGER_EFFORT_LIMIT = 1650.0
 # The cube rests with its centre at CUBE_Z=0.02 and the scripted expert
 # lifts it ~0.15 m, so 0.08 cleanly separates "picked up" from "still on the
 # table" without demanding the full lift height.
-LIFT_Z_THRESHOLD = 0.08
+LIFT_Z_THRESHOLD = TABLE_Z_M + 0.08
 # Absolute floor for the peak red-cube pixel count the base camera must reach
 # at some point during an episode (see cube_pixels_visible). Measured on a
 # real collected episode with the cameras working: the peak is ~130 px. The
@@ -186,6 +190,8 @@ WRIST_CAMERA_BACK_M = 0.12
 # the standard aperture) is far too narrow to hold an object that sits off to
 # one side of a laterally-offset camera.
 WRIST_CAMERA_HORIZONTAL_FOV_DEG = 70.0
+if sim_profile.WRIST_CAMERA_TOOL0 is not None:   # v5: the lab's wrist camera
+    WRIST_CAMERA_HORIZONTAL_FOV_DEG = float(sim_profile.WRIST_CAMERA_TOOL0["hfov_deg"])
 WRIST_CAMERA_FOCAL_LENGTH_MM = 24.0
 
 # RESET to 0 on the 2026-09-22 mount switch (see WRIST_CAMERA_LATERAL_M):
@@ -238,7 +244,8 @@ BASE_CAMERA_POSITION = (0.9, 0.0, 0.5)
 BASE_CAMERA_AIM_POINT = (0.45, 0.10, 0.02)
 # 256x256 matches openpi's LIBERO example image shape -- keep the
 # training-side transform (UR5eInputs) consistent with whatever's set here.
-CAMERA_RESOLUTION = (256, 256)
+# 2026-11-16: (width, height) from sim_profile; v5 matches the real cameras' aspect ratio.
+CAMERA_RESOLUTION = tuple(int(v) for v in sim_profile.CAMERA_RESOLUTION)
 # How many pixels across the cube ought to be for the policy to have real
 # evidence of where it is during the approach. Viewpoint quality is one of
 # the larger levers on behaviour-cloning success, and a target that is a
@@ -261,6 +268,10 @@ CAMERA_FAR_CLIP_M = 10000.0
 # change the camera's framing; the two must stay consistent.
 BASE_CAMERA_HORIZONTAL_FOV_DEG = 60.0
 BASE_CAMERA_FOCAL_LENGTH_MM = 24.0
+if sim_profile.BASE_CAMERA is not None:   # v5: the lab camera, measured in the UR base frame
+    BASE_CAMERA_POSITION = tuple(sim_profile.ur_base_to_world(sim_profile.BASE_CAMERA["position_ur"]).tolist())
+    BASE_CAMERA_AIM_POINT = tuple(sim_profile.ur_base_to_world(sim_profile.BASE_CAMERA["aim_ur"]).tolist())
+    BASE_CAMERA_HORIZONTAL_FOV_DEG = float(sim_profile.BASE_CAMERA["hfov_deg"])
 
 # What this camera can actually show, computed rather than assumed. Distance
 # and field of view only ever act together, as the width of the swath the
@@ -308,6 +319,16 @@ MIN_OBJECT_SEPARATION_M = 0.12  # reject a random layout where two objects would
 # longer it held the pose (the residual grew 24mm -> 43mm between a 60- and
 # a 120-tick hold, while the same run without a gripper stayed at 5mm).
 GRIPPER_TCP_OFFSET_M = 0.12
+assert abs(GRIPPER_TCP_OFFSET_M - sim_profile.SIM_GRIPPER_LENGTH_M) < 1e-12
+
+# 2026-11-16 (README BLOCKER, confirmed on URSim): on the real arm the gripper is COAXIAL with tool0 -- the flange prim's +X
+# here -- not along the flange prim's +Z as this asset's variant mounts it.  sim_profile v5 re-mounts it
+# (isaac_sim_common.realign_gripper_mount) by R_GRIP_IN_FLANGE about the flange origin plus a spacer along the new axis, so
+# the "grip frame" (+Z = the way the fingers point, the frame every waypoint is written in) is R_GRIP_IN_FLANGE in the
+# flange frame and the fingertips are GRIPPER_TCP_M out along its +Z.  v4: identity and 0.12, exactly as before.
+R_GRIP_IN_FLANGE = sim_profile.R_GRIP_IN_FLANGE
+GRIPPER_TCP_M = float(sim_profile.GRIPPER_TCP_M)
+GRIPPER_SPACER_M = float(sim_profile.GRIPPER_SPACER_M)
 
 
 def _look_at_rotation(eye, target, up=(0.0, 0.0, 1.0)):
@@ -362,7 +383,8 @@ class PickPlaceScene:
             raise RuntimeError("Could not resolve Isaac Sim assets root -- check Nucleus connection.")
 
         self.world = World(stage_units_in_meters=1.0)
-        self.world.scene.add_default_ground_plane()
+        self.world.scene.add_default_ground_plane(z_position=TABLE_Z_M)
+        print(sim_profile.describe(), flush=True)
         self.stage = get_current_stage()
 
         # CONFIRMED INDEPENDENTLY by two parallel sessions on the same day
@@ -406,6 +428,10 @@ class PickPlaceScene:
             # ships zero collision geometry on any of its 9 links -- the
             # fingers pass through anything they close on. Without this, no
             # amount of correct frame math will ever grasp anything.
+            if sim_profile.GRIPPER_MOUNT == "coaxial":
+                info = realign_gripper_mount(
+                    self.stage, robot_prim, TOOL_LINK_PRIM_PATH, R_GRIP_IN_FLANGE, sim_profile.GRIPPER_SHIFT_IN_FLANGE)
+                print(f"gripper re-mounted coaxial with tool0: {info}", flush=True)
             n_colliders = add_gripper_colliders(robot_prim)
             if n_colliders == 0:
                 raise RuntimeError(
@@ -466,6 +492,7 @@ class PickPlaceScene:
         self.last_command_joints = None
         self.last_command_gripper = None
         self.last_command_velocities = None  # joint_velocities of the same action (None when it carried none)
+        self.rate_limited_ticks = 0  # sim_profile v5: expert ticks whose command the joint-speed cap changed (_rate_limit_targets)
         self._sync_gripper_to_flange()
         self.physics_dt = 1.0 / 60.0
 
@@ -513,7 +540,8 @@ class PickPlaceScene:
         # gives square pixels for this square CAMERA_RESOLUTION -- for a
         # non-square resolution this would need scaling by
         # (vertical_px / horizontal_px) instead.
-        base_cam.CreateVerticalApertureAttr(horizontal_aperture_mm)
+        # (height/width) scaling for a non-square CAMERA_RESOLUTION (v5 matches the real cameras' aspect), square pixels.
+        base_cam.CreateVerticalApertureAttr(horizontal_aperture_mm * CAMERA_RESOLUTION[1] / CAMERA_RESOLUTION[0])
         # CONFIRMED (2026-09-07, by inspecting an actual collected dataset): a
         # USD camera's default clippingRange is (1.0, 1000000) -- a 1 METRE
         # near plane. The base camera sits ~0.66m from the cube and the wrist
@@ -561,7 +589,7 @@ class PickPlaceScene:
         # camera's shorter focal length -- worse than the base camera's, and
         # what actually produced the vanishing-on-roll symptom this was
         # chased down from.
-        wrist_cam.CreateVerticalApertureAttr(wrist_aperture_mm)
+        wrist_cam.CreateVerticalApertureAttr(wrist_aperture_mm * CAMERA_RESOLUTION[1] / CAMERA_RESOLUTION[0])
         self.set_wrist_camera_flange_rotation(WRIST_CAMERA_FLANGE_ROT_EULER)
 
         # Render products + annotators last, once both cameras exist. These
@@ -585,9 +613,9 @@ class PickPlaceScene:
         # tool0's axis is why it kept framing the arm and the target marker
         # instead of the cube, and why sweeping 18 mount candidates found
         # nothing: every one of them was measured off the wrong axis.
-        # In the flange frame the grip frame is the identity, so all that is
-        # left is USD's own -Z imaging convention.
-        return Rot.from_euler("x", 180.0, degrees=True)
+        # In the flange frame the grip frame is R_GRIP_IN_FLANGE (identity for
+        # v4), so all that is left is USD's own -Z imaging convention.
+        return R_GRIP_IN_FLANGE * Rot.from_euler("x", 180.0, degrees=True)
 
     def set_wrist_camera_flange_rotation(self, euler_xyz_deg, lateral_m=None, focus_m=None,
                                           back_m=None, down_tilt_deg=None):
@@ -649,6 +677,17 @@ class PickPlaceScene:
         # gripper at the cube instead of sitting level with it.
         eye = side * lateral - view_dir * back
         target = view_dir * focus
+        if euler_xyz_deg is not None:
+            # 2026-11-16: the v4 mount is defined relative to the GRIPPER as v4 mounted it; carry it with the re-mounted
+            # gripper (R_GRIP_IN_FLANGE about the flange origin, then the spacer) so the camera keeps its view of the
+            # fingers.  Identity / 0 for v4.  (derived_wrist_rotation already includes R_GRIP_IN_FLANGE.)
+            shift = sim_profile.GRIPPER_SHIFT_IN_FLANGE
+            eye = R_GRIP_IN_FLANGE.apply(eye) + shift
+            target = R_GRIP_IN_FLANGE.apply(target) + shift
+        if sim_profile.WRIST_CAMERA_TOOL0 is not None and euler_xyz_deg == WRIST_CAMERA_FLANGE_ROT_EULER:
+            # v5 with the lab's bracket measured: position and look-at point in the tool0 frame
+            eye = self.r_flange_to_tool0.apply(np.asarray(sim_profile.WRIST_CAMERA_TOOL0["position"], dtype=float))
+            target = self.r_flange_to_tool0.apply(np.asarray(sim_profile.WRIST_CAMERA_TOOL0["look_at"], dtype=float))
         r_cam = _look_at_rotation(eye, target)
 
         self._wrist_cam_translate_op.Set(Gf.Vec3d(*eye))
@@ -739,6 +778,8 @@ class PickPlaceScene:
 
         self._sync_gripper_to_flange()
         self.gripper.open()
+        self.last_command_joints = None   # the expert's joint-speed cap starts from the measured joints each episode
+        self.rate_limited_ticks = 0
         # A fresh world.reset() hasn't rendered a frame yet -- the replicator
         # annotators return an empty array until at least one render pass
         # happens, so get_observation() right after reset would report
@@ -773,19 +814,17 @@ class PickPlaceScene:
         approach so the FINGERS land on the target rather than the flange,
         and compose the fixed flange->tool0 rotation so "point the gripper
         this way" is not off by the 90 degrees between those frames."""
-        r_grip = Rot.from_rotvec(np.asarray(target_rotvec, dtype=float))
-        approach = r_grip.apply(np.array([0.0, 0.0, 1.0]))
-        flange_pos = np.asarray(target_pos, dtype=float) - GRIPPER_TCP_OFFSET_M * approach
-        # tool0 and the flange share a position, so only the rotation composes
-        quat_xyzw = (r_grip * self.r_flange_to_tool0).as_quat()
-        return flange_pos, quat_xyzw[[3, 0, 1, 2]]
+        # sim_profile.flange_target; v4 (R_GRIP_IN_FLANGE = identity, TCP 0.12) is exactly the old computation.
+        flange_pos, r_tool0 = sim_profile.flange_target(
+            target_pos, Rot.from_rotvec(np.asarray(target_rotvec, dtype=float)), self.r_flange_to_tool0)
+        return flange_pos, r_tool0.as_quat()[[3, 0, 1, 2]]
 
     def grip_point_world(self):
         """Where the fingertips currently are -- the point the scripted
         waypoints and any reach measurement are about. The flange prim alone
         is GRIPPER_TCP_OFFSET_M short of it."""
         pos, quat = prim_world_pose(self.stage.GetPrimAtPath(TOOL_LINK_PRIM_PATH))
-        return pos + GRIPPER_TCP_OFFSET_M * Rot.from_quat(quat).apply(np.array([0.0, 0.0, 1.0]))
+        return sim_profile.grip_point(pos, Rot.from_quat(quat))
 
     def step_towards(self, target_pos, target_rotvec, target_gripper):
         """One control tick: sets the RMPflow Cartesian target, applies one
@@ -800,6 +839,7 @@ class PickPlaceScene:
         self.rmpflow.set_end_effector_target(flange_pos, tool0_quat_wxyz)
         self.rmpflow.update_world()
         action = self.articulation_policy.get_next_articulation_action(self.physics_dt)
+        self._rate_limit_action(action)
         self.robot.apply_action(action)
         self.last_command_joints = self._arm_command_from_action(action)
         self.last_command_velocities = self._arm_command_from_action(action, field='joint_velocities')
@@ -807,6 +847,47 @@ class PickPlaceScene:
         self.gripper.set_target(target_gripper)
         self.world.step(render=True)
         self._sync_gripper_to_flange()
+
+    def _rate_limit_targets(self, q_target):
+        """sim_profile v5: hold the EXPERT's commanded arm targets to EXPERT_MAX_JOINT_SPEED_RAD_S (half the UR5e limit).
+
+        Why (README "v5 decision"): the v4 expert's wrist_3 peaked at 4.9 rad/s against the real 3.14, so its trajectories
+        cannot be reproduced on hardware at the recorded timing, and a policy trained on them asks for the same.  The
+        command may move at most vmax * dt per tick from the previous command (from the measured joints after a reset, or
+        when the previous command is further than 0.1 rad from the arm).  Only the expert paths (step_towards,
+        step_towards_diffik) call this -- apply_joint_targets is also the policy's path in evaluation and stays as is.
+        v4: no limit (EXPERT_MAX_JOINT_SPEED_RAD_S is None) -- identical to before."""
+        vmax = sim_profile.EXPERT_MAX_JOINT_SPEED_RAD_S
+        q_target = np.asarray(q_target, dtype=float)[:6]
+        if vmax is None:
+            return q_target
+        measured = np.asarray(self.robot.get_joint_positions(), dtype=float)[:6]
+        ref = self.last_command_joints
+        if ref is None or not np.all(np.isfinite(ref)) or np.max(np.abs(ref - measured)) > 0.1:
+            ref = measured
+        step = float(vmax) * self.physics_dt
+        limited = ref + np.clip(q_target - ref, -step, step)
+        self.rate_limited_ticks += int(np.any(np.abs(limited - q_target) > 1e-9))
+        return limited
+
+    def _rate_limit_action(self, action):
+        """_rate_limit_targets on an RMPflow ArticulationAction, in place; its velocity targets clipped to the same cap."""
+        vmax = sim_profile.EXPERT_MAX_JOINT_SPEED_RAD_S
+        if vmax is None or action.joint_positions is None:
+            return
+        q = self._arm_command_from_action(action)
+        if not np.all(np.isfinite(q)):
+            return
+        limited = self._rate_limit_targets(q)
+        pos = np.asarray(action.joint_positions, dtype=float).reshape(-1).copy()
+        idx = action.joint_indices
+        idx = np.arange(len(pos)) if idx is None else np.asarray(idx).reshape(-1)
+        for k, joint in enumerate(idx):
+            if 0 <= joint < 6:
+                pos[k] = limited[joint]
+        action.joint_positions = pos
+        if action.joint_velocities is not None:
+            action.joint_velocities = np.clip(np.asarray(action.joint_velocities, dtype=float).reshape(-1), -vmax, vmax)
 
     @staticmethod
     def _arm_command_from_action(action, field='joint_positions'):
@@ -927,7 +1008,7 @@ class PickPlaceScene:
         jac = gate._numerical_jacobian(q)  # (6,6): rows 0-2 linear, 3-5 angular
         jjt = jac @ jac.T
         qdot = jac.T @ np.linalg.solve(jjt + (damping ** 2) * np.eye(6), v)
-        q_new = q + qdot * self.physics_dt
+        q_new = self._rate_limit_targets(q + qdot * self.physics_dt)
 
         self.apply_joint_targets(q_new, target_gripper)
 

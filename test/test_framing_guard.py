@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 import camera_framing as cf
+import sim_profile  # the scene's table height / cube size / cameras come from it (default profile v4)
 
 SCENE = Path(__file__).resolve().parents[1] / 'isaac' / 'pick_place_scene.py'
 
@@ -24,7 +25,7 @@ KNOWN_BROKEN_PEAK_PX2 = 0       # the first 100-episode run, cube never visible
 def scene_constants():
     """Every top-level assignment in the scene that runs without Isaac Sim."""
     tree = ast.parse(SCENE.read_text(encoding='utf-8'))
-    namespace = {'np': np, 'camera_framing': cf}
+    namespace = {'np': np, 'camera_framing': cf, 'sim_profile': sim_profile}
     for node in tree.body:
         if not isinstance(node, ast.Assign):
             continue

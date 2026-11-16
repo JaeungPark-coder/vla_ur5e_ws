@@ -404,6 +404,99 @@ def select_gripper_variant(robot_prim, candidates=None):
         f"variant set. Available: {available}. Set GRIPPER_VARIANT_CANDIDATES to one of those.")
 
 
+def _np_from_gf(m):
+    """Gf.Matrix4d (row-vector convention) -> numpy 4x4 acting on column vectors."""
+    return np.array(m, dtype=float).T
+
+
+def _world_matrix(prim):
+    return _np_from_gf(UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default()))
+
+
+def _pose_matrix(pos, quat_gf):
+    from scipy.spatial.transform import Rotation as Rot
+    T = np.eye(4)
+    im = quat_gf.GetImaginary()
+    T[:3, :3] = Rot.from_quat([im[0], im[1], im[2], quat_gf.GetReal()]).as_matrix()
+    T[:3, 3] = [pos[0], pos[1], pos[2]]
+    return T
+
+
+def find_gripper_attach_joints(robot_prim, gripper_root_path):
+    """Every UsdPhysics joint under the robot with exactly one body inside the gripper subtree: what welds the variant's
+    gripper to the arm.  Returns [(joint prim, index of the ARM-side body (0 or 1), arm body path)]."""
+    root = str(gripper_root_path)
+    found = []
+    for prim in Usd.PrimRange(robot_prim):
+        if not prim.IsA(UsdPhysics.Joint):
+            continue
+        j = UsdPhysics.Joint(prim)
+        b = [list(j.GetBody0Rel().GetTargets()), list(j.GetBody1Rel().GetTargets())]
+        if not b[0] or not b[1]:
+            continue
+        inside = [str(t[0]).startswith(root + "/") or str(t[0]) == root for t in b]
+        if inside[0] != inside[1]:
+            arm = 0 if not inside[0] else 1
+            found.append((prim, arm, str(b[arm][0])))
+    return found
+
+
+def realign_gripper_mount(stage, robot_prim, flange_path, rotation_in_flange, translation_in_flange,
+                          gripper_root_path=None):
+    """Re-mount the variant's gripper: move every gripper link rigidly by M = (rotation, translation) expressed in the flange
+    frame, and rewrite the weld joint's arm-side frame so physics holds it there.
+
+    Why (README BLOCKER, 2026-11-16): the asset's Robotiq_2f_85 variant sits along the flange prim's +Z, while the tool axis
+    of the real arm (tool0 z = wrist_3 axis) is the flange prim's +X -- confirmed on URSim.  v5 needs it coaxial.
+
+    Must run after select_gripper_variant and BEFORE the first world.reset() (the articulation is built from these values).
+    Fixed-joint algebra, with F the flange frame and b_arm the arm-side body: X_barm_j' = X_barm_F M X_barm_F^-1 X_barm_j.
+    The gripper links are also moved in USD (their common parent Xform) so the first rendered frame already shows the new
+    mount.  Raises unless exactly one weld joint is found, listing what was found."""
+    from pxr import Gf
+    from scipy.spatial.transform import Rotation as Rot
+    gripper_root_path = gripper_root_path or f"{robot_prim.GetPath()}/{GRIPPER_VARIANT_SET_NAME}"
+    joints = find_gripper_attach_joints(robot_prim, gripper_root_path)
+    if len(joints) != 1:
+        raise RuntimeError(f"expected exactly one joint welding {gripper_root_path} to the arm, found "
+                           f"{[(str(p.GetPath()), arm, path) for p, arm, path in joints]}")
+    jprim, arm, arm_body = joints[0]
+    M = np.eye(4)
+    M[:3, :3] = Rot.from_quat(rotation_in_flange.as_quat()).as_matrix() if hasattr(rotation_in_flange, "as_quat") \
+        else np.asarray(rotation_in_flange, dtype=float)
+    M[:3, 3] = np.asarray(translation_in_flange, dtype=float)
+
+    W_F = _world_matrix(stage.GetPrimAtPath(flange_path))
+    W_B = _world_matrix(stage.GetPrimAtPath(arm_body))
+    for T, name in ((W_F, flange_path), (W_B, arm_body)):
+        R = T[:3, :3]
+        if not np.allclose(R @ R.T, np.eye(3), atol=1e-5):
+            raise RuntimeError(f"{name} has a scaled/sheared world transform; the mount algebra assumes rigid frames")
+    X_BF = np.linalg.inv(W_B) @ W_F
+
+    j = UsdPhysics.Joint(jprim)
+    pos_attr, rot_attr = (j.GetLocalPos0Attr(), j.GetLocalRot0Attr()) if arm == 0 else (j.GetLocalPos1Attr(), j.GetLocalRot1Attr())
+    pos, rot = pos_attr.Get(), rot_attr.Get()
+    X_Bj = _pose_matrix(pos if pos is not None else (0, 0, 0), rot if rot is not None else Gf.Quatf(1, 0, 0, 0))
+    X_Bj_new = X_BF @ M @ np.linalg.inv(X_BF) @ X_Bj
+    q = Rot.from_matrix(X_Bj_new[:3, :3]).as_quat()
+    pos_attr.Set(Gf.Vec3f(*[float(v) for v in X_Bj_new[:3, 3]]))
+    rot_attr.Set(Gf.Quatf(float(q[3]), float(q[0]), float(q[1]), float(q[2])))
+
+    # the gripper links, in USD: their common parent moves by W = W_F M W_F^-1 (world frame)
+    groot = stage.GetPrimAtPath(gripper_root_path)
+    W = W_F @ M @ np.linalg.inv(W_F)
+    W_G = _world_matrix(groot)
+    parent = groot.GetParent()
+    W_P = _world_matrix(parent) if parent and parent.IsA(UsdGeom.Xformable) else np.eye(4)
+    L_new = np.linalg.inv(W_P) @ W @ W_G
+    xf = UsdGeom.Xformable(groot)
+    xf.ClearXformOpOrder()
+    xf.AddTransformOp().Set(Gf.Matrix4d(*L_new.T.ravel().tolist()))
+    return dict(joint=str(jprim.GetPath()), arm_body=arm_body, arm_side=arm, local_pos_before=list(pos or (0, 0, 0)),
+                local_pos_after=X_Bj_new[:3, 3].round(5).tolist(), gripper_root=gripper_root_path)
+
+
 GRIP_MATERIAL_PRIM_PATH = "/World/GripFrictionMaterial"
 
 
