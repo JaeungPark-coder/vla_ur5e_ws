@@ -4043,6 +4043,27 @@ The "posY" regions in world coordinates lie at negative Y on the pendant, on the
   * Main risks: RMPflow's tool frame after the re-mount, the descent timing under the speed cap, and the new start pose.
 * The smoke datasets (`hf_cache/vla_ur5e_ws/v5smoke_*`) are throwaway, but are deleted only after asking.
 
+**v5 PILOT, queued after the smoke run: a pipeline test, NOT for conclusions** (`scripts/v5_pilot_driver.sh`).
+* **Gate:** it runs only if the smoke run's pre-set expert verdicts all pass (`summary.json` `smoke_pass`: success, blow-ups, expert check). Otherwise it stops, and the cause is written up instead.
+* **Stages:**
+  1. 50 saved episodes, placeholders allowed, stratified like the evaluation regions: centre 15, the other five 7 each, visual seeds 601–606;
+  2. merge into `vla_ur5e_ws/ur5e_pick_place_v5pilot`, linked as `Jaeung12/ur5e_pick_place_v5pilot`;
+  3. norm stats;
+  4. 1k-step training with openpi config `pi0_ur5e_pick_place_v5pilot` (local openpi commit `8374eb2`, the v4 recipe with 1000 steps and 100 warm-up);
+  5. centre evaluation: 15 trials, K = 25, seeds 9200+, the v5 scene;
+  6. `scripts/v5_pilot_check.py`.
+* **The pilot answers only two questions:**
+  * Does every stage run to the end without errors?
+  * Are the start pose and the gripper behaviour as intended? `v5_pilot_check.py` checks that:
+    * every dataset episode and every evaluation trial starts within 0.02 rad of `READY_JOINTS` with the gripper open;
+    * every episode closes once and opens once. Hysteresis: closed above 0.5, open again below 0.3. In the v4 data the measured value sits at ~0.50 during release, and 33/302 episodes cross 0.5 several times there;
+    * at the first close, the tool axis is ≤ 5° from down and the fingertip is within 3 cm of the cube-centre height.
+  * The evaluation's success count and closing distance are recorded, not judged: 1k steps on 50 placeholder episodes says nothing about v5.
+* **Negative control on the v4 data and the v4 6k centre traces:**
+  * start pose fails (2.0 rad off), and the axis at close fails (90.7°);
+  * gripper events are 1 close / 1 open in all 302 episodes with the hysteresis;
+  * the evaluation closes in 15/15 trials, 4 mm from the cube at the median.
+
 **Safety confirmation dialogs:**
 * Nothing in the repository clicks or confirms anything on a teach pendant or a controller, simulated or real.
 * The URSim "confirm safety configuration" click on 2026-11-16 was a one-off on the simulator, done by hand through VNC from the scratchpad, and is not in the repository.
