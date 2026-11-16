@@ -1,0 +1,235 @@
+{
+ "ursim_host": "127.0.0.1",
+ "tcp_m": 0.16,
+ "poses": [
+  {
+   "name": "home q=0 (every episode starts here)",
+   "q": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "moved": true,
+   "q_err_max": 2.7755575615628914e-17,
+   "flange_base_ursim": [
+    -0.8172,
+    -0.2329,
+    0.0628
+   ],
+   "flange_base_dh": [
+    -0.8172,
+    -0.2329,
+    0.0628
+   ],
+   "flange_pos_diff_mm": 6.288444833692274e-08,
+   "flange_axes_diff_deg": 0.0,
+   "tool_axis_world": [
+    0.0,
+    1.0,
+    -0.0
+   ],
+   "tool_axis_from_down_deg": 89.99999998824843,
+   "flange_world": [
+    0.8172,
+    0.2329,
+    0.0628
+   ],
+   "coaxial_tip_world": [
+    0.8172,
+    0.3929,
+    0.0628
+   ]
+  },
+  {
+   "name": "grasp, trial_001.npz tick 641",
+   "q": [
+    -0.2092,
+    -0.9559,
+    1.6462,
+    -0.6771,
+    -1.7639,
+    3.1728
+   ],
+   "moved": true,
+   "q_err_max": 4.2465972915906036e-07,
+   "flange_base_ursim": [
+    -0.4625,
+    -0.0185,
+    0.1615
+   ],
+   "flange_base_dh": [
+    -0.4625,
+    -0.0185,
+    0.1615
+   ],
+   "flange_pos_diff_mm": 0.00030186794678965963,
+   "flange_axes_diff_deg": 4.7135728807084014e-05,
+   "tool_axis_world": [
+    -1.0,
+    0.016,
+    0.013
+   ],
+   "tool_axis_from_down_deg": 90.74140752798723,
+   "flange_world": [
+    0.4625,
+    0.0185,
+    0.1615
+   ],
+   "coaxial_tip_world": [
+    0.3025,
+    0.0211,
+    0.1636
+   ],
+   "isaac_fingertip_world": [
+    0.4609,
+    0.0151,
+    0.0416
+   ],
+   "coaxial_tip_vs_isaac_mm": 200.0002650961882
+  },
+  {
+   "name": "grasp, trial_002.npz tick 470",
+   "q": [
+    -0.3874,
+    -1.0158,
+    1.7523,
+    -0.7375,
+    -1.9396,
+    3.156
+   ],
+   "moved": true,
+   "q_err_max": 4.3982696529276666e-07,
+   "flange_base_ursim": [
+    -0.4272,
+    0.0691,
+    0.1605
+   ],
+   "flange_base_dh": [
+    -0.4272,
+    0.0691,
+    0.1605
+   ],
+   "flange_pos_diff_mm": 0.0003289408455469416,
+   "flange_axes_diff_deg": 4.7259282698740904e-05,
+   "tool_axis_world": [
+    -1.0,
+    0.019,
+    -0.001
+   ],
+   "tool_axis_from_down_deg": 89.94286847747979,
+   "flange_world": [
+    0.4272,
+    -0.0691,
+    0.1605
+   ],
+   "coaxial_tip_world": [
+    0.2673,
+    -0.0662,
+    0.1603
+   ],
+   "isaac_fingertip_world": [
+    0.4273,
+    -0.0709,
+    0.0405
+   ],
+   "coaxial_tip_vs_isaac_mm": 200.00013524988216
+  },
+  {
+   "name": "grasp, trial_003.npz tick 639",
+   "q": [
+    -0.4139,
+    -0.9387,
+    1.6574,
+    -0.9938,
+    -0.8949,
+    -2.1392
+   ],
+   "moved": true,
+   "q_err_max": 4.7508621214831237e-07,
+   "flange_base_ursim": [
+    -0.5352,
+    0.0214,
+    0.1301
+   ],
+   "flange_base_dh": [
+    -0.5352,
+    0.0214,
+    0.1301
+   ],
+   "flange_pos_diff_mm": 0.00030919852768866696,
+   "flange_axes_diff_deg": 5.8282168678743664e-05,
+   "tool_axis_world": [
+    -0.436,
+    0.875,
+    -0.212
+   ],
+   "tool_axis_from_down_deg": 77.76414149127552,
+   "flange_world": [
+    0.5352,
+    -0.0214,
+    0.1301
+   ],
+   "coaxial_tip_world": [
+    0.4654,
+    0.1185,
+    0.0962
+   ],
+   "isaac_fingertip_world": [
+    0.4638,
+    -0.0762,
+    0.0508
+   ],
+   "coaxial_tip_vs_isaac_mm": 200.00010449120782
+  },
+  {
+   "name": "grasp, trial_004.npz tick 564",
+   "q": [
+    -0.1951,
+    -0.9329,
+    1.6089,
+    -0.6594,
+    -1.7465,
+    3.1594
+   ],
+   "moved": true,
+   "q_err_max": 4.374542239560242e-07,
+   "flange_base_ursim": [
+    -0.4731,
+    -0.0246,
+    0.1605
+   ],
+   "flange_base_dh": [
+    -0.4731,
+    -0.0246,
+    0.1605
+   ],
+   "flange_pos_diff_mm": 0.00017013793271162362,
+   "flange_axes_diff_deg": 3.9643055767143e-05,
+   "tool_axis_world": [
+    -1.0,
+    0.019,
+    0.016
+   ],
+   "tool_axis_from_down_deg": 90.93894199801734,
+   "flange_world": [
+    0.4731,
+    0.0246,
+    0.1605
+   ],
+   "coaxial_tip_world": [
+    0.3131,
+    0.0277,
+    0.1631
+   ],
+   "isaac_fingertip_world": [
+    0.4711,
+    0.0229,
+    0.0405
+   ],
+   "coaxial_tip_vs_isaac_mm": 200.00004489760002
+  }
+ ]
+}

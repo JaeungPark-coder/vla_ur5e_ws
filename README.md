@@ -3770,6 +3770,57 @@ Found while checking the joint conventions (preparation step 2), GPU-free.
 * gripper count mapping;
 * the table photo.
 
+#### 2026-11-16: blocker confirmed on URSim (the UR controller itself), and the decision
+
+**URSim check.**
+* Setup: Universal Robots' official controller simulator, `universalrobots/ursim_e-series`, URSoftware 5.26.3, ROBOT_MODEL=UR5 (e-series = UR5e), bound to localhost.
+* Script: `scripts/ursim_kinematics_check.py` → `eval_results/ursim_kinematics_check.json`.
+* Joint vectors sent: home (q = 0) and four demonstrated grasp moments.
+* The controller's own tool-flange pose (TCP offset 0) was read back:
+
+| pose | URSim flange vs DH FK | real tool axis from straight down | coaxial gripper (0.16 m) vs Isaac fingertips |
+|---|---|---|---|
+| home q=0 | 0.00 mm, 0.00° | 90.0° | -- |
+| grasp, trial 1 | 0.00 mm, 0.00° | 90.7° | 200 mm |
+| grasp, trial 2 | 0.00 mm, 0.00° | 89.9° | 200 mm |
+| grasp, trial 3 | 0.00 mm, 0.00° | 77.8° | 200 mm |
+| grasp, trial 4 | 0.00 mm, 0.00° | 90.9° | 200 mm |
+
+* **Joint zero and direction conventions match.** Isaac's UR5e arm, the DH model and the real controller agree exactly. The arm itself transfers.
+* **The gripper mount does not match.** At every demonstrated grasp the real tool axis is horizontal. A coaxial real gripper's fingertips would be 200 mm from where the simulated fingertips were.
+* Visual check: `isaac/render_mount_check.py` (wrist_3 turned alone by 0/90/180° at a grasp; base and side camera). It runs after the v4 6k evaluation, when the GPUs are free.
+* Saved images already show the mount:
+  * in the base view, the fingers sit on the side of the last link, and the link's end cylinder continues below them;
+  * in the wrist view, a robot link lies right beside the gripper body.
+
+**Decision (reviewer):** fix the simulator to match the real robot, then re-collect and retrain as **v5**. This is not an experimental intervention, so it is an exception to "one change at a time", and v5 sets a new baseline. Fixed together, since everything is re-collected anyway:
+1. Gripper coaxial on tool0, with the real TCP offset (gripper + coupling length).
+2. Expert joint speeds within real limits. Wrist_3 now peaks at 4.9 rad/s against ~3.14 rad/s; target about half the limit. The policy imitates the demonstrated speed, so the data itself must be executable.
+3. Cameras matched to the real hardware: model and field of view, base camera pose, wrist bracket pose, as installable in the lab.
+4. Table height and cube size as in the lab.
+5. Kept from v4: visual randomization, converged first frame.
+
+Needed from the lab before collection: camera model and mounting positions, gripper and coupling length, table height, cube size, table photo (fixed exposure and white balance).
+
+v4 6k runs to the end: "does more training help on varied data" decides 3k vs 6k for v5.
+
+**What stands from the work so far.**
+* The simulator conclusions stand as methodological lessons:
+  * data range reduces the centre bias;
+  * the floor-grid shortcut;
+  * the stale first frame;
+  * K=25;
+  * sync is robust to latency.
+* Their numbers are re-measured in v5.
+* The old "wrist_3 runaway flings the cube" blow-ups are explained by fingertips swinging on a 12 cm radius.
+
+**Checklist for simulation-trained robot policies (lesson; should have been P0):**
+1. Before any data: check the sim arm's FK against the real controller (URSim) on a set of joint vectors. Same zero, same directions, same flange pose.
+2. Check the TCP: the fingertip must lie where the real gripper's would (coaxial, real length). Rotate the last joint alone; the fingertip must not move.
+3. Check the demonstrated joint speeds and accelerations against the real limits, with margin.
+4. Match the cameras (model, FOV, pose) and the scene (table height, object size) to what can actually be installed.
+5. Only then collect.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
