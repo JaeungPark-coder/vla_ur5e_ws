@@ -3657,6 +3657,47 @@ v3 is not run on H0: 0/15 at the centre.
 * **E3:** 68-84/90, no-descent <= 2. The corners are the risk.
 * **Confidence:** low to moderate for E1, low for E3. Away from the centre, nothing on an unseen ground has been measured yet.
 
+### 2026-11-16: K=25 additional evaluation -- results
+
+07:05-11:54, 18 runs x 15 rows. `scripts/k25_analysis.py`, `eval_results/k25_analysis.json`.
+
+| region | E1 v4 3k, original | E2 v3 3k, original | E3 v4 3k, H0 | (K=50) v4 3k | (K=50) v3 3k |
+|---|---|---|---|---|---|
+| centre | 14 | 14 | 15 | 9 | 13 |
+| posY_strip | 14 | 14 | 14 | 11 | 15 |
+| negY_strip | 12 | 12 | 14 | 7 | 11 |
+| posY_corner | 11 | 15 | 15 | 12 | 14 |
+| negY_corner | 14 | 14 | 15 | 6 | 13 |
+| mid_lowX | 13 | 15 | 15 | 9 | 12 |
+| **total /90** | **78** | **84** | **88** | 54 | 78 |
+| \|miss\| median | 11.0 mm | 6.8 mm | 8.5 mm | 19.3 | 12.3 |
+| failures | pushed 7, lifted 4, blow-up 1 | blow-up 4, lifted 2 | blow-up 2 | | |
+| no-descent | 0 | 0 | **0** | 0 | 0 |
+
+**By the rule written before the runs:**
+* **E1 vs E2: FAIL, narrowly on both counts.**
+  * Placed: 78 vs 84. The bar was >= 80. McNemar 10/4, p=0.18.
+  * Paired |miss|: +2.9 mm [+1.3, +6.2]. The upper end is above +5.
+  * The prediction "E1 70-84, pass" was wrong on the pass.
+  * E2 at 84 is just above its predicted 74-84 band, so its upper end held.
+* **E3: PASS.** 88/90; every region 14-15/15; no-descent 0. Predicted 68-84 with no-descent <= 2, so the count was better than predicted.
+* **Branch by the rule:** "fails on lateral precision": v4 6k is next.
+
+**Other results:**
+* **K explains most of the earlier base-scene drop.**
+  * v4: K=50 → K=25 goes from 54 to 78/90 (McNemar 6/30, p<1e-4), |miss| -5.9 mm [-12.1, -2.7].
+  * v3 3k: 78 to 84 (p=0.18), |miss| -3.7 mm [-6.8, -2.3].
+  * So both are better at K=25, v4 much more so.
+* **Post hoc (not in the rule, disclosed): v4's remaining gap is on the original ground only.**
+  * v4 on H0 vs v4 on the original ground, same seeds: 88 vs 78, McNemar 0/10, p=0.002, |miss| -3.0 mm [-4.9, -0.4].
+  * v4 on H0 vs v3 on its own training scene: 88 vs 84, McNemar 1/5, p=0.22, |miss| +0.6 mm [-0.8, +2.5]. No difference.
+  * The original glowing grid is the one ground v4 handles worse than others. That fits the reviewer's point that it is an unseen and unusually strong pattern for v4, and it weakens underfitting as the explanation.
+  * The E1 failures are short toward the centre line (signed miss -9 to -64 mm), mostly at the edges.
+* **What the next step should weigh** (for the reviewer):
+  * The rule says v4 6k.
+  * The post-hoc split says the deficit is specific to the simulator's original floor. On a plain table-coloured floor, v4 3k equals v3 on its training scene, across the whole box.
+  * Whether 6k is still worth the ~6 h, or v4 3k goes forward to real-robot preparation, is the reviewer's call. Changing the rule's branch after the fact would need to be recorded as such.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
