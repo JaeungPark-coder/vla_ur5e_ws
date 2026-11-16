@@ -4119,6 +4119,37 @@ The "posY" regions in world coordinates lie at negative Y on the pendant, on the
 * *Prediction:* v4 ~170 / ~240 mm; v5 ≤ 2 mm.
 * The void outputs are kept in place (`isaac/eval_results/mount_check{,_v5}/`); nothing deleted.
 
+#### 2026-11-17 02:21: v5 PILOT results -- PIPELINE TEST, NOT FOR CONCLUSIONS
+
+`eval_runs/v5_pilot/driver.log`, `eval_results/v5_pilot/pilot_check.json`, evaluation `eval_runs/v5pilot_1k_centre`.
+
+**Runs end to end: yes.** Every stage finished with no manual step:
+* collection 00:00-00:26: 50 saved episodes (centre 15/15 attempts; posY_strip 7/9; the other four 7/7);
+* merge 00:27: 50 episodes, 47,267 frames, count checked;
+* norm stats 00:27-00:36;
+* 1k training 00:36-01:58: loss 0.0073 at step 950; checkpoint `pi0_ur5e_pick_place_v5pilot/v5pilot_1k/999`;
+* centre evaluation 01:59-02:21: 15/15 trials logged; the bridge log confirms the v5 scene; norm stats from `ur5e_pick_place_v5pilot` (the guard passed).
+
+**Start pose and gripper: as intended.**
+* Data, 50/50 episodes pass every check:
+  * start within 0.0001 rad of `READY_JOINTS`, gripper ≤ 0.006;
+  * exactly one close and one open in all 50;
+  * tool axis at the close ≤ 0.04° from down; fingertip (TCP 0.12) at the close 20 mm above the cube centre, at the median.
+* Evaluation: 15/15 trials start within 0.011 rad of `READY_JOINTS` (tolerance 0.02) with the gripper open.
+  The 0.01 rad, against 0.0001 in the data, is the drives settling after the reset teleport before the first logged tick. Small, but recorded.
+* The closed loop closed the gripper in 14/15 trials; in the 10 successes it closed 3-21 mm (xy, median 5 mm) from the cube.
+
+**Recorded, not judged:** 10/15 placed.
+* All 5 failures (seeds 9200, 9201, 9202, 9213, 9214) look the same. The open hand descends next to the cube, 21-25 mm short of it in x, toward the base (seeds 9200, 9201, 9213), and keeps creeping down to a fingertip height of 0.021-0.027 m without closing. The data closes at 0.040 m.
+* Then the cube is flung 0.7-1.6 m across the table: strat-analysis class "blow-up".
+* The client's own `blowup` column (cube z > 0.25 m) reads 0 for all five, because the cube is thrown sideways, not up. Use the analysis class, not that column, for v5.
+* The failure class is the one that grew in v4 6k. With 1k steps on 50 placeholder episodes, nothing is concluded from it.
+
+**For the real v5 run:**
+* The pipeline (collection with the ready pose, merge, stats, training, v5 evaluation, check) works unattended.
+* Still blocked by `blockers()`: the RG2 model and the lab values. Also pending is the fixed mount check, which runs next, after this pilot.
+* Pilot artifacts (datasets `hf_cache/vla_ur5e_ws/v5pilot_*` and the merged `ur5e_pick_place_v5pilot`, checkpoint `v5pilot_1k`) are kept. They are deleted only after asking.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
