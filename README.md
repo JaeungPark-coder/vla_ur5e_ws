@@ -4095,6 +4095,30 @@ The "posY" regions in world coordinates lie at negative Y on the pendant, on the
 * The URSim "confirm safety configuration" click on 2026-11-16 was a one-off on the simulator, done by hand through VNC from the scratchpad, and is not in the repository.
 * On the real robot it is confirmed by a person at the pendant, always.
 
+#### 2026-11-17 00:00: v5 smoke results -- expert 20/20, pilot started; the mount render's measurement was VOID, fixed and re-queued (written before the re-run)
+
+**Expert smoke run** (`eval_runs/v5_smoke/`, `eval_results/v5_smoke/summary.json`, 23:48-23:59):
+* 20 attempts, 20 saved, 0 blow-ups, 0 never lifted, 0 placed off; every region 100 % (n = 3-5).
+* `v5_expert_check`: PASS. Peak joint speeds within the 1.57 rad/s cap (wrist_3 sits at the cap; 0 episodes over), tool axis at the close 0.03° from down (max 0.04°), fingertip z at the close 0.040 m.
+* Start: every episode's first joints within 0.0001 rad of `READY_JOINTS`, tool axis straight down, gripper open.
+* Verdicts: success ≥ 80 % PASS, blow-ups ≤ 10 % PASS, expert check PASS -> `smoke_pass` true, so the pilot started at 00:00 as pre-set.
+* Prediction "expert 75-90 %": outside, better (100 %, n = 20).
+* Images (`v5smoke_centre` ep 0, frames 0/60/150/250/382/450): the gripper hangs below the wrist along the tool axis from the first frame and closes on the cube vertically.
+  The wrist camera, though, is filled mostly by the gripper body, with the cube only at the left edge near the grasp. The wrist bracket pose is still a placeholder (D405 bracket, lab list); flagged for when it is measured.
+
+**Mount render: the measurement was void.**
+* The v5 render printed "coaxial_pass true, 0.1 mm". But the v4 render printed the same, and **v4's mount is known to be 90° off**: its image shows the fingers swinging side -> below -> above as wrist_3 turns, and its formula grip point moves ~170 / 240 mm.
+* Cause: the inner-finger prims' USD transforms read back as the flange origin (0.4625, 0.0186, 0.1615) in both profiles at every wrist angle. The negative control failed, so the v5 verdict says nothing.
+* The JSON also landed in `isaac/eval_results/` (the launcher runs from `isaac/`), so `summary.json` shows `mount_coaxial: null`. The mount was not part of `smoke_pass` (pre-set), so the gate is unaffected.
+* The side camera rendered only the far floor in both runs.
+* What does show the v5 mount is physical: 20/20 grasps and lifts with the tool axis vertical. A gripper 90° off would put the fingers 120 mm sideways of that axis and could not lift a 4 cm cube there.
+
+**Fix and re-run, queued after the pilot** (`scripts/mount_check_fixed_driver.sh`, waits for the pilot driver, `eval_results/mount_check_fixed/`):
+* The fingertip is the midpoint of the left/right inner-finger links read from the articulation's physics view (`get_link_transforms`). `--out` is resolved against the repository root, and the side camera is aimed with `set_camera_view`.
+* **v4 first, as the negative control.** The measurement counts only if v4's 180° shift is ≥ 100 mm (formula ~240 mm). Then v5 passes at ≤ 2 mm, unchanged.
+* *Prediction:* v4 ~170 / ~240 mm; v5 ≤ 2 mm.
+* The void outputs are kept in place (`isaac/eval_results/mount_check{,_v5}/`); nothing deleted.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
