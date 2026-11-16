@@ -46,6 +46,14 @@
     - 행마다 1/60초를 주고 500 Hz로 보간합니다. 속도 상한을 넘는 행은 늘립니다.
     - 시연 기반 안전 한계와 그리퍼 count 매핑을 넣었습니다.
     - URSim에서 시연 재생으로 시험했습니다(README "GPU-free preparation").
+  - **실물 하드웨어 확인 (2026-11-16 저녁, 실험실 사진):** 그리퍼는 **OnRobot RG2**, 고정 카메라는 **Stereolabs ZED**, 손목 카메라는 **RealSense D405**입니다.
+    - **시뮬:** RG2 모델이 필요합니다. Isaac 5.1 자산에는 없습니다.
+      - 후보: `inria-paris-robotics-lab/onrobot_ros`(MIT, 아직 받지 않음).
+      - 교체 전까지 v5 수집은 `sim_profile.blockers()`로 거부됩니다.
+    - **실물:** `onrobot_rg_gripper.py`(Compute Box Modbus TCP)를 추가했고, 클라이언트 기본값을 이것으로 바꿨습니다.
+      - URSim과 가짜 Compute Box로 재생 시험을 했습니다.
+    - **카메라:** ZED 내부 파라미터로 시뮬 FOV를 정합니다. 작업영역 자르기는 시뮬과 실물이 같은 함수를 씁니다.
+    - 실험실 목록은 README "2026-11-16 (evening)"에 있습니다.
 - **배포 후보 (임시, 2026-11-16, 위 차단 요소가 풀릴 때까지 실물 불가): v4 3k** (`checkpoints/pi0_ur5e_pick_place_v4/v4_3k/2999`, `POLICY_CONFIG=pi0_ur5e_pick_place_v4`, K=25).
   - 바닥 격자선이라는 지름길이 사라졌고, 테이블 같은 단색 바닥에서 88/90입니다.
   - v3 계열은 실물 테이블에서 거의 확실히 실패합니다(H0 0/15).

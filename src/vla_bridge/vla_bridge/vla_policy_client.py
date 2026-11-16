@@ -40,6 +40,7 @@ from vla_bridge.feedforward import chunk_velocities, limit_target_steps
 from vla_bridge.eval_tracking import MaxHeightTracker
 from vla_bridge.chunk_schedule import HOLD, NEW, plan_iteration
 from vla_bridge.gripper_mapping import GripperMap
+from vla_bridge.image_preprocess import crop_resize
 from vla_bridge.safety_limits import SafetyLimits
 
 
@@ -98,6 +99,10 @@ class VLAPolicyClient(Node):
         # ADJUST: real-hardware camera topics -- match your actual camera driver's topic names.
         self.declare_parameter('base_image_topic', '/camera/base/image_raw')
         self.declare_parameter('wrist_image_topic', '/camera/wrist/image_raw')
+        # The base-image crop the training data went through (isaac/sim_profile.py BASE_IMAGE_CROP / BASE_IMAGE_SIZE, applied
+        # by vla_bridge/image_preprocess.py on both sides).  Defaults = no crop, no resize (v1-v4 data).
+        self.declare_parameter('base_image_crop', [0.0, 0.0, 1.0, 1.0])
+        self.declare_parameter('base_image_size', [0, 0])
         # 2026-09-23: was 'none'. Only consulted when robot_backend='rtde'
         # (the isaac_sim backend always reads the simulated joint state
         # instead, unaffected by this default either way) -- but on real
@@ -118,8 +123,15 @@ class VLAPolicyClient(Node):
         # silently collecting unmeasured-gripper data. Pass --gripper_driver
         # none explicitly if you deliberately want the old placeholder
         # relay (e.g. bring-up with the gripper not yet wired).
-        self.declare_parameter('gripper_driver', 'robotiq_socket')
+        # 2026-11-16: the lab gripper is an OnRobot RG2 (photo), so the default is now 'onrobot_rg': Modbus TCP to the
+        # OnRobot Compute Box at gripper_host (no default -- the Compute Box's address must be given; onrobot_rg_gripper.py).
+        self.declare_parameter('gripper_driver', 'onrobot_rg')
         self.declare_parameter('gripper_socket_port', 63352)
+        self.declare_parameter('gripper_host', '')
+        self.declare_parameter('gripper_model', 'rg2')
+        # ADJUST (LAB): the grip force used on the real cube; the RG2's closing speed follows it (38..127 mm/s over 3..40 N),
+        # and the sim gripper's closing time must be matched to what this setting gives.
+        self.declare_parameter('gripper_force_n', 20.0)
         # 2026-10-05: was 300. Demonstrations are ~1044 actions long (one action
         # per 60 Hz sim tick, 17 s -- see isaac/collect_demos.py), so a cap of 300
         # ended every trial at ~29% of the task and logged it FAILURE no matter how
@@ -185,7 +197,9 @@ class VLAPolicyClient(Node):
         # The measured joints must be within this of the last streamed target before the next chunk starts from it
         # (a protective stop or a hand-guided arm would otherwise be streamed back from where it was).
         self.declare_parameter('max_tracking_gap_rad', 0.08)
-        # Sim 0..1 -> Robotiq counts, [f0, c0, f1, c1, ...] (gripper_mapping.py). Add the holding point measured on both sides.
+        # Sim 0..1 -> driver counts, [f0, c0, f1, c1, ...] (gripper_mapping.py): Robotiq 0..255, OnRobot closure counts in
+        # 0.1 mm (0..1100 on an RG2; this Robotiq default is widened to that for onrobot_rg).  Add the holding point measured
+        # on both sides.
         self.declare_parameter('gripper_calibration', [0.0, 0.0, 1.0, 255.0])
         # Residual RL (see isaac/residual_rl_train_env.py / train_residual_policy.py,
         # README Phase 4): 'false' (default) = pi0's action is applied as-is,
@@ -307,14 +321,28 @@ class VLAPolicyClient(Node):
                     robot_ip, port=self.get_parameter('gripper_socket_port').value)
                 gripper_driver.activate()
                 self.get_logger().info(f'gripper_driver=robotiq_socket, activated at {robot_ip}')
+            elif gripper_driver_name == 'onrobot_rg':
+                from vla_bridge.onrobot_rg_gripper import OnRobotRGGripper
+                host = self.get_parameter('gripper_host').value
+                if not host:
+                    raise ValueError('gripper_driver=onrobot_rg needs gripper_host (the OnRobot Compute Box address)')
+                gripper_driver = OnRobotRGGripper(host, model=self.get_parameter('gripper_model').value,
+                                                  force_n=float(self.get_parameter('gripper_force_n').value))
+                gripper_driver.activate()
+                self.get_logger().info(f'gripper_driver=onrobot_rg ({self.get_parameter("gripper_model").value}) at {host}')
             elif gripper_driver_name != 'none':
                 raise ValueError(
                     f"unknown gripper_driver {gripper_driver_name!r} -- expected "
-                    "'none' or 'robotiq_socket'")
+                    "'none', 'robotiq_socket' or 'onrobot_rg'")
+            calibration = list(self.get_parameter('gripper_calibration').value)
+            if gripper_driver_name == 'onrobot_rg' and calibration == [0.0, 0.0, 1.0, 255.0]:
+                calibration = [0.0, 0.0, 1.0, float(gripper_driver.max_width)]
+                self.get_logger().warn('gripper_calibration left at the Robotiq default: using 0..1 -> 0..'
+                                       f'{gripper_driver.max_width} closure counts, with NO holding point -- calibrate it')
             # servo_time is only used by the single-target move_joints; chunks go through stream_rows (500 Hz, 2 ms).
             self.robot = UR5eInterface(
                 robot_ip, servo_time=self.control_period_s, gripper_driver=gripper_driver,
-                gripper_map=GripperMap.from_flat(self.get_parameter('gripper_calibration').value))
+                gripper_map=GripperMap.from_flat(calibration))
             self.speed_scale = float(self.get_parameter('speed_scale').value)
             self.max_joint_speed = float(self.get_parameter('max_joint_speed_rad_s').value)
             self.max_tracking_gap = float(self.get_parameter('max_tracking_gap_rad').value)
@@ -372,6 +400,12 @@ class VLAPolicyClient(Node):
                 f'eval_mode=true: running {self.n_trials} trials, logging to {self.results_csv_path}')
 
         self.cv_bridge = CvBridge()
+        crop = [float(v) for v in self.get_parameter('base_image_crop').value]
+        size = [int(v) for v in self.get_parameter('base_image_size').value]
+        self._base_crop = None if crop == [0.0, 0.0, 1.0, 1.0] else tuple(crop)
+        self._base_size = None if size == [0, 0] else tuple(size)
+        if self._base_crop or self._base_size:
+            self.get_logger().info(f'base image: crop {self._base_crop}, resized to {self._base_size}')
         self._base_image = None
         self._wrist_image = None
         self.create_subscription(
@@ -393,6 +427,8 @@ class VLAPolicyClient(Node):
 
     def _on_base_image(self, msg: Image):
         self._base_image = self.cv_bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
+        if self._base_crop is not None or self._base_size is not None:
+            self._base_image = crop_resize(self._base_image, self._base_crop, self._base_size)
         self._base_ack = int(msg.header.stamp.sec)
         self._base_epoch = int(msg.header.stamp.nanosec)
 

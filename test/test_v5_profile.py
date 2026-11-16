@@ -38,6 +38,7 @@ def test_flange_to_tool0_assumption():
 def test_v4_is_the_old_computation(monkeypatch):
     sp = load_profile(monkeypatch, "v4")
     assert sp.placeholders() == [] and sp.EXPERT_MAX_JOINT_SPEED_RAD_S is None and sp.TABLE_Z_M == 0.0
+    assert sp.blockers() == [] and sp.BASE_IMAGE_CROP is None and sp.base_image_wh() == (256, 256)
     target = np.array([0.45, 0.0, 0.04])
     fpos, r_t0 = sp.flange_target(target, DOWN, R_F2T)
     np.testing.assert_allclose(fpos, target - 0.12 * DOWN.apply([0, 0, 1]))              # old: step back 0.12 along approach
@@ -67,11 +68,31 @@ def test_v5_lists_lab_placeholders_and_rejects_a_short_tcp(monkeypatch):
     assert {"GRIPPER_TCP_M", "TABLE_Z_M", "CUBE_SIZE_M", "BASE_CAMERA", "CAMERA_RESOLUTION"} <= set(sp.placeholders())
     assert sp.EXPERT_MAX_JOINT_SPEED_RAD_S == pytest.approx(np.pi / 2)
     np.testing.assert_allclose(sp.ur_base_to_world(sp.BASE_CAMERA["position_ur"]), [0.9, 0.0, 0.5])  # = v4's camera
+    # 2026-11-16: the real gripper is an RG2 -> blocked until the sim has one; v4 never is
+    assert sp.REAL_GRIPPER == "onrobot_rg2" and any("onrobot_rg2" in b for b in sp.blockers())
+    assert {"BASE_IMAGE_CROP", "GRIPPER_CLOSE_TIME_S"} <= set(sp.placeholders())
     monkeypatch.setenv("VLA_SIM_PROFILE", "v6")
     sys.modules.pop("sim_profile", None)
     with pytest.raises(ValueError):
         importlib.import_module("sim_profile")
     sys.modules.pop("sim_profile", None)
+
+
+def test_zed_intrinsics_give_the_fov_and_the_crop_gives_the_image_size(monkeypatch):
+    sp = load_profile(monkeypatch, "v5")
+    # a ZED 2i-like left camera at 720p (2.1 mm lens): fx ~ 530 px -> ~100.6 deg horizontal
+    cam = dict(position_ur=(-0.7, 0.0, 0.6), aim_ur=(-0.45, 0.0, 0.0),
+               intrinsics=dict(width=1280, height=720, fx=530.0, fy=530.0, cx=640.0, cy=360.0))
+    monkeypatch.setattr(sp, "CAMERA_RESOLUTION", (448, 252))
+    assert sp.base_camera_hfov_deg(cam) == pytest.approx(np.degrees(2 * np.arctan(640 / 530)))
+    monkeypatch.setattr(sp, "CAMERA_RESOLUTION", (256, 256))                  # wrong aspect for that camera
+    with pytest.raises(ValueError, match="aspect"):
+        sp.base_camera_hfov_deg(cam)
+    monkeypatch.setattr(sp, "CAMERA_RESOLUTION", (448, 252))
+    monkeypatch.setattr(sp, "BASE_IMAGE_CROP", (0.25, 0.2, 0.75, 1.0))
+    assert sp.base_image_wh() == (224, 202)                                    # the crop's own pixels ...
+    monkeypatch.setattr(sp, "BASE_IMAGE_SIZE", (224, 224))
+    assert sp.base_image_wh() == (224, 224)                                    # ... or the size asked for
 
 
 # ---- the USD re-mount -------------------------------------------------------------------------------------------------

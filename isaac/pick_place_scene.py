@@ -271,7 +271,7 @@ BASE_CAMERA_FOCAL_LENGTH_MM = 24.0
 if sim_profile.BASE_CAMERA is not None:   # v5: the lab camera, measured in the UR base frame
     BASE_CAMERA_POSITION = tuple(sim_profile.ur_base_to_world(sim_profile.BASE_CAMERA["position_ur"]).tolist())
     BASE_CAMERA_AIM_POINT = tuple(sim_profile.ur_base_to_world(sim_profile.BASE_CAMERA["aim_ur"]).tolist())
-    BASE_CAMERA_HORIZONTAL_FOV_DEG = float(sim_profile.BASE_CAMERA["hfov_deg"])
+    BASE_CAMERA_HORIZONTAL_FOV_DEG = sim_profile.base_camera_hfov_deg()   # from the ZED intrinsics when given
 
 # What this camera can actually show, computed rather than assumed. Distance
 # and field of view only ever act together, as the width of the swath the

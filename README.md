@@ -3901,6 +3901,82 @@ Replay of v4 episode 0 (1061 rows), K=25, 0.1 s pause between blocks:
    * A failure is debugged in the expert (waypoints, timing at the slower speed) before any lab value goes in.
 3. After the lab values: the same two checks, then the full v5 collection (v4 recipe: 152 old box + 150 wide box), at the length the v4 6k result picks.
 
+#### 2026-11-16 (evening): the lab hardware is an OnRobot RG2, a Stereolabs ZED and a RealSense D405; v5 revised
+
+From the lab photo (relayed by the reviewer):
+* **Gripper:** OnRobot RG2 on an OnRobot quick changer, not a Robotiq 2F-85.
+  * Stroke 0–110 mm (2F-85: 0–85 mm); force 3–40 N; speed 38–127 mm/s, which rises with the force setting; 0.78 kg.
+  * Different finger linkage: the fingertips move along the tool axis as they close (OnRobot's "depth compensation"), so the TCP length depends on the width. Measure it at the cube width.
+* **Base camera:** a Stereolabs ZED. The model and lens are not yet known; the FOV depends on them, e.g. ZED 2i 2.1 mm ≈ 101° horizontal at 720p.
+* **Wrist camera:** an Intel RealSense D405.
+
+**What this changes in v5:**
+* **The sim needs an RG2 model.** This is the largest v5 item, bigger than the mount angle.
+  * Isaac 5.1 has none. Checked 2026-11-16 on the public asset server: `Isaac/Robots/` has no OnRobot folder, and the UR5e `Gripper` variant set offers only `Robotiq_2f_85`.
+  * Candidate: `inria-paris-robotics-lab/onrobot_ros` (MIT, ROS 2, `onrobot_description` with RG2 and RG6 URDF). Not downloaded yet.
+  * `AndrejOrsula/ur5_rg2_ign` shows no license, is archived, and simplifies each finger to one joint.
+  * Expect contact tuning to be the long part; the 2F-85's gains and contacts took about two weeks.
+* **v5 is now blocked by `sim_profile.blockers()`.** It reports "sim gripper robotiq_2f_85 but the real one is onrobot_rg2". `collect_demos.py` refuses blockers like placeholders, again with only `--allow_placeholders` as the exception.
+* **Carried over unchanged:**
+  * the coaxial mount, the speed cap and the table, cube and camera parameters;
+  * `SIM_GRIPPER_LENGTH_M` becomes the RG2 model's own length;
+  * `realign_gripper_mount` finds the weld joint of whatever gripper subtree it is given.
+* **Tomorrow's verdicts 1 and 2 (above) stand as written.** They run on the 2F-85 and test the coaxial re-mount and the speed cap code, not the final gripper.
+* **New LAB value `GRIPPER_CLOSE_TIME_S`:** the RG2's open-to-cube closing time at the force setting used. The RG2 model's drive is tuned to it, or the policy learns to lift before the real fingers have closed.
+
+**Real side: `vla_bridge/onrobot_rg_gripper.py`** (tests `test/test_onrobot_rg_gripper.py`, against a fake Compute Box).
+* **Protocol:** Modbus TCP to the OnRobot Compute Box, unit 65.
+  * Write: 0 force (0.1 N), 1 width (0.1 mm), 2 control (16 = grip with the fingertip offset).
+  * Read: 268 status (bit 0 busy, bit 1 grip detected, bits 3/5/6 safety), 275 width.
+* **Duck-typed like the Robotiq driver**, so `UR5eInterface` is unchanged.
+  * Its counts are closure counts, (110 mm − width) in 0.1 mm: 0 = open, 1100 = closed.
+  * Calibrate with the holding point: a 40 mm cube is about 700 counts.
+* **The RG2 ignores commands while busy**, and one close takes tens of policy rows.
+  * `set_position` only records the target. A worker thread polls the status at 25 Hz and sends the latest target once the gripper is idle and the target has moved ≥ 2 mm.
+  * No Modbus call happens inside the 500 Hz servoJ loop.
+* **URSim replay with the fake Compute Box** (v4 episode 0, cap 1.57 rad/s, `eval_results/replay_ursim/ep0_cap_half_limit_rg2fake.json`):
+  * 24 gripper commands, none sent into a busy gripper;
+  * 500 Hz samples kept, gap p99 2.3 ms and max 2.8 ms;
+  * tracking as without the gripper: 0.020 / 0.170 rad (median / p95) at the row's time, 0.004 / 0.037 rad 0.1 s later.
+* **`vla_policy_client`:**
+  * `gripper_driver` now defaults to `onrobot_rg`;
+  * `gripper_host` (the Compute Box address) has no default and is required;
+  * `gripper_force_n` is a LAB value;
+  * a Robotiq-default `gripper_calibration` is widened to 0..1100 with a warning.
+  * `replay_on_robot.py` takes `--gripper onrobot_rg --gripper_host … --gripper_force_n …`.
+* **Modbus TCP is served only by the Compute Box.** An RG2 driven only through the OnRobot URCap cannot be reached this way; this is a lab question.
+
+**Camera: the base-image crop, `vla_bridge/image_preprocess.py`.**
+* **Why:** through a wide ZED lens a 4 cm cube at 70 cm is about 7 px after openpi's 224 × 224 resize.
+* **One function crops the work area** (fractions of the full frame) and resizes, bilinear via PIL.
+  * It is applied in `collect_demos.py` (the dataset's base image) and in `vla_policy_client` (`base_image_crop`, `base_image_size`), so sim and real go through the same code.
+  * The defaults are no crop and no resize, so the v1–v4 data and tonight's evaluation are unaffected. The client loads the new code per stratum, and the default path does not call it.
+* **`sim_profile`:**
+  * `BASE_CAMERA` accepts the ZED's left-camera runtime intrinsics (`fx, fy, cx, cy, width, height`). The FOV comes from them, and `CAMERA_RESOLUTION` must have the same aspect.
+  * `BASE_IMAGE_CROP` and `BASE_IMAGE_SIZE` are LAB values.
+  * The principal-point offset is ignored, a few pixels on a factory-calibrated ZED.
+* **Tests:**
+  * a crop of a half-resolution render equals the same crop of the full frame, to one grey level;
+  * the FOV from ZED 2i-like intrinsics is right, and a wrong aspect is refused.
+
+**Lab list (updated):**
+1. **RG2:**
+   * flange-to-fingertip length including the quick changer, at the cube width;
+   * the width holding the cube;
+   * the force setting and the open-to-cube closing time at that setting;
+   * the control path: is a Compute Box on the network (its address), and is the OnRobot URCap installed?
+2. **ZED:**
+   * model and lens (ZED Explorer shows them), the resolution used;
+   * the SDK's left-camera intrinsics;
+   * pose in the UR base frame (ChArUco calibration recommended).
+3. **D405:** the resolution used, `rs-enumerate-devices -c`, and the bracket position and angle relative to the flange.
+4. **Scene:**
+   * table height in the UR base frame;
+   * cube size and colour, the place marker;
+   * a table photo from the ZED with exposure and white balance fixed.
+5. **Ready pose:** the 6 joint values from the pendant.
+6. **Is there a Robotiq 2F-85 in the lab?** It would remove the sim gripper swap.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).

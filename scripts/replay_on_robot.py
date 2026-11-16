@@ -12,7 +12,8 @@ together, before any policy output reaches the arm.  The actual joints are recor
 
     <python with ur_rtde, numpy, pyarrow> scripts/replay_on_robot.py --host 127.0.0.1 \
         --dataset ~/.cache/huggingface/lerobot/Jaeung12/ur5e_pick_place_v4 --episode 0 --limits limits.json --speed_scale 0.25
-Real robot: e-stop in reach, speed slider low, --lift_m 0.10 first, --gripper robotiq only once the arm part is clean.
+Real robot: e-stop in reach, speed slider low, --lift_m 0.10 first, --gripper only once the arm part is clean
+(the lab gripper is an OnRobot RG2: --gripper onrobot_rg --gripper_host <Compute Box> --gripper_force_n <LAB>).
 """
 import argparse
 import glob
@@ -46,8 +47,12 @@ ap.add_argument('--lift_m', type=float, default=0.0)
 ap.add_argument('--approach_speed', type=float, default=0.3, help='moveJ to the first row, rad/s')
 ap.add_argument('--lookahead', type=float, default=0.1)
 ap.add_argument('--gain', type=float, default=300)
-ap.add_argument('--gripper', choices=['none', 'robotiq'], default='none')
-ap.add_argument('--gripper_calibration', type=float, nargs='+', default=[0.0, 0.0, 1.0, 255.0])
+ap.add_argument('--gripper', choices=['none', 'robotiq', 'onrobot_rg'], default='none')
+ap.add_argument('--gripper_host', default='', help='onrobot_rg: the OnRobot Compute Box address')
+ap.add_argument('--gripper_port', type=int, default=502)
+ap.add_argument('--gripper_force_n', type=float, default=20.0, help='onrobot_rg: grip force (LAB value)')
+ap.add_argument('--gripper_calibration', type=float, nargs='+', default=None,
+                help='sim fraction -> driver counts, f0 c0 f1 c1 ...; default 0 0 1 255 (robotiq) / 0 0 1 1100 (RG2)')
 ap.add_argument('--dry_run', action='store_true')
 ap.add_argument('--yes', action='store_true', help='do not ask before moving')
 ap.add_argument('--json', default=None)
@@ -130,7 +135,14 @@ recv = rtde_receive.RTDEReceiveInterface(a.host, 500.0)
 gripper = gmap = None
 if a.gripper == 'robotiq':
     from vla_bridge.robotiq_socket_gripper import RobotiqSocketGripper
-    gripper, gmap = RobotiqSocketGripper(a.host), GripperMap.from_flat(a.gripper_calibration)
+    gripper, gmap = RobotiqSocketGripper(a.host), GripperMap.from_flat(a.gripper_calibration or [0, 0, 1, 255])
+    gripper.activate()
+elif a.gripper == 'onrobot_rg':
+    from vla_bridge.onrobot_rg_gripper import OnRobotRGGripper
+    if not a.gripper_host:
+        sys.exit('--gripper onrobot_rg needs --gripper_host (the OnRobot Compute Box address)')
+    gripper = OnRobotRGGripper(a.gripper_host, port=a.gripper_port, force_n=a.gripper_force_n)   # sends from its own thread, never blocks a row
+    gmap = GripperMap.from_flat(a.gripper_calibration or [0, 0, 1, gripper.max_width])
     gripper.activate()
 q_now = np.array(recv.getActualQ())
 print(f'now {np.round(q_now, 3).tolist()}\nfirst row {np.round(q0, 3).tolist()}  (max diff {np.abs(q_now - q0).max():.3f} rad)')
@@ -185,6 +197,9 @@ finally:
     stop.set()
     ctrl.servoStop()
     ctrl.stopScript()
+    if gripper is not None and hasattr(gripper, 'wait_until_idle'):
+        gripper.wait_until_idle(3.0)
+        gripper.close()
 rec.join()
 
 T = np.array([t for t, _, _ in log]) - t_start
@@ -208,7 +223,9 @@ res = dict(episode=a.episode, rows=len(rows), speed_scale=a.speed_scale, max_joi
            track_err_lookahead_later_rad=dict(median=float(np.median(err_lag)), p95=float(np.percentile(err_lag, 95)),
                                               max=float(err_lag.max())),
            final_err_rad=float(np.abs(Q[-1] - rows[-1]).max()),
-           peak_joint_speed_rad_s=np.percentile(vel, 99.5, axis=0).round(3).tolist(), samples=len(T))
+           peak_joint_speed_rad_s=np.percentile(vel, 99.5, axis=0).round(3).tolist(), samples=len(T),
+           gripper=a.gripper, gripper_commands_sent=getattr(gripper, 'commands_sent', None),
+           sample_gap_p99_ms=float(np.percentile(np.diff(T), 99) * 1e3), sample_gap_max_ms=float(np.diff(T).max() * 1e3))
 print(json.dumps(res, indent=1))
 if a.json:
     with open(a.json, 'w') as f:

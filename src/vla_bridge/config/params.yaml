@@ -35,8 +35,13 @@ vla_policy_client:
     # default) = a real Robotiq over the UR controller's Socket ADI
     # interface -- see robotiq_socket_gripper.py. Pass gripper_driver:=none
     # explicitly for bring-up before the gripper is wired.
-    gripper_driver: "robotiq_socket"
+    # 2026-11-16: the lab gripper is an OnRobot RG2 -> 'onrobot_rg' (Modbus TCP to the OnRobot Compute Box,
+    # onrobot_rg_gripper.py). gripper_host has no default: pass the Compute Box address. gripper_force_n is a LAB value.
+    gripper_driver: "onrobot_rg"
     gripper_socket_port: 63352
+    gripper_host: ""
+    gripper_model: "rg2"
+    gripper_force_n: 20.0
     # 2026-10-05: was 300 -- ~29% of a demonstration (~1044 actions at one per
     # 60 Hz sim tick), so every eval trial ended in FAILURE at max_steps. Counted
     # in actions applied, not inferences. Keep in sync with the Python default.

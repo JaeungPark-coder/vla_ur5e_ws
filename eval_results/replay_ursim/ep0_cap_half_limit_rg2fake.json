@@ -1,0 +1,37 @@
+{
+ "episode": 0,
+ "rows": 1061,
+ "speed_scale": 1.0,
+ "max_joint_speed": 1.5708,
+ "lift_m": 0.0,
+ "k": 25,
+ "pause_s": 0.0,
+ "nominal_s": 17.683333333333334,
+ "planned_s": 18.063434753616498,
+ "wall_s": 19.932368790963665,
+ "slowed_rows": 75,
+ "track_err_at_row_rad": {
+  "median": 0.01965306124351418,
+  "p95": 0.16985252703397347,
+  "max": 0.22517844872415593
+ },
+ "track_err_lookahead_later_rad": {
+  "median": 0.004065394981815906,
+  "p95": 0.037340408797248426,
+  "max": 0.08166393148298656
+ },
+ "final_err_rad": 1.019899611343078e-05,
+ "peak_joint_speed_rad_s": [
+  0.491,
+  0.774,
+  1.065,
+  1.127,
+  1.386,
+  1.508
+ ],
+ "samples": 9647,
+ "gripper": "onrobot_rg",
+ "gripper_commands_sent": 24,
+ "sample_gap_p99_ms": 2.2856623778352514,
+ "sample_gap_max_ms": 2.840691013261676
+}

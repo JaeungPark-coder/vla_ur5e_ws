@@ -50,6 +50,9 @@ import sim_profile  # noqa: E402
 from isaac_sim_common import (  # noqa: E402
     GRIPPER_DRIVE_JOINT_NAME, set_joint_max_force, zero_follower_joint_drives)
 from scripted_pick_place import ScriptedPickPlace  # noqa: E402
+import sys  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "vla_bridge"))
+from vla_bridge.image_preprocess import crop_resize  # noqa: E402  -- the same crop vla_policy_client.py applies
 
 PROMPT = "pick up the cube and place it in the target zone"
 CONTROL_FPS = 30  # matches the LeRobot dataset's `fps` metadata -- keep in sync with steps_per_segment choices
@@ -130,9 +133,10 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
     # 2026-11-16: v5 is the simulator matched to the real robot; a dataset collected with lab values still at their
     # placeholders would silently be a v4-like setup under a v5 name.
     print(sim_profile.describe(), flush=True)
-    if sim_profile.placeholders() and not allow_placeholders:
-        raise RuntimeError(f"sim profile {sim_profile.PROFILE} still has LAB placeholders {sim_profile.placeholders()} -- "
-                           "fill them in isaac/sim_profile.py, or pass --allow_placeholders for an expert check only")
+    if (sim_profile.placeholders() or sim_profile.blockers()) and not allow_placeholders:
+        raise RuntimeError(f"sim profile {sim_profile.PROFILE} still has LAB placeholders {sim_profile.placeholders()} "
+                           f"and blockers {sim_profile.blockers()} -- fill them in isaac/sim_profile.py, or pass "
+                           "--allow_placeholders for an expert check only")
 
     # CONFIRMED 2026-09-29: this used to unconditionally shutil.rmtree an
     # existing repo_id -- fine for smoke tests, a real hazard now that
@@ -157,6 +161,8 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
         shutil.rmtree(output_path)
 
     image_shape = (CAMERA_RESOLUTION[1], CAMERA_RESOLUTION[0], 3)  # (height, width, channel); (256, 256, 3) for v1-v4
+    base_w, base_h = sim_profile.base_image_wh()                   # = CAMERA_RESOLUTION unless v5 crops the base view
+    base_image_shape = (base_h, base_w, 3)
     # Field names here are chosen to match openpi's examples/ur5/README.md
     # LeRobotUR5DataConfig repack_transform verbatim (image/wrist_image/
     # joints/gripper on the dataset side, remapped to base_rgb/wrist_rgb/
@@ -169,7 +175,7 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
         robot_type="ur5e",
         fps=CONTROL_FPS,
         features={
-            "image": {"dtype": "image", "shape": image_shape, "names": ["height", "width", "channel"]},
+            "image": {"dtype": "image", "shape": base_image_shape, "names": ["height", "width", "channel"]},
             "wrist_image": {"dtype": "image", "shape": image_shape, "names": ["height", "width", "channel"]},
             "joints": {"dtype": "float32", "shape": (6,), "names": ["joints"]},
             "gripper": {"dtype": "float32", "shape": (1,), "names": ["gripper"]},
@@ -275,7 +281,8 @@ def collect(num_episodes: int, repo_id: str, push_to_hub: bool, place_tolerance_
             action = np.concatenate([next_obs["joints"], next_obs["gripper"]]).astype(np.float32)
 
             dataset.add_frame({
-                "image": _to_rgb_uint8(obs["base_rgb"]),
+                "image": crop_resize(_to_rgb_uint8(obs["base_rgb"]), sim_profile.BASE_IMAGE_CROP,
+                                     sim_profile.BASE_IMAGE_SIZE),
                 "wrist_image": _to_rgb_uint8(obs["wrist_rgb"]),
                 "joints": obs["joints"].astype(np.float32),
                 "gripper": obs["gripper"].astype(np.float32),
@@ -430,7 +437,8 @@ def main():
                              "ground_textures.EXCLUDE_DIST of it")
     parser.add_argument("--visual_seed", type=int, default=None)
     parser.add_argument("--allow_placeholders", action="store_true",
-                        help="v5: collect even though isaac/sim_profile.py still has LAB placeholders (expert checks only)")
+                        help="v5: collect even though isaac/sim_profile.py still has LAB placeholders or blockers "
+                             "(expert checks only)")
     parser.add_argument("--visual_log", type=str, default=None,
                         help="episode -> visual spec JSONL (default: <dataset dir>_episode_visuals.jsonl)")
     args = parser.parse_args()
