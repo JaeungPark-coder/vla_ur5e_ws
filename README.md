@@ -3733,6 +3733,32 @@ v3 is not run on H0: 0/15 at the centre.
 * H0: 84-90/90, pass.
 * Confidence: low for the original ground.
 
+### 2026-11-16 (night): v4 6k -- results: both bars FAIL, v4 3k stays; v5 uses 3k
+
+Training finished before 20:05; evaluation 20:05-23:43 (`scripts/v4_6k_driver.sh`, checkpoint `v4_6k/5999` confirmed in `server.log`).
+Analysis: `scripts/k25_analysis.py` (extended with the rule above, unchanged) -> `eval_results/k25_analysis.json`.
+
+| region (15 each) | E2 v3 3k orig | E1 v4 3k orig | **E4 v4 6k orig** | E3 v4 3k H0 | **E5 v4 6k H0** |
+|---|---|---|---|---|---|
+| centre | 14 | 14 | 15 | 15 | 11 |
+| posY_strip | 14 | 14 | 14 | 14 | 14 |
+| negY_strip | 12 | 12 | 13 | 14 | 14 |
+| posY_corner | 15 | 11 | 12 | 15 | 10 |
+| negY_corner | 14 | 14 | 12 | 15 | 14 |
+| mid_lowX | 15 | 13 | 13 | 15 | 14 |
+| **placed** | 84 | 78 | **79** | 88 | **77** |
+| \|miss\| median | 6.8 mm | 11.0 | 13.5 | 8.5 | 8.8 |
+| classes | blow-up 4, lifted 2 | pushed 7, lifted 4, blow-up 1 | **blow-up 7**, pushed 4 | blow-up 2 | **blow-up 13** |
+| no-descent | 0 | 0 | 0 | 0 | 0 |
+
+* **Original ground:** 79 < 80, and paired |miss| vs v3 3k **+6.2 mm [+3.6, +9.4]** (CI upper >= +5). **FAIL** on both parts. (McNemar v3-only / 6k-only 9 / 4, p = 0.27.)
+* **H0:** 77 < 84; paired |miss| vs v4 3k +0.5 mm [-0.9, +3.6] (CI upper >= +3); no-descent 0. **FAIL.** McNemar 3k-only / 6k-only **12 / 1, p = 0.003**: 6k is worse than 3k on the table-like ground.
+* Not in the rule, for the record: 6k vs 3k on the original ground |miss| +2.8 [-1.0, +4.8], placed 79 vs 78 (6 / 7, p = 1.0).
+* **Outcome by the pre-set branch: "H0 fails: v4 3k stays."** v4 3k remains the provisional deployment candidate (still blocked for the real robot by the mount). **v5 is trained at 3k steps.**
+* Where 6k loses: blow-ups (cube flung or the episode ended by the blow-up criteria) go 2 -> 13 on H0 and 1 -> 7 on the original ground. Lateral precision on H0 is unchanged; the extra failures are not misses. Longer training on the varied data did not tighten the original-floor gap either.
+* **Prediction check:** original ground 79 inside the predicted 78-86, but |miss| +6.2 vs predicted +1 to +3 (worse). H0 predicted 84-90 and a pass: **wrong** (77, fail).
+* **Validity check (the client was edited at 20:31 and `sim_profile.py` / `pick_place_scene.py` at 20:59 while this ran, README 2026-11-16 evening and night; each stratum loads them at its start):** the scene's ready-pose reset only runs when `READY_JOINTS` is set (None in v4); the Isaac backend never enters the new gripper-driver code; the crop is applied only when set, and no `client.log` shows "base image: crop"; every `bridge.log` reads "sim profile v4 ... base crop None -> (256, 256)". Only the original-ground centre and posY_strip strata started before the edit (15/15 and 14/15, 0 blow-ups); **all 20 of 6k's blow-ups are in strata that started after it.** By the code path the edit is a no-op in simulation, but the timing cannot rule it out. Those two pre-edit strata are also where the 3k models had the fewest blow-ups. A direct check is to re-run one post-edit stratum, e.g. H0 centre (11/15, 4 failures), with the edit reverted (about 20 min of GPU). Not run yet: tonight's GPUs are queued for v5.
+
 ### 2026-11-16: real-robot preparation -- BLOCKER: the simulated gripper is mounted 90° off the wrist_3 axis
 
 Found while checking the joint conventions (preparation step 2), GPU-free.
