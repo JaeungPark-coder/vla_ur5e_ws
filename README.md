@@ -3698,6 +3698,41 @@ v3 is not run on H0: 0/15 at the centre.
   * The post-hoc split says the deficit is specific to the simulator's original floor. On a plain table-coloured floor, v4 3k equals v3 on its training scene, across the whole box.
   * Whether 6k is still worth the ~6 h, or v4 3k goes forward to real-robot preparation, is the reviewer's call. Changing the rule's branch after the fact would need to be recorded as such.
 
+### 2026-11-16: where v4 stands, and v4 6k -- design and prediction, written BEFORE training
+
+**State (reviewer's wording).**
+* **v4 3k:** shortcut removed; succeeds on most unseen grounds; on a table-like ground no different from v3.
+* Only on the original simulator floor is its lateral precision about 3 mm short, which misses the pre-set criterion.
+* The pre-set verdicts stand: "not an effect" (K=50) and "E1 vs E2 fails" (K=25).
+
+**Decision (reviewer, 2026-11-16): both, not one or the other.**
+* **v4 6k is run, as the rule says.** The branch is not changed after the results: changing it would cost the pre-registration its credibility. Training costs GPU time, not people's time.
+* **Meanwhile v4 3k is the provisional deployment candidate,** replacing v3 6k, and real-robot preparation starts.
+  * Those first steps need no GPU: the table photo, joint conventions, timing, trajectory replay, gripper mapping, camera mount, safety limits.
+  * The policy goes on the robot only after 6k has finished, because the policy server needs the GPU.
+
+**v4 6k.**
+* The v3 6k recipe on the v4 data: `--num-train-steps=6000 --lr-schedule.decay-steps=6000`, warmup 300, `--save-interval=1000 --keep-period=3000`. About 8 h.
+* Then stratified 6 x 15, K=25, converged frame, seeds 9200-9214:
+  * on the original ground (`strat_k25_v4_6k_<region>`);
+  * on H0 (`strat_h0_k25_v4_6k_<region>`).
+* Driver: `scripts/v4_6k_driver.sh`.
+
+**Decision rule (fixed now).** Primary measure: absolute |lateral miss| at the first close.
+* **Original ground**, paired with E2 (v3 3k, K=25, 84/90): v4 6k placed >= 80 AND paired |miss| difference CI upper end < +5 mm. These are the bars E1 missed.
+* **H0**, paired with E3 (v4 3k, 88/90): not worse than 3k, i.e. placed >= 84 AND paired |miss| difference vs E3 CI upper end < +3 mm AND no-descent <= 3.
+* **Outcomes:**
+  * Both pass: v4 6k becomes the deployment candidate; training length mattered for v4, unlike v3.
+  * Original fails, H0 passes: v4 3k stays the candidate (6k may replace it if not worse on H0). The original-floor gap is not a matter of training length.
+  * H0 fails: v4 3k stays.
+
+**Prediction.**
+* Original ground: 78-86/90, paired |miss| vs v3 3k +1 to +3 mm. Pass probability about 40 %.
+  * The post-hoc split (the gap sits on one floor) argues against underfitting.
+  * The 19 % higher final loss argues for it.
+* H0: 84-90/90, pass.
+* Confidence: low for the original ground.
+
 ### TOMORROW (updated 2026-11-12): where things stand and what to do, in order
 
 **State:** nothing is running; both GPUs free. Range evaluation of 2999 is DONE (section above). Checkpoint 2999 stays untouched (reference).
