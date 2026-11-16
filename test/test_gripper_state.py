@@ -95,6 +95,9 @@ def arm(UR5eInterface):
     robot.io = types.SimpleNamespace(setToolDigitalOut=lambda *_: None)
     robot.gripper_output_pin = 0
     robot.gripper_open_counts, robot.gripper_closed_counts = 0, 255
+    from vla_bridge.gripper_mapping import GripperMap
+    robot.gripper_map = GripperMap(((0.0, 0), (1.0, 255)))
+    robot._last_sent_counts = None
     robot._last_commanded_gripper = 0.0
     robot.gripper_driver = None
     return robot

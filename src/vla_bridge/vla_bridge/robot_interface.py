@@ -39,7 +39,9 @@ both are wanted.
 """
 import numpy as np
 
+from vla_bridge.gripper_mapping import GripperMap
 from vla_bridge.gripper_state import GripperState
+from vla_bridge.joint_streamer import JointRowStreamer
 import rtde_control
 import rtde_receive
 import rtde_io
@@ -48,7 +50,8 @@ import rtde_io
 class UR5eInterface:
     def __init__(self, robot_ip, speed=0.25, acceleration=0.5, gripper_output_pin=0,
                  servo_time=0.1, servo_lookahead_time=0.1, servo_gain=300,
-                 gripper_driver=None, gripper_open_counts=0, gripper_closed_counts=255):
+                 gripper_driver=None, gripper_open_counts=0, gripper_closed_counts=255,
+                 gripper_map=None, rtde_frequency=500.0):
         self.robot_ip = robot_ip
         self.speed = speed
         self.acceleration = acceleration
@@ -62,7 +65,12 @@ class UR5eInterface:
         self.servo_time = servo_time
         self.servo_lookahead_time = servo_lookahead_time
         self.servo_gain = servo_gain
-        self.control = rtde_control.RTDEControlInterface(robot_ip)
+        # gripper_map (gripper_mapping.GripperMap) replaces the linear open/closed counts when given -- see that module
+        # for the holding-point calibration.
+        self.gripper_map = gripper_map or GripperMap(((0.0, gripper_open_counts), (1.0, gripper_closed_counts)))
+        self._last_sent_counts = None
+        # 500 Hz = the e-series control rate; stream_rows sends a servoJ every 2 ms.
+        self.control = rtde_control.RTDEControlInterface(robot_ip, rtde_frequency)
         self.receive = rtde_receive.RTDEReceiveInterface(robot_ip)
         self.io = rtde_io.RTDEIOInterface(robot_ip)
 
@@ -135,14 +143,28 @@ class UR5eInterface:
         return np.array(self.receive.getActualQ())
 
     def _counts_to_fraction(self, counts):
-        span = self.gripper_closed_counts - self.gripper_open_counts
-        if span == 0:
-            return 0.0
-        return float(np.clip((counts - self.gripper_open_counts) / span, 0.0, 1.0))
+        return self.gripper_map.to_fraction(counts)
 
     def _fraction_to_counts(self, fraction):
-        span = self.gripper_closed_counts - self.gripper_open_counts
-        return int(round(self.gripper_open_counts + float(np.clip(fraction, 0.0, 1.0)) * span))
+        return self.gripper_map.to_counts(fraction)
+
+    def stream_rows(self, q_start, joint_rows, gripper_rows, row_dt, v_max, speed_scale=1.0,
+                    servo_dt=0.002, min_gripper_count_change=2):
+        """Execute a chunk at the rate it was recorded (joint_streamer.py): row i gets row_dt / speed_scale seconds (more if
+        a joint would exceed v_max), interpolated at 500 Hz.  The gripper command of row i is sent when its segment starts,
+        and only when it moved by >= min_gripper_count_change counts (the socket is not written 60 times a second).
+        Returns the streamer's timing statistics."""
+        streamer = JointRowStreamer(self.control, servo_dt=servo_dt, lookahead_time=self.servo_lookahead_time,
+                                    gain=self.servo_gain, v_max=v_max, speed_scale=speed_scale)
+
+        def on_row(i):
+            if gripper_rows is None:
+                return
+            counts = self._fraction_to_counts(gripper_rows[i])
+            if self._last_sent_counts is None or abs(counts - self._last_sent_counts) >= min_gripper_count_change:
+                self.set_gripper(float(gripper_rows[i]))
+
+        return streamer.execute(q_start, joint_rows, row_dt, on_row=on_row)
 
     def set_gripper(self, position: float):
         """position: 0.0 (open) .. 1.0 (closed).
@@ -154,7 +176,8 @@ class UR5eInterface:
         self._last_commanded_gripper = float(position)
         setter = getattr(self.gripper_driver, 'set_position', None)
         if setter is not None:
-            setter(self._fraction_to_counts(position))
+            self._last_sent_counts = self._fraction_to_counts(position)
+            setter(self._last_sent_counts)
             return
         self.io.setToolDigitalOut(self.gripper_output_pin, position >= 0.5)
 

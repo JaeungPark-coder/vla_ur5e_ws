@@ -39,6 +39,8 @@ from vla_bridge.gripper_command import GripperHysteresis
 from vla_bridge.feedforward import chunk_velocities, limit_target_steps
 from vla_bridge.eval_tracking import MaxHeightTracker
 from vla_bridge.chunk_schedule import HOLD, NEW, plan_iteration
+from vla_bridge.gripper_mapping import GripperMap
+from vla_bridge.safety_limits import SafetyLimits
 
 
 # Same cut-off collect_demos.py filters demonstrations on (normal peak ~0.16 m).
@@ -170,6 +172,21 @@ class VLAPolicyClient(Node):
         self.declare_parameter('chunk_delay_ticks', 0)
         self.declare_parameter('chunk_delay_mode', 'sync')
         self.declare_parameter('action_dt_s', 1.0 / 60.0)  # time between consecutive chunk rows = one sim tick (the data's rate; NOT the dataset's fps=30 label)
+        # 2026-11-16, robot_backend 'rtde' only (README "real-robot preparation"). A chunk's rows are executed at action_dt_s
+        # each with 500 Hz servoJ interpolation (joint_streamer.py) instead of being sent back to back -- which made the arm
+        # skip to the last row. speed_scale < 1 stretches time uniformly (start at 0.25); a row needing more than
+        # max_joint_speed_rad_s on any joint is stretched further. Sync only: infer, execute K rows, infer again.
+        self.declare_parameter('speed_scale', 0.25)
+        self.declare_parameter('max_joint_speed_rad_s', 1.0)
+        # JSON from scripts/derive_safety_limits.py (joint box, per-row step, tool-point box from the demonstrations). A chunk
+        # violating it is refused whole, the arm stopped and the node halted. Required for 'rtde' unless explicitly waived.
+        self.declare_parameter('safety_limits_json', '')
+        self.declare_parameter('allow_no_safety_limits', False)
+        # The measured joints must be within this of the last streamed target before the next chunk starts from it
+        # (a protective stop or a hand-guided arm would otherwise be streamed back from where it was).
+        self.declare_parameter('max_tracking_gap_rad', 0.08)
+        # Sim 0..1 -> Robotiq counts, [f0, c0, f1, c1, ...] (gripper_mapping.py). Add the holding point measured on both sides.
+        self.declare_parameter('gripper_calibration', [0.0, 0.0, 1.0, 255.0])
         # Residual RL (see isaac/residual_rl_train_env.py / train_residual_policy.py,
         # README Phase 4): 'false' (default) = pi0's action is applied as-is,
         # unchanged from the rest of this node. 'true' = a small trained
@@ -294,11 +311,28 @@ class VLAPolicyClient(Node):
                 raise ValueError(
                     f"unknown gripper_driver {gripper_driver_name!r} -- expected "
                     "'none' or 'robotiq_socket'")
-            # servo_time must match this node's control period: servoJ is
-            # told how long each streamed target is meant to govern, so a
-            # mismatch either starves the controller or overruns the next tick.
+            # servo_time is only used by the single-target move_joints; chunks go through stream_rows (500 Hz, 2 ms).
             self.robot = UR5eInterface(
-                robot_ip, servo_time=self.control_period_s, gripper_driver=gripper_driver)
+                robot_ip, servo_time=self.control_period_s, gripper_driver=gripper_driver,
+                gripper_map=GripperMap.from_flat(self.get_parameter('gripper_calibration').value))
+            self.speed_scale = float(self.get_parameter('speed_scale').value)
+            self.max_joint_speed = float(self.get_parameter('max_joint_speed_rad_s').value)
+            self.max_tracking_gap = float(self.get_parameter('max_tracking_gap_rad').value)
+            if not (0.0 < self.speed_scale <= 1.0 and 0.0 < self.max_joint_speed <= np.pi):
+                raise ValueError('speed_scale must be in (0, 1] and max_joint_speed_rad_s in (0, pi]')
+            limits_path = self.get_parameter('safety_limits_json').value
+            if limits_path:
+                self.safety_limits = SafetyLimits.from_json(limits_path)
+                self.get_logger().info(f'safety limits loaded from {limits_path}')
+            elif self.get_parameter('allow_no_safety_limits').value:
+                self.safety_limits = None
+                self.get_logger().warn('NO safety limits (allow_no_safety_limits=true)')
+            else:
+                raise ValueError('robot_backend=rtde needs safety_limits_json (scripts/derive_safety_limits.py) '
+                                 'or an explicit allow_no_safety_limits:=true')
+            self._rtde_last_cmd = None
+            self.get_logger().info(f'rtde: rows streamed at {self.action_dt_s:.4f} s / {self.speed_scale} with 500 Hz '
+                                   f'interpolation, joint speed cap {self.max_joint_speed} rad/s')
             image_topics = (
                 self.get_parameter('base_image_topic').value,
                 self.get_parameter('wrist_image_topic').value,
@@ -454,6 +488,7 @@ class VLAPolicyClient(Node):
                                               len(action_chunk), self._prev_pos if self._prev_chunk is not None else None)
         n_ticks = len(steps)
         boundary_logged = False
+        rtde_rows = []   # robot_backend 'rtde': collected here, executed together by _execute_rtde_rows
         for i, (src, row) in enumerate(steps):
             if src == HOLD:
                 # waiting for the answer: keep the last target (or stand where the arm is), zero velocity feed-forward
@@ -497,6 +532,8 @@ class VLAPolicyClient(Node):
                         'lockstep: no acknowledgement from the bridge -- is pick_place_scene_bridge.py '
                         'running with --lockstep (or VLA_BRIDGE_LOCKSTEP=1)? Both sides must match.',
                         throttle_duration_sec=5.0)
+            elif self.backend == 'rtde':
+                rtde_rows.append((np.asarray(target_joints, dtype=float).copy(), float(target_gripper)))
             else:
                 self.robot.move_joints(target_joints)
                 self.robot.set_gripper(target_gripper)
@@ -505,6 +542,8 @@ class VLAPolicyClient(Node):
             self._step_count += 1
             if self._step_count >= self.max_steps:
                 break
+        if rtde_rows and not self._execute_rtde_rows(rtde_rows, obs["joints"]):
+            return
         self._prev_chunk, self._prev_vel, self._prev_pos = action_chunk, velocities, next_prev_pos
 
         # The observation that the command echo made impossible: the gripper
@@ -544,6 +583,34 @@ class VLAPolicyClient(Node):
             f'step {self._step_count}/{self.max_steps}: '
             f'gripper commanded {target_gripper:.2f}, {settled.describe()}',
             throttle_duration_sec=1.0)
+
+    def _halt(self, why):
+        self.get_logger().error(f'HALT: {why}')
+        self.robot.stop()
+        self._timer.cancel()
+
+    def _execute_rtde_rows(self, rows, measured_joints):
+        """Safety-check the whole block, then stream it (joint_streamer.py). False = refused and halted."""
+        q = np.array([r[0] for r in rows])
+        g = np.array([r[1] for r in rows])
+        measured = np.asarray(measured_joints, dtype=float)[:6]
+        q_start = measured if self._rtde_last_cmd is None else self._rtde_last_cmd
+        gap = float(np.max(np.abs(measured - q_start)))
+        if gap > self.max_tracking_gap:
+            self._halt(f'arm is {gap:.3f} rad from the last streamed target (> {self.max_tracking_gap}); '
+                       'protective stop or external motion?')
+            return False
+        if self.safety_limits is not None:
+            bad = self.safety_limits.check_chunk(q_start, q)
+            if bad:
+                self._halt('chunk refused by safety limits: ' + '; '.join(bad))
+                return False
+        stats = self.robot.stream_rows(q_start, q, g, self.action_dt_s, self.max_joint_speed, self.speed_scale)
+        self._rtde_last_cmd = q[-1].copy()
+        self.get_logger().info(f"rtde chunk: {stats['rows']} rows in {stats['wall_s']:.3f} s (planned {stats['planned_s']:.3f}, "
+                               f"nominal {stats['nominal_s']:.3f}, {stats['slowed_rows']} rows slowed)",
+                               throttle_duration_sec=1.0)
+        return True
 
     def _log_boundary(self, first_new_target):
         """Eval only: size of the joint-target step where a new chunk takes over (max over the 6 joints, rad), one row per
