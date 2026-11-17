@@ -38,6 +38,7 @@ from isaac_sim_common import (
     GripperController, setup_rmpflow, prim_world_pose,
     GRIPPER_VARIANT_SET_NAME,
     add_cube, add_shape, add_place_target_marker, NullGripper, realign_gripper_mount,
+    physics_tune_from_env, apply_physics_tuning,
 )
 import object_configs
 
@@ -382,7 +383,15 @@ class PickPlaceScene:
         if assets_root is None:
             raise RuntimeError("Could not resolve Isaac Sim assets root -- check Nucleus connection.")
 
-        self.world = World(stage_units_in_meters=1.0)
+        # 2026-11-17: VLA_PHYSICS_TUNE (isaac_sim_common.physics_tune_from_env; unset = unchanged). physics_hz > 60 runs
+        # physics substeps inside each 60 Hz rendered tick; the control/logging tick stays 1/60 s.
+        self.physics_tune = physics_tune_from_env()
+        if self.physics_tune.get("physics_hz"):
+            self.world = World(stage_units_in_meters=1.0, physics_dt=1.0 / float(self.physics_tune["physics_hz"]),
+                               rendering_dt=1.0 / 60.0)
+            print(f"VLA_PHYSICS_TUNE: physics at {self.physics_tune['physics_hz']} Hz, render/control 60 Hz", flush=True)
+        else:
+            self.world = World(stage_units_in_meters=1.0)
         self.world.scene.add_default_ground_plane(z_position=TABLE_Z_M)
         print(sim_profile.describe(), flush=True)
         self.stage = get_current_stage()
@@ -747,6 +756,11 @@ class PickPlaceScene:
         if not self.stage.GetPrimAtPath(TARGET_MARKER_PRIM_PATH).IsValid():
             add_place_target_marker(self.stage, TARGET_MARKER_PRIM_PATH, PLACE_TARGET_POSITION)
 
+        if self.physics_tune:   # 2026-11-17 table-press tuning; authored before the Stop+Play below picks it up
+            done = apply_physics_tuning(self.stage, self.stage.GetPrimAtPath(ROBOT_PRIM_PATH), CUBE_PRIM_PATH, self.physics_tune)
+            if not getattr(self, "_tune_reported", False):
+                print(f"VLA_PHYSICS_TUNE {self.physics_tune}: {done}", flush=True)
+                self._tune_reported = True
         self.world.reset()
         # A non-soft world.reset() is a hard reset (Stop+Play) under the
         # hood, which invalidates the arm's physics handles since it's not

@@ -71,6 +71,7 @@ try:
         tgt = np.array([cube0[0] + dx, cube0[1] + dy, tz + zt])
         above = np.array([tgt[0], tgt[1], tz + 0.15])
         start = np.asarray(scene.grip_point_world(), float)
+        t_start = float(scene.world.current_time)
         trace = TrialTrace(None, table_z=tz)
         trace.start(0, cube=cube0)
         plan = [("approach", start, above, APPROACH), ("descend", above, tgt, DESCEND), ("hold", tgt, tgt, HOLD),
@@ -100,10 +101,11 @@ try:
                  max_one_tick_jump_mm=1000 * s["max_one_tick_jump_m"], max_cube_z_m=s["max_cube_z"],
                  cube_end=np.round(cube_end, 4).tolist(),
                  cube_end_moved_mm=float(np.linalg.norm(cube_end[:2] - cube0[:2]) * 1000),
-                 min_grip_z_above_table_m=round(min_grip_z, 4), phases=phase_stats)
+                 min_grip_z_above_table_m=round(min_grip_z, 4), phases=phase_stats,
+                 sim_time_s=round(float(scene.world.current_time) - t_start, 4), ticks=tick)
         results.append(r)
         print("CASE", json.dumps(r), flush=True)
-    summary = dict(profile=sim_profile.PROFILE, cube_xy=CUBE_XY, ticks=dict(approach=APPROACH, descend=DESCEND, hold=HOLD,
+    summary = dict(profile=sim_profile.PROFILE, physics_tune=getattr(scene, "physics_tune", {}), cube_xy=CUBE_XY, ticks=dict(approach=APPROACH, descend=DESCEND, hold=HOLD,
                    drag=DRAG, lift=LIFT), drag_m=DRAG_M, blowups=sum(r["blowup"] for r in results), cases=len(results))
     json.dump(dict(summary=summary, cases=results), open(os.path.join(args.out, "table_press.json"), "w"), indent=1)
     print("SUMMARY", json.dumps(summary), flush=True)

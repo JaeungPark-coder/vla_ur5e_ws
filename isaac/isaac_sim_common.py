@@ -913,6 +913,71 @@ def add_shape(stage, shape, prim_path, position, size=0.04, color=(0.8, 0.1, 0.1
     return geom
 
 
+def physics_tune_from_env():
+    """VLA_PHYSICS_TUNE (JSON) -> dict, {} when unset.  2026-11-17 table-press test (README): contact settings are tuned
+    against isaac/table_press_test.py through this switch; unset = the scene exactly as before."""
+    import json
+    raw = os.environ.get("VLA_PHYSICS_TUNE", "").strip()
+    return json.loads(raw) if raw else {}
+
+
+def apply_physics_tuning(stage, robot_prim, cube_path, tune):
+    """Author the VLA_PHYSICS_TUNE contact settings into USD; picked up by the next world.reset() (Stop+Play).
+      depen_all        max depenetration velocity (m/s) on EVERY rigid body under the robot (arm + all gripper links)
+                       and the cube -- add_gripper_colliders caps only the two pad links, add_shape the cube
+      solver_pos/_vel  solver iteration counts on the articulation root(s) and the cube
+      contact_offset / rest_offset   PhysxCollisionAPI on every collider under the robot's Gripper and the cube
+      arm_max_force    6 values (N m): maxForce of the arm joints' angular drives (the real UR5e: 150,150,150,28,28,28)
+    Returns a short description of what was set."""
+    from pxr import PhysxSchema
+    done = {}
+    bodies = [p for p in Usd.PrimRange(robot_prim) if p.HasAPI(UsdPhysics.RigidBodyAPI)]
+    cube = stage.GetPrimAtPath(cube_path)
+    if cube.IsValid():
+        bodies.append(cube)
+    if "depen_all" in tune:
+        for p in bodies:
+            PhysxSchema.PhysxRigidBodyAPI.Apply(p).CreateMaxDepenetrationVelocityAttr(float(tune["depen_all"]))
+        done["depen_all"] = len(bodies)
+    if "solver_pos" in tune or "solver_vel" in tune:
+        roots = [p for p in Usd.PrimRange(robot_prim) if p.HasAPI(UsdPhysics.ArticulationRootAPI)]
+        for r in roots:
+            api = PhysxSchema.PhysxArticulationAPI.Apply(r)
+            if "solver_pos" in tune:
+                api.CreateSolverPositionIterationCountAttr(int(tune["solver_pos"]))
+            if "solver_vel" in tune:
+                api.CreateSolverVelocityIterationCountAttr(int(tune["solver_vel"]))
+        if cube.IsValid():
+            api = PhysxSchema.PhysxRigidBodyAPI.Apply(cube)
+            if "solver_pos" in tune:
+                api.CreateSolverPositionIterationCountAttr(int(tune["solver_pos"]))
+            if "solver_vel" in tune:
+                api.CreateSolverVelocityIterationCountAttr(int(tune["solver_vel"]))
+        done["solver_roots"] = [str(r.GetPath()) for r in roots]
+    if "contact_offset" in tune or "rest_offset" in tune:
+        cols = [p for p in Usd.PrimRange(robot_prim) if p.HasAPI(UsdPhysics.CollisionAPI) and "/Gripper" in str(p.GetPath())]
+        if cube.IsValid():
+            cols += [p for p in Usd.PrimRange(cube) if p.HasAPI(UsdPhysics.CollisionAPI)]
+        for p in cols:
+            api = PhysxSchema.PhysxCollisionAPI.Apply(p)
+            if "contact_offset" in tune:
+                api.CreateContactOffsetAttr(float(tune["contact_offset"]))
+            if "rest_offset" in tune:
+                api.CreateRestOffsetAttr(float(tune["rest_offset"]))
+        done["colliders"] = len(cols)
+    if "arm_max_force" in tune:
+        forces = [float(v) for v in tune["arm_max_force"]]
+        n = 0
+        for name, f in zip(ARM_JOINT_NAMES, forces):
+            for p in Usd.PrimRange(robot_prim):
+                if p.GetName() == name:
+                    UsdPhysics.DriveAPI.Apply(p, "angular").CreateMaxForceAttr(f)
+                    n += 1
+                    break
+        done["arm_drives"] = n
+    return done
+
+
 def add_cube(stage, prim_path, position, size=0.04, color=(0.8, 0.1, 0.1)):
     """Phase 1-5's single-object case -- thin wrapper so existing callers
     (scripted_pick_place.py, collect_demos.py, residual_rl_train_env.py via

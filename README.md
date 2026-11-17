@@ -3733,7 +3733,7 @@ v3 is not run on H0: 0/15 at the centre.
 * H0: 84-90/90, pass.
 * Confidence: low for the original ground.
 
-### 2026-11-16 (night): v4 6k -- results: both bars FAIL, v4 3k stays; v5 uses 3k
+### 2026-11-16 (night): v4 6k -- results: both bars FAIL, v4 3k stays; v5 uses 3k -- VOID since 2026-11-17 (code recheck below), pending an old-code re-run
 
 #### 2026-11-17: code-contamination recheck of the 6k evaluation -- design written BEFORE the run
 
@@ -3762,6 +3762,28 @@ v3 is not run on H0: 0/15 at the centre.
   * B ≥ 3 failures, while A ≤ 1: the code is implicated. The 6k results are void until all 12 strata are re-run on the old code.
   * B ≤ 1: the original 4 failures were run-to-run noise. The verdict stands, but with that caveat.
 * *Prediction:* A shows 2-5 blow-up failures. The blow-ups are a 6k-model trait, also seen on the original ground (1 -> 7). Confidence moderate.
+
+**Results (08:36-09:20).** Checkpoint `v4_6k/5999` and v4 statistics confirmed in both `server.log` files. A's bridge log has no "sim profile" line (old code); B's reads "sim profile v4".
+
+| run (H0 centre, 15 seeds) | code | placed | failures (all blow-up) |
+|---|---|---|---|
+| original (2026-11-16 21:51) | after `2caa8c6` | 11 | 9204, 9206, 9208, 9212 |
+| **A** | `a5449c5` (the 3k runs' code) | **14** | 9211 |
+| **B** | `03a9c53` (the original's code) | **10** | 9201, 9204, 9206, 9208, 9211 |
+
+* **By the pre-set rule (A ≤ 1, B ≥ 3): the code is implicated.** The v4 6k results above (E4, E5, both FAILs and the "v4 3k stays / v5 at 3k" outcome) are **void until all 12 strata are re-run on the old code**.
+* Same seeds: 9204, 9206 and 9208 blow up in both new-code runs and are placed in the old-code run.
+* Disclosed, against the rule's reading:
+  * **Code inspection finds no change in the v4 path.**
+    * Ground plane `z_position=TABLE_Z_M` = 0, the default.
+    * Camera vertical aperture × 256/256.
+    * Mount rotation identity, so the camera eye is unchanged.
+    * Speed cap and ready pose are None in v4.
+    * The client's Isaac path changed only by the crop, which is off by default.
+  * Agreement: B vs original 12/15 seeds, A vs B 11/15. That is the size of the known run-to-run scale (4 of 20 seeds flip on an identical re-run).
+  * Fisher exact on failures 1/15 vs 5/15: p = 0.17.
+  * So noise remains a live explanation; the rule was not changed for it.
+* **Consequence:** the old-code re-run of the 12 strata (~4 h GPU) is the rule's next step. Until it is done, no 6k result is used. A single 15-trial stratum cannot separate a code effect from this run-to-run noise.
 
 Training finished before 20:05; evaluation 20:05-23:43 (`scripts/v4_6k_driver.sh`, checkpoint `v4_6k/5999` confirmed in `server.log`).
 Analysis: `scripts/k25_analysis.py` (extended with the rule above, unchanged) -> `eval_results/k25_analysis.json`.
@@ -4191,6 +4213,49 @@ The "posY" regions in world coordinates lie at negative Y on the pendant, on the
 * Table beside the cube, cube clear: no blow-up (the cube is not touched).
 * Pilot geometry and straddle −2 cm: at least one blow-up, most likely in the hold or drag phase.
 * Confidence low on where exactly; the pilot traces show the fling after a long low hover, not at first contact.
+
+**Results, baseline contact settings (09:21-09:37, `eval_results/table_press/{v5,v4}/`).**
+
+| v5 case | blow-up | first trip | max one-tick jump | cube moved | lowest grip point |
+|---|---|---|---|---|---|
+| table beside −1 / −2 cm | no / no | -- | 0 | 0 | +0.022 m |
+| pilot x +2 cm / 0 / −1 cm | **yes / yes / yes** | hold / descend / descend | 61 / 61 / 59 mm | 2.5 / 2.4 / 1.7 m | 0.017 / 0.022 / 0.001 m |
+| pilot y +2 cm / −1 cm | **yes / yes** | hold / descend | 69 / 52 mm | 2.5 / 0.9 m | 0.019 / 0.023 m |
+| straddle −1 / −2 cm | **yes / yes** | descend / descend | 45 / 29 mm | 0.8 / 0.6 m | 0.022 / 0.023 m |
+
+* **Reproduced without a policy: 7/9 cases explode, every case in which the fingers meet the cube.**
+  * Even a normal straddling descent only 1 cm too deep explodes.
+  * Pressing only the table does nothing to the cube.
+* **The grip point never got below +0.022 m over the table, for targets down to −0.02 m.** The real finger geometry ends about 2 cm below the formula grip point, so the fingers stand on the table there.
+  * So the pilot's "fingertip 0.021-0.027 m" meant fingers pressing the table or the cube edge, as the reviewer read it.
+  * Possibly relevant for the TCP value once the RG2 is modelled.
+* The jumps (≤ 69 mm/tick ≈ 4 m/s) are far above the cube's 0.5 m/s depenetration cap. The energy comes from the arm drive and contact impulses, not depenetration alone.
+* v4, for reference (different hand geometry, 90° mount): 7/9 explode; in three cases the arm itself blew up (grip point 0.8 m under the table). The v4 run segfaulted at exit after writing its summary.
+* Prediction check: table-only no blow-up, held. Pilot geometry blows up, held. "Most likely in hold or drag": mostly in the **descent** (5 of 7 in v5).
+
+**Contact-setting sweep -- design written BEFORE its results** (`scripts/table_press_sweep.sh`, switch `VLA_PHYSICS_TUNE`, unset = unchanged):
+* Six settings, one knob at a time, then one combination:
+
+| setting | change |
+|---|---|
+| T1 | max depenetration velocity 0.5 m/s on every robot link and the cube (now only the two pad links and the cube) |
+| T2 | solver iterations 32 position / 4 velocity (articulation and cube) |
+| T3 | physics at 240 Hz, i.e. 4 substeps; control and logging stay at 60 Hz, checked by the logged sim time per case |
+| T4 | contact offset 1 cm, rest offset 0 (gripper colliders and cube) |
+| T5 | arm drive max force at the real UR5e joint torques: 150, 150, 150, 28, 28, 28 N m |
+| T6 | T1 + T2 + T3 |
+
+* **Pass for a setting:**
+  * 0 blow-ups in the 9 v5 cases;
+  * one tick = 1/60 s of sim time.
+* "Real-like" is reported too: max one-tick jump ≤ 8 mm.
+* Among the passing settings the smallest change is preferred.
+* **Then the chosen setting must keep the expert:** a v5 expert smoke run (20, stratified, as last night) with success ≥ 80 % and the expert check PASS. Only then does it become the v5 default.
+* *Prediction:*
+  * T3 (substeps) and T6 pass.
+  * T1 alone reduces the jumps but does not remove all blow-ups.
+  * T2 and T4 change little.
+  * T5 may pass but could hurt the expert's tracking.
 
 #### 2026-11-17 02:21: v5 PILOT results -- PIPELINE TEST, NOT FOR CONCLUSIONS
 
